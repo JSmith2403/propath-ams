@@ -11,7 +11,7 @@ export default function App() {
   const [selectedId, setSelectedId]   = useState(null);
   const [profileNav, setProfileNav]   = useState(null);
   const {
-    athletes, getAthlete,
+    athletes, loading, getAthlete,
     addAthlete, updateAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
@@ -48,6 +48,20 @@ export default function App() {
   const handleSelectAthlete = id => { setSelectedId(id); setView('profile'); };
   const handleBack = () => { setView('roster'); setSelectedId(null); };
   const selectedAthlete = selectedId ? getAthlete(selectedId) : null;
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#111827' }}>
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin"
+            style={{ borderColor: '#A58D69', borderTopColor: 'transparent' }}
+          />
+          <p className="text-sm font-medium" style={{ color: '#A58D69' }}>Loading ProPath…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
