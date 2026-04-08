@@ -268,7 +268,7 @@ export default function NewSessionForm({ athletes, onCreated, onCancel, globalCu
                     {cat.metrics.map(m => (
                       <label key={m.key} style={chipStyle(selMetrics.has(m.key))}>
                         <input type="checkbox" className="hidden" checked={selMetrics.has(m.key)} onChange={() => toggleMetric(m.key)} />
-                        {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}{m.attempts > 1 && !m.hideAttemptsLabel ? ` ×${m.attempts}` : ''}
+                        {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}
                       </label>
                     ))}
                     {customForCat.map(m => (

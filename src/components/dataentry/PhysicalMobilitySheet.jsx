@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Plus, Download, Upload } from 'lucide-react';
 import { buildAthleteId } from '../../utils/athleteId';
-import { ALL_METRICS, METRIC_MAP } from '../../data/sessionMetrics';
+import { ALL_METRICS, METRIC_MAP, METRIC_CATEGORIES } from '../../data/sessionMetrics';
 import { useSessions } from '../../hooks/useSessions';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import NewSessionForm    from './NewSessionForm';
@@ -87,24 +87,42 @@ function processCSV(text, athletes) {
   return { toSave, added, skipped, reasons };
 }
 
-function downloadTemplate(athletes) {
-  const exId = athletes.length > 0 ? buildAthleteId(athletes[0].name, athletes[0].dob) : 'ATHLETE_ID';
-  const rows = [
-    'Athlete ID,Test Name,Side,Value,Date,Unit',
-    `${exId},CMJ Jump Height,,45,2024-01-15,cm`,
-    `${exId},Height,,178,2024-01-15,cm`,
-    `${exId},Weight,,72,2024-01-15,kg`,
-    `${exId},Hamstring Strength,Left,2.3,2024-01-15,N/kg`,
-    `${exId},Hamstring Strength,Right,2.5,2024-01-15,N/kg`,
-    `${exId},10/5 RSI,,2.0,2024-01-15,score`,
-    `${exId},IMTP Max Force,,22,2024-01-15,N`,
-    `${exId},Dynamic Strength Index,,0.72,2024-01-15,ratio`,
-    `${exId},Sorensen Test,,120,2024-01-15,s`,
-  ];
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+function downloadTemplate(athletes, customMetrics = {}) {
+  // Build ordered column list from METRIC_CATEGORIES then custom metrics
+  const metricCols = [];
+  METRIC_CATEGORIES.forEach(cat => {
+    cat.metrics.forEach(m => {
+      if (m.bilateral) {
+        metricCols.push({ header: `${m.label} (L)` });
+        metricCols.push({ header: `${m.label} (R)` });
+      } else {
+        metricCols.push({ header: m.label });
+      }
+    });
+  });
+  // Custom metrics grouped by category label in insertion order
+  Object.values(customMetrics).forEach(m => {
+    if (m.bilateral) {
+      metricCols.push({ header: `${m.label} (L)` });
+      metricCols.push({ header: `${m.label} (R)` });
+    } else {
+      metricCols.push({ header: m.label });
+    }
+  });
+
+  const fixedHeaders = ['Athlete ID', 'Athlete Name', 'Sport', 'Date'];
+  const allHeaders   = [...fixedHeaders, ...metricCols.map(c => c.header)];
+
+  // Wrap each header in quotes to safely handle commas
+  const headerRow = allHeaders.map(h => `"${h}"`).join(',');
+  // One empty example row
+  const emptyRow  = allHeaders.map(() => '').join(',');
+
+  const blob = new Blob([headerRow + '\n' + emptyRow + '\n'], { type: 'text/csv' });
   const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href: url, download: 'physical_template.csv' });
-  a.click(); URL.revokeObjectURL(url);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: 'propath_template.csv' });
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function ImportSummaryModal({ summary, onClose }) {
@@ -245,7 +263,7 @@ export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpd
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white shrink-0">
           <span className="text-sm font-semibold text-gray-700">Testing Sessions</span>
           <div className="flex items-center gap-2">
-            <button onClick={() => downloadTemplate(athletes)}
+            <button onClick={() => downloadTemplate(athletes, customMetrics)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded text-gray-600 hover:bg-gray-50">
               <Download size={12} /> Template
             </button>

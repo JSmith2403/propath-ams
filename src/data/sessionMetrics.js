@@ -1,55 +1,64 @@
 // ── Manually recorded metric categories ────────────────────────────────────
-// Calculations (PAH, DSI, LSI, etc.) are auto-derived and never entered here.
 
 export const METRIC_CATEGORIES = [
   {
     key: 'biometrics',
     label: 'Biometrics',
     metrics: [
-      { key: 'height',              label: 'Athlete Height',        unit: 'cm',    bilateral: false, attempts: 1 },
-      { key: 'weight',              label: 'Athlete Weight',        unit: 'kg',    bilateral: false, attempts: 1 },
-      { key: 'motherHeight',        label: "Mother's Height",       unit: 'cm',    bilateral: false, attempts: 1 },
-      { key: 'fatherHeight',        label: "Father's Height",       unit: 'cm',    bilateral: false, attempts: 1 },
-      { key: 'bodyFat',             label: 'Body Fat Percentage',   unit: '%',     bilateral: false, attempts: 1 },
-      { key: 'leanMass',            label: 'Lean Mass',             unit: 'kg',    bilateral: false, attempts: 1 },
-      { key: 'segmentalMuscleMass', label: 'Segmental Muscle Mass', unit: 'kg',    bilateral: false, attempts: 1 },
+      { key: 'height',              label: 'Athlete Height',        unit: 'cm', bilateral: false, attempts: 1 },
+      { key: 'weight',              label: 'Athlete Weight',        unit: 'kg', bilateral: false, attempts: 1 },
+      { key: 'bodyFat',             label: 'Body Fat Percentage',   unit: '%',  bilateral: false, attempts: 1 },
+      { key: 'leanMass',            label: 'Lean Mass',             unit: 'kg', bilateral: false, attempts: 1 },
+      { key: 'segmentalMuscleMass', label: 'Segmental Muscle Mass', unit: 'kg', bilateral: false, attempts: 1 },
+    ],
+  },
+  {
+    key: 'pahMaturation',
+    label: 'PAH and Maturation',
+    metrics: [
+      { key: 'motherHeight',     label: "Mother's Height",        unit: 'cm', bilateral: false, attempts: 1 },
+      { key: 'fatherHeight',     label: "Father's Height",        unit: 'cm', bilateral: false, attempts: 1 },
+      { key: 'pah',              label: 'Predicted Adult Height', unit: 'cm', bilateral: false, attempts: 1 },
+      { key: 'pahPercent',       label: 'Percentage of PAH',      unit: '%',  bilateral: false, attempts: 1 },
+      { key: 'remainingGrowth',  label: 'Remaining Growth',       unit: 'cm', bilateral: false, attempts: 1 },
+      { key: 'maturityCategory', label: 'Maturity Category',      unit: '',   bilateral: false, attempts: 1, text: true },
     ],
   },
   {
     key: 'movementScreens',
     label: 'Movement Screens',
     metrics: [
-      { key: 'cervicalRotation',  label: 'Cervical Rotation',           unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'shoulderFlexion',   label: 'Shoulder Flexion',            unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'shoulderExtension', label: 'Shoulder Extension',          unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'shoulderIR',        label: 'Shoulder Internal Rotation',  unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'shoulderER',        label: 'Shoulder External Rotation',  unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'thoracicRotation',  label: 'Thoracic Rotation',           unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'hipFlexion',        label: 'Hip Flexion',                 unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'hipExtension',      label: 'Hip Extension',               unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'hipIR',             label: 'Hip Internal Rotation',       unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'hipER',             label: 'Hip External Rotation',       unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'activeSLR',         label: 'Active Straight Leg Raise',   unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'passiveSLR',        label: 'Passive Straight Leg Raise',  unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'ankleDorsiflexion', label: 'Ankle Dorsiflexion',          unit: '°',   bilateral: true, attempts: 1 },
-      { key: 'ankleKneeToWall',   label: 'Ankle Knee to Wall',          unit: 'cm',  bilateral: true, attempts: 1 },
-      { key: 'singleLegSquat',    label: 'Single Leg Squat',            unit: '/5',  bilateral: true, attempts: 1 },
+      { key: 'cervicalRotation',  label: 'Cervical Rotation',           unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'shoulderFlexion',   label: 'Shoulder Flexion',            unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'shoulderExtension', label: 'Shoulder Extension',          unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'shoulderIR',        label: 'Shoulder Internal Rotation',  unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'shoulderER',        label: 'Shoulder External Rotation',  unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'thoracicRotation',  label: 'Thoracic Rotation',           unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'hipFlexion',        label: 'Hip Flexion',                 unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'hipExtension',      label: 'Hip Extension',               unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'hipIR',             label: 'Hip Internal Rotation',       unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'hipER',             label: 'Hip External Rotation',       unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'activeSLR',         label: 'Active Straight Leg Raise',   unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'passiveSLR',        label: 'Passive Straight Leg Raise',  unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'ankleDorsiflexion', label: 'Ankle Dorsiflexion',          unit: '°',  bilateral: true, attempts: 1 },
+      { key: 'ankleKneeToWall',   label: 'Ankle Knee to Wall',          unit: 'cm', bilateral: true, attempts: 1 },
+      { key: 'singleLegSquat',    label: 'Single Leg Squat',            unit: '/5', bilateral: true, attempts: 1 },
     ],
   },
   {
     key: 'power',
     label: 'Power',
     metrics: [
-      { key: 'cmjBilateral',       label: 'CMJ (Bilateral)',       unit: 'cm',    bilateral: false, attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjHeight',          label: 'CMJ (Unilateral)',      unit: 'cm',    bilateral: true,  attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjPeakForce',       label: 'CMJ Peak Force',        unit: 'N',     bilateral: true,  attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjPeakPower',       label: 'CMJ Peak Power',        unit: 'W',     bilateral: true,  attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjTimeToTakeoff',   label: 'CMJ Time to Takeoff',   unit: 'ms',    bilateral: false, attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjFlightTime',      label: 'CMJ Flight Time',       unit: 'ms',    bilateral: false, attempts: 3, hideAttemptsLabel: true },
-      { key: 'cmjLandingForce',    label: 'CMJ Landing Force',     unit: 'N',     bilateral: true,  attempts: 3, hideAttemptsLabel: true },
-      { key: 'squatJumpHeight',    label: 'Squat Jump Height',     unit: 'cm',    bilateral: false, attempts: 3 },
-      { key: 'squatJumpPeakForce', label: 'Squat Jump Peak Force', unit: 'N',     bilateral: false, attempts: 3 },
-      { key: 'squatJumpPeakPower', label: 'Squat Jump Peak Power', unit: 'W',     bilateral: false, attempts: 3 },
+      { key: 'cmjBilateral',       label: 'CMJ (Bilateral)',       unit: 'cm', bilateral: false, attempts: 3 },
+      { key: 'cmjHeight',          label: 'CMJ (Unilateral)',      unit: 'cm', bilateral: true,  attempts: 3 },
+      { key: 'cmjPeakForce',       label: 'CMJ Peak Force',        unit: 'N',  bilateral: true,  attempts: 3 },
+      { key: 'cmjPeakPower',       label: 'CMJ Peak Power',        unit: 'W',  bilateral: true,  attempts: 3 },
+      { key: 'cmjTimeToTakeoff',   label: 'CMJ Time to Takeoff',   unit: 'ms', bilateral: false, attempts: 3 },
+      { key: 'cmjFlightTime',      label: 'CMJ Flight Time',       unit: 'ms', bilateral: false, attempts: 3 },
+      { key: 'cmjLandingForce',    label: 'CMJ Landing Force',     unit: 'N',  bilateral: true,  attempts: 3 },
+      { key: 'squatJumpHeight',    label: 'Squat Jump Height',     unit: 'cm', bilateral: false, attempts: 3 },
+      { key: 'squatJumpPeakForce', label: 'Squat Jump Peak Force', unit: 'N',  bilateral: false, attempts: 3 },
+      { key: 'squatJumpPeakPower', label: 'Squat Jump Peak Power', unit: 'W',  bilateral: false, attempts: 3 },
     ],
   },
   {
@@ -70,18 +79,18 @@ export const METRIC_CATEGORIES = [
     key: 'strength',
     label: 'Strength',
     metrics: [
-      { key: 'imtpPeakForce',      label: 'IMTP Peak Force',           unit: 'N',    bilateral: false, attempts: 1 },
-      { key: 'imtpPeakForceLR',    label: 'IMTP Peak Force L/R',       unit: 'N',    bilateral: true,  attempts: 1 },
-      { key: 'chinUpMaxReps',      label: 'Chin-up Max Reps',          unit: 'reps', bilateral: false, attempts: 1 },
-      { key: 'benchPress3RM',      label: '3RM Bench Press',           unit: 'kg',   bilateral: false, attempts: 1 },
-      { key: 'hamstring0',         label: 'Hamstring 0°',              unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'hamstring30',        label: 'Hamstring 30°',             unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'hamstring90',        label: 'Hamstring 90°',             unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'hipFlexionSupine90', label: 'Hip Flexion Supine 90°',    unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'hipExtensionProne90',label: 'Hip Extension Prone 90°',   unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'adduction0',         label: 'Adduction 0°',              unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'adduction90',        label: 'Adduction 90°',             unit: 'N/kg', bilateral: true,  attempts: 1 },
-      { key: 'gripStrength',       label: 'Grip Strength',             unit: 'kg',   bilateral: true,  attempts: 1 },
+      { key: 'imtpPeakForce',       label: 'IMTP Peak Force',          unit: 'N',    bilateral: false, attempts: 1 },
+      { key: 'imtpPeakForceLR',     label: 'IMTP Peak Force L/R',      unit: 'N',    bilateral: true,  attempts: 1 },
+      { key: 'chinUpMaxReps',       label: 'Chin-up Max Reps',         unit: 'reps', bilateral: false, attempts: 1 },
+      { key: 'benchPress3RM',       label: '3RM Bench Press',          unit: 'kg',   bilateral: false, attempts: 1 },
+      { key: 'hamstring0',          label: 'Hamstring 0°',             unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'hamstring30',         label: 'Hamstring 30°',            unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'hamstring90',         label: 'Hamstring 90°',            unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'hipFlexionSupine90',  label: 'Hip Flexion Supine 90°',   unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'hipExtensionProne90', label: 'Hip Extension Prone 90°',  unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'adduction0',          label: 'Adduction 0°',             unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'adduction90',         label: 'Adduction 90°',            unit: 'N/kg', bilateral: true,  attempts: 1 },
+      { key: 'gripStrength',        label: 'Grip Strength',            unit: 'kg',   bilateral: true,  attempts: 1 },
     ],
   },
   {
@@ -172,14 +181,19 @@ export function computeBest(cell, metric) {
   return { ...cell, best: pick(cell.att1, cell.att2, cell.att3) };
 }
 
-// phase2 sync targets — biometrics → maturation, movement screens → mobility,
-// everything else falls through to performance bucket by its own key.
+// phase2 sync targets — biometrics/pahMaturation → maturation,
+// movement screens → mobility, everything else → performance bucket.
 export const SYNC_MAP = {
   // Biometrics → maturation entry fields
-  height:       { type: 'maturation', field: 'standingHeight' },
-  weight:       { type: 'maturation', field: 'bodyMass'       },
-  motherHeight: { type: 'maturation', field: 'motherHeight'   },
-  fatherHeight: { type: 'maturation', field: 'fatherHeight'   },
+  height: { type: 'maturation', field: 'standingHeight' },
+  weight: { type: 'maturation', field: 'bodyMass'       },
+  // PAH and Maturation → maturation entry fields
+  motherHeight:    { type: 'maturation', field: 'motherHeight'    },
+  fatherHeight:    { type: 'maturation', field: 'fatherHeight'    },
+  pah:             { type: 'maturation', field: 'pah'             },
+  pahPercent:      { type: 'maturation', field: 'pahPercent'      },
+  remainingGrowth: { type: 'maturation', field: 'remainingGrowth' },
+  maturityCategory:{ type: 'maturation', field: 'maturityCategory'},
   // Movement Screens → mobility bucket
   cervicalRotation:  { type: 'mobility', key: 'cervicalRotation'  },
   shoulderFlexion:   { type: 'mobility', key: 'shoulderFlexion'   },
@@ -196,6 +210,6 @@ export const SYNC_MAP = {
   ankleDorsiflexion: { type: 'mobility', key: 'ankleDorsiflexion' },
   ankleKneeToWall:   { type: 'mobility', key: 'ankleKneeToWall'   },
   singleLegSquat:    { type: 'mobility', key: 'singleLegSquat'    },
-  // All power / reactivity / strength / capacity / speed / aerobic / cognitive
-  // metrics have no SYNC_MAP entry → stored in performance bucket by their key.
+  // Power / reactivity / strength / capacity / speed / aerobic / cognitive
+  // have no SYNC_MAP entry → stored in performance bucket by their key.
 };
