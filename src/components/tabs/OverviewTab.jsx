@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Camera, FileText, ClipboardList, ChevronRight } from 'lucide-react';
 import InitialsAvatar from '../InitialsAvatar';
 import QuarterlyReviews from '../QuarterlyReviews';
+import PhotoCropModal from '../PhotoCropModal';
 import { SPORTS, COHORTS, GENDERS, MATURATION_STAGES, RAG_DOMAINS, RAG_CONFIG, COHORT_CONFIG } from '../../data/athletes';
 
 function calculateAge(dob) {
@@ -26,26 +27,6 @@ function formatShort(iso) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function resizeImageToDataURL(file, maxSize = 400) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const size = Math.min(img.width, img.height);
-        const sx = (img.width - size) / 2;
-        const sy = (img.height - size) / 2;
-        const out = Math.min(size, maxSize);
-        canvas.width = out; canvas.height = out;
-        canvas.getContext('2d').drawImage(img, sx, sy, size, size, 0, 0, out, out);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 function InlineSelect({ value, onChange, onBlur, options, className = '', style }) {
   return (
@@ -250,16 +231,25 @@ export default function OverviewTab({
   onAddCheckIn,       // (entry) — add a check-in note
 }) {
   const fileRef = useRef();
+  const [cropSrc, setCropSrc] = useState(null);
 
   const set = (field, value) => setLocalAthlete(a => ({ ...a, [field]: value }));
   const save = () => onUpdate(localAthlete.id, localAthlete);
 
-  const handleFileChange = async e => {
+  const handleFileChange = e => {
     const file = e.target.files[0];
+    // Reset input so re-selecting same file fires change again
+    e.target.value = '';
     if (!file) return;
-    const url = await resizeImageToDataURL(file);
-    setLocalAthlete(a => ({ ...a, photo: url }));
-    onUpdatePhoto(localAthlete.id, url);
+    const reader = new FileReader();
+    reader.onload = ev => setCropSrc(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropConfirm = (dataUrl) => {
+    setCropSrc(null);
+    setLocalAthlete(a => ({ ...a, photo: dataUrl }));
+    onUpdatePhoto(localAthlete.id, dataUrl);
   };
 
   const cohortStyle = COHORT_CONFIG[localAthlete.cohort] || COHORT_CONFIG['Elite'];
@@ -267,6 +257,13 @@ export default function OverviewTab({
 
   return (
     <div className="space-y-6">
+      {cropSrc && (
+        <PhotoCropModal
+          src={cropSrc}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropSrc(null)}
+        />
+      )}
       {/* ── Header card ─────────────────────────────────────── */}
       <div className="bg-white rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
         <div className="h-1.5" style={{ backgroundColor: cohortStyle.bg }} />

@@ -2,29 +2,7 @@ import { useState, useRef } from 'react';
 import { X, Upload } from 'lucide-react';
 import { SPORTS, COHORTS, GENDERS, MATURATION_STAGES } from '../data/athletes';
 import InitialsAvatar from './InitialsAvatar';
-
-function resizeImageToDataURL(file, maxSize = 400) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const size = Math.min(img.width, img.height);
-        const sx = (img.width - size) / 2;
-        const sy = (img.height - size) / 2;
-        const outputSize = Math.min(size, maxSize);
-        canvas.width = outputSize;
-        canvas.height = outputSize;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, sx, sy, size, size, 0, 0, outputSize, outputSize);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
+import PhotoCropModal from './PhotoCropModal';
 
 export default function AddAthleteModal({ onClose, onAdd }) {
   const [form, setForm] = useState({
@@ -44,6 +22,7 @@ export default function AddAthleteModal({ onClose, onAdd }) {
   });
   const [errors, setErrors] = useState({});
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [cropSrc, setCropSrc] = useState(null);
   const fileRef = useRef();
 
   const set = (field, value) => {
@@ -51,10 +30,17 @@ export default function AddAthleteModal({ onClose, onAdd }) {
     if (errors[field]) setErrors((e) => ({ ...e, [field]: null }));
   };
 
-  const handleFile = async (e) => {
+  const handleFile = (e) => {
     const file = e.target.files[0];
+    e.target.value = '';
     if (!file) return;
-    const dataUrl = await resizeImageToDataURL(file);
+    const reader = new FileReader();
+    reader.onload = ev => setCropSrc(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropConfirm = (dataUrl) => {
+    setCropSrc(null);
     setPhotoPreview(dataUrl);
     setForm((f) => ({ ...f, photo: dataUrl }));
   };
@@ -83,6 +69,14 @@ export default function AddAthleteModal({ onClose, onAdd }) {
   const labelClass = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1';
 
   return (
+    <>
+    {cropSrc && (
+      <PhotoCropModal
+        src={cropSrc}
+        onConfirm={handleCropConfirm}
+        onCancel={() => setCropSrc(null)}
+      />
+    )}
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -271,5 +265,6 @@ export default function AddAthleteModal({ onClose, onAdd }) {
         </div>
       </div>
     </div>
+    </>
   );
 }

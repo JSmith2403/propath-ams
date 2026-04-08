@@ -6,10 +6,11 @@ const GOLD = '#A58D69';
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
-// Categories available for custom metric placement (matches DataStorageTable CAT_COLORS)
+// Categories available for custom metric placement — must match METRIC_CATEGORIES labels exactly
+// so DataStorageTable can merge custom metrics into the correct column group.
 const STORAGE_CATEGORIES = [
-  'Biometrics', 'Power', 'Reactivity', 'Strength',
-  'Capacity', 'Speed', 'Aerobic', 'Cognitive', 'Custom',
+  ...METRIC_CATEGORIES.map(c => c.label),
+  'Custom',
 ];
 
 const FORMULA_TYPES = [
@@ -244,6 +245,8 @@ export default function NewSessionForm({ athletes, onCreated, onCancel, globalCu
         </div>
         <div className="space-y-3 max-w-3xl">
           {METRIC_CATEGORIES.map(cat => {
+            // Custom metrics assigned to this exact category label
+            const customForCat = Object.values(allCustom).filter(m => m.categoryLabel === cat.label);
             const catActive = cat.metrics.every(m => selMetrics.has(m.key));
             const isOpen    = !collapsed[cat.key];
             return (
@@ -265,7 +268,16 @@ export default function NewSessionForm({ athletes, onCreated, onCancel, globalCu
                     {cat.metrics.map(m => (
                       <label key={m.key} style={chipStyle(selMetrics.has(m.key))}>
                         <input type="checkbox" className="hidden" checked={selMetrics.has(m.key)} onChange={() => toggleMetric(m.key)} />
-                        {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}{m.attempts > 1 ? ` ×${m.attempts}` : ''}
+                        {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}{m.attempts > 1 && !m.hideAttemptsLabel ? ` ×${m.attempts}` : ''}
+                      </label>
+                    ))}
+                    {customForCat.map(m => (
+                      <label key={m.key} style={chipStyle(selMetrics.has(m.key))}>
+                        <input type="checkbox" className="hidden" checked={selMetrics.has(m.key)} onChange={() => toggleMetric(m.key)} />
+                        {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}
+                        {(m.dependentCalcs || []).length > 0 && (
+                          <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.65 }}>+ {m.dependentCalcs.length} calc</span>
+                        )}
                       </label>
                     ))}
                   </div>
@@ -274,25 +286,30 @@ export default function NewSessionForm({ athletes, onCreated, onCancel, globalCu
             );
           })}
 
-          {/* Persisted custom metrics */}
-          {Object.keys(allCustom).length > 0 && (
-            <div className="border border-purple-100 rounded-lg overflow-hidden">
-              <div className="px-3 py-2 text-xs font-bold text-purple-700 uppercase tracking-wide bg-purple-50">
-                Custom Metrics
+          {/* Custom metrics that don't belong to any standard category */}
+          {(() => {
+            const standardLabels = new Set(METRIC_CATEGORIES.map(c => c.label));
+            const orphaned = Object.values(allCustom).filter(m => !standardLabels.has(m.categoryLabel));
+            if (orphaned.length === 0) return null;
+            return (
+              <div className="border border-purple-100 rounded-lg overflow-hidden">
+                <div className="px-3 py-2 text-xs font-bold text-purple-700 uppercase tracking-wide bg-purple-50">
+                  Custom
+                </div>
+                <div className="p-2.5 flex flex-wrap gap-1.5">
+                  {orphaned.map(m => (
+                    <label key={m.key} style={chipStyle(selMetrics.has(m.key))}>
+                      <input type="checkbox" className="hidden" checked={selMetrics.has(m.key)} onChange={() => toggleMetric(m.key)} />
+                      {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}
+                      {(m.dependentCalcs || []).length > 0 && (
+                        <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.65 }}>+ {m.dependentCalcs.length} calc</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="p-2.5 flex flex-wrap gap-1.5">
-                {Object.values(allCustom).map(m => (
-                  <label key={m.key} style={chipStyle(selMetrics.has(m.key))}>
-                    <input type="checkbox" className="hidden" checked={selMetrics.has(m.key)} onChange={() => toggleMetric(m.key)} />
-                    {m.label}{m.unit ? ` (${m.unit})` : ''}{m.bilateral ? ' L/R' : ''}
-                    {(m.dependentCalcs || []).length > 0 && (
-                      <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.65 }}>+ {m.dependentCalcs.length} calc</span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Add custom metric form */}
           {showCustomForm ? (
