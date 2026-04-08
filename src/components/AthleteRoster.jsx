@@ -6,19 +6,36 @@ import { COHORTS } from '../data/athletes';
 
 const FILTER_OPTIONS = ['All', ...COHORTS];
 
+const COHORT_ORDER = { Elite: 0, Gold: 1, Mini: 2 };
+
+function lastName(name) {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : parts[0].toLowerCase();
+}
+
+function sortAthletes(list) {
+  return [...list].sort((a, b) => {
+    const cohortDiff = (COHORT_ORDER[a.cohort] ?? 99) - (COHORT_ORDER[b.cohort] ?? 99);
+    if (cohortDiff !== 0) return cohortDiff;
+    return lastName(a.name).localeCompare(lastName(b.name));
+  });
+}
+
 export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const filtered = athletes.filter((a) => {
-    const matchesTier = activeFilter === 'All' || a.cohort === activeFilter;
-    const matchesSearch =
-      !searchQuery ||
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.sport.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTier && matchesSearch;
-  });
+  const filtered = sortAthletes(
+    athletes.filter((a) => {
+      const matchesTier = activeFilter === 'All' || a.cohort === activeFilter;
+      const matchesSearch =
+        !searchQuery ||
+        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.sport.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesTier && matchesSearch;
+    })
+  );
 
   return (
     <div className="flex-1 overflow-y-auto">
