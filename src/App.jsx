@@ -113,6 +113,7 @@ export default function App() {
             athletes={athletes}
             syncSessionData={syncSessionData}
             updateLatestEntry={updateLatestEntry}
+            onUpdateAthlete={updateAthlete}
           />
         )}
 

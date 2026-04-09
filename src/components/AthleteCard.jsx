@@ -1,6 +1,29 @@
 import InitialsAvatar from './InitialsAvatar';
 import { COHORT_CONFIG } from '../data/athletes';
 
+// Khamis-Roche PAH — compute live PHV proximity + PAH% from maturation entries
+function computeMatCard(athlete) {
+  const entries = [...(athlete.phase2?.maturation?.entries || [])]
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const latest = entries[0];
+  if (!latest) return null;
+  const height = latest.standingHeight ?? latest.stature ?? null;
+  const dob    = athlete.dob;
+  const sex    = latest.sex || athlete.gender || 'Male';
+  if (!height || !latest.bodyMass || !latest.motherHeight || !latest.fatherHeight || !dob) return null;
+  const ageDecimal = (new Date(latest.date) - new Date(dob)) / (365.25 * 86400000);
+  if (ageDecimal <= 0) return null;
+  const [s, f, m, b, a] = [height, latest.fatherHeight, latest.motherHeight, latest.bodyMass, ageDecimal].map(Number);
+  if ([s, f, m, b, a].some(v => isNaN(v) || v <= 0)) return null;
+  const pah = sex === 'Female'
+    ? (0.369*s)+(0.271*f)+(0.306*m)+(0.037*b)-(0.009*a*a)+8.96
+    : (0.378*s)+(0.308*f)+(0.270*m)+(0.054*b)-(0.016*a*a)+12.13;
+  if (!pah || pah <= 0) return null;
+  const pahPct = (s / pah) * 100;
+  const stage  = pahPct < 88 ? 'Pre-PHV' : pahPct <= 95 ? 'Circa-PHV' : 'Post-PHV';
+  return { pahPct, stage };
+}
+
 const RAG_COLORS = {
   green: '#22c55e',
   amber: '#f59e0b',
@@ -71,9 +94,10 @@ function CheckInBadge({ days }) {
 }
 
 export default function AthleteCard({ athlete, onClick }) {
-  const age = calculateAge(athlete.dob);
+  const age      = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
-  const days = daysSinceLastCheckIn(athlete.checkIns);
+  const days     = daysSinceLastCheckIn(athlete.checkIns);
+  const matData  = computeMatCard(athlete);
 
   return (
     <div
@@ -110,11 +134,14 @@ export default function AthleteCard({ athlete, onClick }) {
       <div className="p-4 flex flex-col gap-3 flex-1">
         <div>
           <h3 className="font-semibold text-gray-900 text-base leading-tight">{athlete.name}</h3>
-          {(age != null || athlete.maturationStage) && (
-            <p className="text-xs text-gray-500 mt-1">
-              {age != null ? `${age}y` : ''}
-              {age != null && athlete.maturationStage ? '\u00a0|\u00a0' : ''}
-              {athlete.maturationStage || ''}
+          <p className="text-xs text-gray-500 mt-1">
+            {age != null ? `${age}y` : ''}
+            {age != null && matData?.stage ? '\u00a0|\u00a0' : ''}
+            {matData?.stage ?? (age == null ? '—' : '')}
+          </p>
+          {matData && (
+            <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>
+              {matData.pahPct.toFixed(1)}% PAH
             </p>
           )}
         </div>

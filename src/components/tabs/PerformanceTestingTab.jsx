@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from 'recharts';
-import { Settings, Plus, X, Pencil, RotateCcw } from 'lucide-react';
+import { Settings, Plus, X, RotateCcw } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 
@@ -416,9 +416,6 @@ function KpiDot({ cx, cy, payload }) {
 }
 
 function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemove }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const closePickerCb = useCallback(() => setPickerOpen(false), []);
-
   const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
   const rawEntries = entries[sourceKey] || [];
 
@@ -429,35 +426,48 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
   );
 
   const metricDef = SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey];
-  const label     = LABEL_OVERRIDES[metricKey] || metricDef?.label || metricKey;
   const unit      = metricDef?.unit || '';
+  const customList = Object.values(customMetrics || {});
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 relative"
+    <div className="bg-white rounded-xl border border-gray-100 p-4"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
 
-      {/* Header */}
-      <div className="flex items-start justify-between mb-2">
-        <p className="text-xs font-semibold text-gray-700 pr-12 leading-snug">{label}</p>
-        <div className="absolute top-3 right-3 flex items-center gap-0.5">
-          {onRemove && (
-            <button onClick={onRemove}
-              className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
-              <X size={12} />
-            </button>
+      {/* Header — metric selector dropdown */}
+      <div className="flex items-center gap-1 mb-2">
+        <select
+          value={metricKey}
+          onChange={e => onSwap?.(e.target.value)}
+          title="Change metric"
+          className="flex-1 min-w-0 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:border-gray-400 truncate"
+        >
+          {METRIC_CATEGORIES.map(cat => {
+            const specials = cat.key === 'power' ? [SPECIAL_METRICS.cmjRelPower] : [];
+            const items    = [...cat.metrics, ...specials];
+            return (
+              <optgroup key={cat.key} label={cat.label}>
+                {items.map(m => (
+                  <option key={m.key} value={m.key}>
+                    {LABEL_OVERRIDES[m.key] || m.label}
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
+          {customList.length > 0 && (
+            <optgroup label="Custom">
+              {customList.map(m => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </optgroup>
           )}
-          <div className="relative">
-            <button onClick={() => setPickerOpen(v => !v)}
-              className="p-1 rounded hover:bg-gray-100 text-gray-300 hover:text-gray-500 transition-colors">
-              <Pencil size={12} />
-            </button>
-            {pickerOpen && (
-              <div className="absolute right-0" style={{ top: 28, zIndex: 50 }}>
-                <MetricPicker onSelect={k => { onSwap?.(k); setPickerOpen(false); }} onClose={closePickerCb} />
-              </div>
-            )}
-          </div>
-        </div>
+        </select>
+        {onRemove && (
+          <button onClick={onRemove}
+            className="shrink-0 p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {!chartData ? (

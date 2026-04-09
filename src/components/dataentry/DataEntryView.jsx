@@ -4,6 +4,7 @@ export default function DataEntryView({
   athletes,
   syncSessionData,
   updateLatestEntry,
+  onUpdateAthlete,
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
@@ -19,6 +20,7 @@ export default function DataEntryView({
           athletes={athletes}
           syncSessionData={syncSessionData}
           onUpdateEntry={updateLatestEntry}
+          onUpdateAthlete={onUpdateAthlete}
         />
       </div>
     </div>
