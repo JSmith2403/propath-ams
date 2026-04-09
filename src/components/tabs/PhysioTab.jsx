@@ -2,11 +2,15 @@ import { useState } from 'react';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-const NOTE_TYPES = ['Screen', 'Catch-up'];
+const NOTE_TYPES = ['Assessment', 'Check-in', 'Observation'];
 
 const NOTE_TYPE_COLORS = {
-  Screen:    { bg: 'rgba(67,126,141,0.1)',  text: '#085777' },
-  'Catch-up': { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
+  Assessment:   { bg: 'rgba(67,126,141,0.12)', text: '#085777' },
+  'Check-in':   { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
+  Observation:  { bg: '#f3f4f6', text: '#6b7280' },
+  // legacy note type backwards compat
+  Screen:       { bg: 'rgba(67,126,141,0.1)', text: '#085777' },
+  'Catch-up':   { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
 };
 
 function formatDate(d) {

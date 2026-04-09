@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
 import SessionTracker from './components/SessionTracker';
 import { useAthletes } from './hooks/useAthletes';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [view, setView]               = useState('roster');
@@ -22,6 +23,21 @@ export default function App() {
     syncSessionData,
     addCheckIn,
   } = useAthletes();
+
+  // Re-sync all saved sessions once after athletes have loaded.
+  // This ensures phase2 performance entries are populated even for sessions
+  // saved before syncSessionData existed, or sessions with L/R cell formats.
+  const initialSyncDone = useRef(false);
+  useEffect(() => {
+    if (loading || initialSyncDone.current) return;
+    initialSyncDone.current = true;
+    supabase.from('sessions').select('data').then(({ data }) => {
+      if (!data) return;
+      data.map(row => row.data)
+        .filter(s => s?.savedAt)
+        .forEach(s => syncSessionData({ ...s, customMetrics: s.customMetrics || {} }));
+    });
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNavigate = (v) => {
     setView(v);

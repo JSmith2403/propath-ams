@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import OverviewTab from './tabs/OverviewTab';
 import WorkingOnSection from './WorkingOnSection';
@@ -75,6 +75,10 @@ export default function AthleteProfile({
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [localAthlete, setLocalAthlete] = useState(athlete);
+
+  // Keep localAthlete in sync when the athlete prop updates externally
+  // (e.g. after initial session sync populates phase2 performance entries)
+  useEffect(() => { setLocalAthlete(athlete); }, [athlete]);
 
   // { domain: string, entryId: string } | null
   const [highlightEntry, setHighlightEntry] = useState(initialHighlight || null);
@@ -180,7 +184,6 @@ export default function AthleteProfile({
       let pillarEntryTypes = undefined;
 
       if (domain === 'psych') {
-        pillarEntryTypes = ['General note', 'Quarterly Review', 'Check in', 'Session debrief'];
         preContent = (
           <PsychTab
             acsi28={p2.psych?.acsi28 || []}
@@ -194,7 +197,6 @@ export default function AthleteProfile({
           />
         );
       } else if (domain === 'nutrition') {
-        pillarEntryTypes = ['General note', 'Quarterly Review', 'Check in', 'Nutrition session'];
         preContent = (
           <NutritionTab
             maturationEntries={p2.maturation?.entries || []}

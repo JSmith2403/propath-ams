@@ -114,20 +114,23 @@ function PillarCard({ domainKey, label, status, logEntries, onNavigateToPillar }
 }
 
 // ─── Check-in section ────────────────────────────────────────
-const CHECK_IN_TYPES = ['Check in', 'General note', 'Observation', 'Welfare note'];
+const CHECK_IN_TYPES = ['Assessment', 'Check-in', 'Observation'];
 
 const TYPE_COLORS = {
-  'Check in':    { bg: '#eff6ff', text: '#1d4ed8' },
-  'General note':{ bg: '#f0fdf4', text: '#15803d' },
-  'Observation': { bg: '#faf5ff', text: '#7e22ce' },
-  'Welfare note':{ bg: '#fff7ed', text: '#c2410c' },
+  Assessment:   { bg: 'rgba(67,126,141,0.12)', text: '#085777' },
+  'Check-in':   { bg: '#eff6ff', text: '#1d4ed8' },
+  Observation:  { bg: '#faf5ff', text: '#7e22ce' },
+  // legacy
+  'Check in':   { bg: '#eff6ff', text: '#1d4ed8' },
+  'General note': { bg: '#f0fdf4', text: '#15803d' },
+  'Welfare note': { bg: '#fff7ed', text: '#c2410c' },
 };
 
 function CheckInSection({ checkIns = [], onAddCheckIn }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date,     setDate]     = useState(today);
   const [author,   setAuthor]   = useState('');
-  const [noteType, setNoteType] = useState('Check in');
+  const [noteType, setNoteType] = useState('Check-in');
   const [note,     setNote]     = useState('');
 
   const handleSave = () => {

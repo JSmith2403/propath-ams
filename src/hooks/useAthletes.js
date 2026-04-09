@@ -327,13 +327,18 @@ export function useAthletes() {
     const base = { id: uid(), date, sessionId };
     if (!metricDef) return { ...base, value: cell.value ?? null };
     if (metricDef.bilateral && metricDef.attempts > 1) {
-      return { ...base, left: cell.bestL ?? null, right: cell.bestR ?? null };
+      // bestL/bestR from SessionTable; L/R from CSV import or DataStorage inline edit
+      return {
+        ...base,
+        left:  cell.bestL ?? cell.L ?? cell.left  ?? null,
+        right: cell.bestR ?? cell.R ?? cell.right ?? null,
+      };
     }
     if (metricDef.bilateral) {
-      return { ...base, left: cell.L ?? null, right: cell.R ?? null };
+      return { ...base, left: cell.L ?? cell.left ?? null, right: cell.R ?? cell.right ?? null };
     }
     if (metricDef.attempts > 1) {
-      return { ...base, value: cell.best ?? null };
+      return { ...base, value: cell.best ?? cell.value ?? null };
     }
     return { ...base, value: cell.value ?? null };
   }

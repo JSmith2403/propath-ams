@@ -1,10 +1,31 @@
 import { useState } from 'react';
 import { Download } from 'lucide-react';
 import InitialsAvatar from '../InitialsAvatar';
-import { RAG_CONFIG, RAG_DOMAINS, COHORT_CONFIG } from '../../data/athletes';
-import { PERFORMANCE_METRICS } from '../../data/referenceData';
+import { COHORT_CONFIG } from '../../data/athletes';
+import { METRIC_MAP } from '../../data/sessionMetrics';
 
-// ─── Date helpers ──────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+// Metrics where a lower value is better (e.g. sprint times)
+const LOWER_IS_BETTER = new Set([
+  'sprint10m', 'sprint20m', 'sprint40m', 'mod505', 'reactionTime',
+]);
+
+const LABEL_OVERRIDES = {
+  cmjHeight:   'CMJ (Unilateral)',
+  cmjBilateral:'CMJ (Bilateral)',
+  adduction0:  'Adductor Squeeze',
+};
+
+const BRAG_OPTIONS = [
+  { value: 'grey',  label: 'Not yet assessed',       bg: '#e5e7eb', text: '#374151' },
+  { value: 'blue',  label: 'Exceeding expectations', bg: '#dbeafe', text: '#1d4ed8' },
+  { value: 'green', label: 'On track',               bg: '#dcfce7', text: '#15803d' },
+  { value: 'amber', label: 'Area to develop',        bg: '#fef3c7', text: '#92400e' },
+  { value: 'red',   label: 'Priority area',          bg: '#fee2e2', text: '#b91c1c' },
+];
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 
 function formatDate(d) {
   if (!d) return '—';
@@ -16,75 +37,88 @@ function formatShortDate(d) {
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// ─── Maturation calculation helpers (Khamis-Roche) ────────────────────────────
-
-function getHeight(entry) { return entry?.standingHeight ?? entry?.stature ?? null; }
-
-function calcAgeDecimal(dob, measureDate) {
-  return (new Date(measureDate) - new Date(dob)) / (365.25 * 24 * 60 * 60 * 1000);
+function formatTimestamp(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function calcAgeYM(dob, measureDate) {
-  const d1 = new Date(dob);
-  const d2 = new Date(measureDate);
-  let years = d2.getFullYear() - d1.getFullYear();
-  let months = d2.getMonth() - d1.getMonth();
-  if (d2.getDate() < d1.getDate()) months--;
-  if (months < 0) { years--; months += 12; }
-  return { years, months };
+// ─── Maturation helpers (Khamis-Roche) ───────────────────────────────────────
+
+function getHeight(e) { return e?.standingHeight ?? e?.stature ?? null; }
+
+function calcAgeDecimal(dob, d) {
+  return (new Date(d) - new Date(dob)) / (365.25 * 86400000);
 }
 
-function calcPAH(sex, stature, fatherHeight, motherHeight, mass, ageDecimal) {
-  const s = parseFloat(stature);
-  const f = parseFloat(fatherHeight);
-  const m = parseFloat(motherHeight);
-  const b = parseFloat(mass);
-  const a = parseFloat(ageDecimal);
+function calcAgeYM(dob, d) {
+  const d1 = new Date(dob), d2 = new Date(d);
+  let y = d2.getFullYear() - d1.getFullYear();
+  let m = d2.getMonth()    - d1.getMonth();
+  if (d2.getDate() < d1.getDate()) m--;
+  if (m < 0) { y--; m += 12; }
+  return { years: y, months: m };
+}
+
+function calcPAH(sex, s, f, m, b, a) {
+  [s, f, m, b, a] = [s, f, m, b, a].map(Number);
   if ([s, f, m, b, a].some(v => isNaN(v) || v <= 0)) return null;
-  if (sex === 'Female') {
-    return (0.369 * s) + (0.271 * f) + (0.306 * m) + (0.037 * b) - (0.009 * a * a) + 8.96;
-  }
-  return (0.378 * s) + (0.308 * f) + (0.270 * m) + (0.054 * b) - (0.016 * a * a) + 12.13;
+  return sex === 'Female'
+    ? (0.369*s)+(0.271*f)+(0.306*m)+(0.037*b)-(0.009*a*a)+8.96
+    : (0.378*s)+(0.308*f)+(0.270*m)+(0.054*b)-(0.016*a*a)+12.13;
 }
 
-const SEE = { Male: 2.1, Female: 1.7 };
-
-function calcCI(pah, sex, zScore) {
-  if (!pah) return null;
-  const margin = (SEE[sex] || SEE.Male) * zScore;
-  return { low: (pah - margin).toFixed(1), high: (pah + margin).toFixed(1) };
+function calcStage(pct) {
+  if (pct == null) return null;
+  if (pct < 88)  return 'Pre-PHV';
+  if (pct <= 95) return 'Circa-PHV';
+  return 'Post-PHV';
 }
 
-function calcStage(pahPct) {
-  if (pahPct == null) return null;
-  if (pahPct < 88)  return 'Pre PHV';
-  if (pahPct <= 95) return 'Circa PHV';
-  return 'Post PHV';
-}
-
-const STAGE_COLORS = {
-  'Pre PHV':   { bg: '#ccfbf1', text: '#0f766e' },
-  'Circa PHV': { bg: '#fef3c7', text: '#92400e' },
-  'Post PHV':  { bg: '#e5e7eb', text: '#374151' },
+const STAGE_STYLE = {
+  'Pre-PHV':   { bg: '#ccfbf1', text: '#0f766e' },
+  'Circa-PHV': { bg: '#fef3c7', text: '#92400e' },
+  'Post-PHV':  { bg: '#e5e7eb', text: '#374151' },
 };
 
-// ─── BRAG config ───────────────────────────────────────────────────────────────
+const STAGE_EXPLAINER = {
+  'Pre-PHV':   'The athlete has not yet reached their peak period of growth.',
+  'Circa-PHV': 'The athlete is currently in or approaching their peak growth period.',
+  'Post-PHV':  'The athlete has passed their main growth phase and is approaching physical maturity.',
+};
 
-const BRAG_OPTIONS = [
-  { value: 'grey',  label: 'No Assessment', bg: '#9ca3af' },
-  { value: 'blue',  label: 'Exceeding',     bg: '#3b82f6' },
-  { value: 'green', label: 'Meeting',        bg: '#22c55e' },
-  { value: 'amber', label: 'Below',          bg: '#f59e0b' },
-  { value: 'red',   label: 'Well Below',     bg: '#ef4444' },
-];
+// ─── Performance helpers ──────────────────────────────────────────────────────
 
-// ─── Section wrapper ───────────────────────────────────────────────────────────
+function extractScalar(entry) {
+  if (!entry) return null;
+  const l = entry.left ?? entry.bestL ?? null;
+  const r = entry.right ?? entry.bestR ?? null;
+  if (l != null && r != null) return (Number(l) + Number(r)) / 2;
+  if (l != null) return Number(l);
+  if (r != null) return Number(r);
+  const v = entry.value ?? entry.best ?? null;
+  return v != null ? Number(v) : null;
+}
+
+function fmtEntry(entry, mDef) {
+  if (!entry) return '—';
+  const u = mDef?.unit ? ` ${mDef.unit}` : '';
+  const l = entry.left ?? entry.bestL ?? null;
+  const r = entry.right ?? entry.bestR ?? null;
+  if (l != null || r != null)
+    return `L: ${l != null ? l + u : '—'} / R: ${r != null ? r + u : '—'}`;
+  const v = entry.value ?? entry.best ?? null;
+  return v != null ? `${v}${u}` : '—';
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function Section({ title, children }) {
   return (
-    <div className="mb-8 break-inside-avoid">
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: '#1C1C1C' }}>{title}</h2>
+    <div className="mb-10 break-inside-avoid">
+      <div className="flex items-center gap-3 mb-5">
+        <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: '#1C1C1C' }}>
+          {title}
+        </h2>
         <div className="flex-1 h-px" style={{ backgroundColor: '#A58D69' }} />
       </div>
       {children}
@@ -92,62 +126,92 @@ function Section({ title, children }) {
   );
 }
 
-function NoData() {
-  return <p className="text-xs italic text-gray-300">No data entered yet.</p>;
+const NOTE_TAG_COLORS = {
+  Assessment:   { bg: 'rgba(67,126,141,0.12)', text: '#085777' },
+  'Check-in':   { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
+  Observation:  { bg: '#f3f4f6', text: '#6b7280' },
+  // legacy
+  Screen:       { bg: 'rgba(67,126,141,0.1)', text: '#085777' },
+  'Catch-up':   { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
+};
+
+function NoteTag({ type }) {
+  if (!type) return null;
+  const c = NOTE_TAG_COLORS[type] || { bg: '#f3f4f6', text: '#6b7280' };
+  return (
+    <span className="text-xs font-semibold px-2 py-0.5 rounded"
+      style={{ backgroundColor: c.bg, color: c.text }}>
+      {type}
+    </span>
+  );
 }
 
-// ─── 1. Maturation ─────────────────────────────────────────────────────────────
+function NoAssessment({ msg }) {
+  return <p className="text-sm italic text-gray-400">{msg}</p>;
+}
+
+// ─── Section 2: Maturation ────────────────────────────────────────────────────
 
 function MaturationSection({ athlete, maturationEntries }) {
-  if (!maturationEntries?.length) return <NoData />;
+  if (!maturationEntries?.length) {
+    return <NoAssessment msg="No maturation data recorded yet." />;
+  }
 
-  const sorted = [...maturationEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
-  const latest = sorted[0];
+  const sorted  = [...maturationEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const latest  = sorted[0];
   const stature = getHeight(latest);
   const { bodyMass, motherHeight, fatherHeight, date: measureDate } = latest;
-  const dob  = athlete.dob;
-  const sex  = athlete.sex;
+  const dob     = athlete.dob;
+  const sex     = latest.sex || athlete.gender || 'Male';
 
   const ageDecimal = dob && measureDate ? calcAgeDecimal(dob, measureDate) : null;
   const ageYM      = dob && measureDate ? calcAgeYM(dob, measureDate) : null;
-  const pah        = (sex && stature && motherHeight && fatherHeight && bodyMass && ageDecimal)
+  const pah        = (stature && motherHeight && fatherHeight && bodyMass && ageDecimal)
     ? calcPAH(sex, stature, fatherHeight, motherHeight, bodyMass, ageDecimal)
     : null;
-  const pahPct     = pah && stature ? (parseFloat(stature) / pah) * 100 : null;
-  const stage      = calcStage(pahPct);
-  const ci50       = pah ? calcCI(pah, sex === 'Female' ? 'Female' : 'Male', 0.674) : null;
-  const ci90       = pah ? calcCI(pah, sex === 'Female' ? 'Female' : 'Male', 1.645) : null;
-  const remaining  = pah && stature ? (pah - parseFloat(stature)).toFixed(1) : null;
-  const stageStyle = stage ? STAGE_COLORS[stage] : null;
+  const pahPct    = pah && stature ? (parseFloat(stature) / pah) * 100 : null;
+  const stage     = calcStage(pahPct);
+  const remaining = pah && stature ? (pah - parseFloat(stature)).toFixed(1) : null;
+  const stageStyle = stage ? STAGE_STYLE[stage] : null;
 
   const rows = [
-    ['Measurement Date',      measureDate ? formatShortDate(measureDate) : '—'],
-    ['Age',                   ageYM ? `${ageYM.years}y ${ageYM.months}m` : '—'],
-    ['Standing Height',       stature ? `${stature} cm` : '—'],
-    ['Body Mass',             bodyMass ? `${bodyMass} kg` : '—'],
-    ['PAH (Khamis-Roche)',    pah  ? `${pah.toFixed(1)} cm` : '—'],
-    ['50% CI',                ci50 ? `${ci50.low}–${ci50.high} cm` : '—'],
-    ['90% CI',                ci90 ? `${ci90.low}–${ci90.high} cm` : '—'],
-    ['% of PAH',              pahPct ? `${pahPct.toFixed(1)}%` : '—'],
-    ['Remaining Growth',      remaining ? `${remaining} cm` : '—'],
-    ['Maturation Stage',      stage || '—'],
+    ['Measurement Date',                     measureDate ? formatShortDate(measureDate) : '—'],
+    ['Age at Measurement',                   ageYM ? `${ageYM.years}y ${ageYM.months}m` : '—'],
+    ['Standing Height',                      stature ? `${stature} cm` : '—'],
+    ['Body Mass',                            bodyMass ? `${bodyMass} kg` : '—'],
+    ['Predicted Adult Height (Khamis-Roche)', pah ? `${pah.toFixed(1)} cm` : '—'],
+    ['% of Predicted Adult Height',          pahPct ? `${pahPct.toFixed(1)}%` : '—'],
+    ['Remaining Growth',                     remaining ? `${remaining} cm` : '—'],
+    ['Maturation Stage',                     stage || '—'],
   ];
 
   return (
     <div className="flex flex-wrap gap-6 items-start">
-      <div className="space-y-1 flex-1 min-w-[200px]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between py-1 border-b border-gray-50">
+      {/* Data table */}
+      <div className="flex-1 min-w-[220px] border border-gray-100 rounded-xl overflow-hidden">
+        {rows.map(([k, v], i) => (
+          <div key={k} className="flex items-center justify-between px-4 py-2.5"
+            style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
             <span className="text-xs text-gray-500">{k}</span>
             <span className="text-xs font-semibold text-gray-800">{v}</span>
           </div>
         ))}
       </div>
+
+      {/* Stage badge */}
       {stage && stageStyle && (
-        <div className="rounded-xl border border-gray-100 p-4 min-w-[160px]" style={{ backgroundColor: stageStyle.bg }}>
-          <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: stageStyle.text }}>{stage}</p>
-          <p className="text-xs" style={{ color: stageStyle.text, opacity: 0.85 }}>
-            {pahPct ? `${pahPct.toFixed(1)}% of PAH` : ''}
+        <div className="rounded-xl border border-gray-100 p-5 min-w-[180px] max-w-[220px]"
+          style={{ backgroundColor: stageStyle.bg }}>
+          <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: stageStyle.text }}>
+            {stage}
+          </p>
+          {pahPct && (
+            <p className="text-2xl font-bold mb-2" style={{ color: stageStyle.text }}>
+              {pahPct.toFixed(1)}%
+            </p>
+          )}
+          <p className="text-xs leading-relaxed" style={{ color: stageStyle.text }}>
+            {STAGE_EXPLAINER[stage]}
           </p>
         </div>
       )}
@@ -155,165 +219,121 @@ function MaturationSection({ athlete, maturationEntries }) {
   );
 }
 
-// ─── 2. RAG Rating Summary ─────────────────────────────────────────────────────
+// ─── Section 3: Physio Screen ────────────────────────────────────────────────
 
-const WORKING_ON_FOR = (domain, phase2) => {
-  if (domain === 'psych')      return phase2?.psych?.workingOn;
-  if (domain === 'nutrition')  return phase2?.nutrition?.workingOn;
-  if (domain === 'physical')   return phase2?.physical?.workingOn;
-  if (domain === 'lifestyle')  return phase2?.lifestyle?.workingOn;
-  return null;
-};
-
-function RagSummarySection({ athlete, phase2 }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {RAG_DOMAINS.map(({ key, label }) => {
-        const status     = athlete.rag?.[key] || 'grey';
-        const cfg        = RAG_CONFIG[status];
-        const workingOn  = WORKING_ON_FOR(key, phase2) || [];
-        const hasAny     = workingOn.some(c => c.title || c.description);
-
-        return (
-          <div key={key} className="border border-gray-100 rounded-xl p-4 space-y-3">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-gray-700">{label}</span>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
-                <span className="text-xs font-medium text-gray-600">{cfg.label}</span>
-              </div>
-            </div>
-            {/* Working On areas */}
-            {hasAny ? (
-              <div className="space-y-2">
-                {workingOn.map((card, i) => (
-                  card.title || card.description ? (
-                    <div key={i} className="text-xs">
-                      {card.title && <p className="font-semibold text-gray-700">{card.title}</p>}
-                      {card.description && <p className="text-gray-500 leading-relaxed">{card.description}</p>}
-                    </div>
-                  ) : null
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs italic text-gray-300">No areas recorded yet.</p>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── 3. Physio Findings ────────────────────────────────────────────────────────
-
-function PhysioFindingsSection({ physioEntries }) {
-  if (!physioEntries?.length) return <NoData />;
-
-  const sorted = [...physioEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
-  const entry  = sorted[0];
-
-  const assessor  = entry.assessor || entry.staff || '—';
-  const noteType  = entry.noteType || (entry.metric ? 'Screen' : null);
-  const noteText  = entry.notes || (entry.metric ? `${entry.metric}${entry.value ? ': ' + entry.value : ''}` : '—');
+function PhysioSection({ physioEntries }) {
+  const assessments = (physioEntries || []).filter(e => e.noteType === 'Assessment');
+  if (!assessments.length) {
+    return <NoAssessment msg="No physio assessment recorded yet." />;
+  }
+  const entry    = [...assessments].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  const assessor = entry.assessor || entry.staff || '—';
+  const noteText = entry.notes || '—';
 
   return (
-    <div className="border border-gray-100 rounded-xl p-4 space-y-2">
+    <div className="border border-gray-100 rounded-xl p-5 space-y-3">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-xs font-semibold text-gray-700">{formatShortDate(entry.date)}</span>
-        <span className="text-xs text-gray-400">{assessor}</span>
-        {noteType && (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded"
-            style={{ backgroundColor: 'rgba(67,126,141,0.1)', color: '#085777' }}>
-            {noteType}
-          </span>
-        )}
+        <span className="text-sm font-semibold text-gray-700">{formatShortDate(entry.date)}</span>
+        <span className="text-xs text-gray-500">{assessor}</span>
+        <NoteTag type={entry.noteType} />
       </div>
-      <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">{noteText}</p>
+      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{noteText}</p>
     </div>
   );
 }
 
-// ─── 4. Performance Testing ────────────────────────────────────────────────────
+// ─── Sections 4 & 5: Pillar Assessment (Lifestyle / Nutrition) ───────────────
 
-function formatPerfVal(metricKey, entry) {
-  if (!entry) return '—';
-  if (entry.left != null || entry.right != null) {
-    const l = entry.left  != null ? entry.left  : '—';
-    const r = entry.right != null ? entry.right : '—';
-    return `L: ${l} / R: ${r}`;
-  }
-  if (entry.value != null) {
-    const meta = PERFORMANCE_METRICS[metricKey];
-    return meta?.unit ? `${entry.value} ${meta.unit}` : `${entry.value}`;
-  }
-  // multi-field entries (sprint splits, bleep, etc.)
-  const parts = [];
-  if (entry.split5m  != null) parts.push(`5m: ${entry.split5m}s`);
-  if (entry.split10m != null) parts.push(`10m: ${entry.split10m}s`);
-  if (entry.split20m != null) parts.push(`20m: ${entry.split20m}s`);
-  if (entry.split30m != null) parts.push(`30m: ${entry.split30m}s`);
-  if (entry.level    != null) parts.push(`Level ${entry.level}.${entry.shuttle ?? 0}`);
-  if (entry.vo2max   != null) parts.push(`VO₂max: ${entry.vo2max}`);
-  return parts.join(' / ') || '—';
+function PillarAssessmentSection({ entries, emptyMsg }) {
+  const assessments = (entries || []).filter(e => e.entryType === 'Assessment');
+  if (!assessments.length) return <NoAssessment msg={emptyMsg} />;
+
+  const entry = [...assessments].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+
+  return (
+    <div className="border border-gray-100 rounded-xl p-5 space-y-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm font-semibold text-gray-700">{formatTimestamp(entry.timestamp)}</span>
+        <span className="text-xs text-gray-500">{entry.staff || '—'}</span>
+        <NoteTag type={entry.entryType} />
+      </div>
+      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note || '—'}</p>
+    </div>
+  );
 }
 
-const BRAG_COLORS = {
-  grey:  { bg: '#e5e7eb', text: '#374151' },
-  blue:  { bg: '#dbeafe', text: '#1d4ed8' },
-  green: { bg: '#dcfce7', text: '#15803d' },
-  amber: { bg: '#fef3c7', text: '#92400e' },
-  red:   { bg: '#fee2e2', text: '#b91c1c' },
-};
+// ─── Section 6: Performance Testing ──────────────────────────────────────────
 
-function PerformanceTestingSection({ performanceEntries, bragRatings, onSaveBrag }) {
+function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag }) {
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
 
-  const handleBragChange = (metricKey, color) => {
-    setLocalBrag(prev => ({ ...prev, [metricKey]: color }));
-    onSaveBrag?.(metricKey, color);
+  const handleBragChange = (key, color) => {
+    setLocalBrag(prev => ({ ...prev, [key]: color }));
+    onSaveBrag?.(key, color);
   };
 
-  // Collect metric keys that have at least one entry
   const metricKeys = Object.keys(performanceEntries || {})
     .filter(k => (performanceEntries[k] || []).length > 0);
 
-  if (metricKeys.length === 0) return <NoData />;
+  if (!metricKeys.length) {
+    return <NoAssessment msg="No performance data recorded yet." />;
+  }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="border border-gray-100 rounded-xl overflow-hidden">
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr style={{ backgroundColor: '#f9fafb' }}>
-            <th className="px-3 py-2 text-left font-semibold text-gray-500">Metric</th>
-            <th className="px-3 py-2 text-left font-semibold text-gray-500">Previous</th>
-            <th className="px-3 py-2 text-left font-semibold text-gray-500">Current</th>
-            <th className="px-3 py-2 text-center font-semibold text-gray-500 w-36 no-print">BRAG Rating</th>
-            <th className="px-3 py-2 text-center font-semibold text-gray-500 w-20 print-only" style={{ display: 'none' }}>BRAG</th>
+            {['Metric', 'Previous', 'Current', 'Change', 'BRAG Rating'].map(h => (
+              <th key={h} className="px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wide text-xs border-b border-gray-100">
+                {h}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {metricKeys.map(key => {
-            const list    = [...(performanceEntries[key] || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
-            const current  = list[0] || null;
-            const previous = list[1] || null;
-            const brag     = localBrag[key] || 'grey';
-            const bragStyle = BRAG_COLORS[brag] || BRAG_COLORS.grey;
-            const meta     = PERFORMANCE_METRICS[key];
-            const label    = meta?.label || key;
+          {metricKeys.map((key, ri) => {
+            const list     = [...(performanceEntries[key] || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+            const current  = list[0] ?? null;
+            const previous = list[1] ?? null;
+            const mDef     = METRIC_MAP[key];
+            const label    = LABEL_OVERRIDES[key] || mDef?.label || key;
+            const unit     = mDef?.unit ? ` ${mDef.unit}` : '';
+            const lowerBetter = LOWER_IS_BETTER.has(key);
+
+            // Change calculation
+            const currScalar = extractScalar(current);
+            const prevScalar = extractScalar(previous);
+            let changeNode   = <span className="text-gray-300">—</span>;
+            if (currScalar != null && prevScalar != null && prevScalar !== 0) {
+              const absChange = currScalar - prevScalar;
+              const pctChange = (absChange / Math.abs(prevScalar)) * 100;
+              const improved  = lowerBetter ? absChange < 0 : absChange > 0;
+              const color     = absChange === 0 ? '#6b7280' : improved ? '#15803d' : '#b91c1c';
+              const sign      = absChange > 0 ? '+' : '';
+              changeNode = (
+                <span style={{ color, fontWeight: 600 }}>
+                  {sign}{absChange.toFixed(1)}{unit} ({sign}{pctChange.toFixed(1)}%)
+                </span>
+              );
+            }
+
+            // BRAG
+            const brag    = localBrag[key] || 'grey';
+            const bragOpt = BRAG_OPTIONS.find(o => o.value === brag) || BRAG_OPTIONS[0];
 
             return (
-              <tr key={key} className="border-t border-gray-50">
-                <td className="px-3 py-2.5 font-medium text-gray-700">{label}</td>
-                <td className="px-3 py-2.5 text-gray-400">{formatPerfVal(key, previous)}</td>
-                <td className="px-3 py-2.5 text-gray-700">{formatPerfVal(key, current)}</td>
-                <td className="px-3 py-2.5 text-center no-print">
+              <tr key={key} style={{ backgroundColor: ri % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                <td className="px-4 py-3 font-medium text-gray-800">{label}</td>
+                <td className="px-4 py-3 text-gray-400">{fmtEntry(previous, mDef)}</td>
+                <td className="px-4 py-3 text-gray-800 font-medium">{fmtEntry(current, mDef)}</td>
+                <td className="px-4 py-3">{changeNode}</td>
+                <td className="px-4 py-3">
                   <select
                     value={brag}
                     onChange={e => handleBragChange(key, e.target.value)}
                     className="text-xs font-semibold px-2 py-1 rounded border-0 focus:outline-none cursor-pointer"
-                    style={{ backgroundColor: bragStyle.bg, color: bragStyle.text }}
+                    style={{ backgroundColor: bragOpt.bg, color: bragOpt.text }}
                   >
                     {BRAG_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -329,7 +349,49 @@ function PerformanceTestingSection({ performanceEntries, bragRatings, onSaveBrag
   );
 }
 
-// ─── Main export ───────────────────────────────────────────────────────────────
+// ─── Section 7: Areas to Address ─────────────────────────────────────────────
+
+const PILLARS = [
+  { key: 'physical',  label: 'Physical',     workingOnPath: p2 => p2?.physical?.workingOn },
+  { key: 'psych',     label: 'Psychological', workingOnPath: p2 => p2?.psych?.workingOn },
+  { key: 'nutrition', label: 'Nutritional',  workingOnPath: p2 => p2?.nutrition?.workingOn },
+  { key: 'lifestyle', label: 'Lifestyle',    workingOnPath: p2 => p2?.lifestyle?.workingOn },
+];
+
+function AreasToAddressSection({ phase2 }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {PILLARS.map(({ key, label, workingOnPath }) => {
+        const items = (workingOnPath(phase2) || []).filter(c => c.title || c.description);
+        return (
+          <div key={key} className="border border-gray-100 rounded-xl p-5">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-gray-600 mb-3 pb-2 border-b border-gray-50">
+              {label}
+            </h3>
+            {items.length > 0 ? (
+              <div className="space-y-3">
+                {items.map((card, i) => (
+                  <div key={i}>
+                    {card.title && (
+                      <p className="text-xs font-semibold text-gray-800 mb-0.5">{card.title}</p>
+                    )}
+                    {card.description && (
+                      <p className="text-xs text-gray-500 leading-relaxed">{card.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs italic text-gray-300">—</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   const handlePrint = () => {
@@ -347,14 +409,9 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
         restorations.push({ canvas, img });
       } catch (_) { /* cross-origin canvas: skip */ }
     });
-
     window.addEventListener('afterprint', () => {
-      restorations.forEach(({ canvas, img }) => {
-        canvas.style.display = '';
-        img.remove();
-      });
+      restorations.forEach(({ canvas, img }) => { canvas.style.display = ''; img.remove(); });
     }, { once: true });
-
     window.print();
   };
 
@@ -363,9 +420,10 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
 
   return (
     <div>
+      {/* Print button */}
       <div className="flex justify-end mb-6 no-print">
         <button onClick={handlePrint}
-          className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg hover:opacity-90"
+          className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg hover:opacity-90 transition-opacity"
           style={{ backgroundColor: '#A58D69' }}>
           <Download size={15} /> Download Report
         </button>
@@ -373,31 +431,36 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
 
       <div id="report-content" className="bg-white rounded-xl border border-gray-100 p-10 max-w-4xl mx-auto">
 
-        {/* Header */}
-        <div className="flex items-start justify-between pb-6 mb-8 border-b-2" style={{ borderColor: '#A58D69' }}>
+        {/* ── Section 1: Header ────────────────────────────────────── */}
+        <div className="flex items-start justify-between pb-7 mb-10 border-b-2" style={{ borderColor: '#A58D69' }}>
           <div className="flex items-center gap-5">
-            <div className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center" style={{ backgroundColor: '#111827' }}>
+            <div className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0"
+              style={{ backgroundColor: '#111827' }}>
               {athlete.photo
                 ? <img src={athlete.photo} alt={athlete.name} className="w-full h-full object-cover" />
                 : <InitialsAvatar name={athlete.name} size="xl" />}
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#A58D69' }}>ProPath Academy · Abu Dhabi</p>
+              <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#A58D69' }}>
+                ProPath Academy · Abu Dhabi
+              </p>
               <h1 className="text-2xl font-bold text-gray-900">{athlete.name}</h1>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide"
-                  style={{ backgroundColor: cohortStyle.bg, color: cohortStyle.text }}>{athlete.cohort || 'Elite'}</span>
+                  style={{ backgroundColor: cohortStyle.bg, color: cohortStyle.text }}>
+                  {athlete.cohort || 'Elite'}
+                </span>
                 <span className="text-sm text-gray-500">{athlete.sport}</span>
               </div>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Date of Report</p>
+          <div className="text-right shrink-0">
+            <p className="text-xs text-gray-400 mb-0.5">Date of Report</p>
             <p className="text-sm font-semibold text-gray-700">{today}</p>
           </div>
         </div>
 
-        {/* 1. Maturation */}
+        {/* ── Section 2: Maturation ───────────────────────────────── */}
         <Section title="Maturation">
           <MaturationSection
             athlete={athlete}
@@ -405,23 +468,39 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           />
         </Section>
 
-        {/* 2. RAG Rating Summary */}
-        <Section title="RAG Rating Summary">
-          <RagSummarySection athlete={athlete} phase2={phase2} />
+        {/* ── Section 3: Physio Screen ────────────────────────────── */}
+        <Section title="Physio Screen">
+          <PhysioSection physioEntries={phase2?.physio?.entries} />
         </Section>
 
-        {/* 3. Physio Findings */}
-        <Section title="Physio Findings">
-          <PhysioFindingsSection physioEntries={phase2?.physio?.entries} />
+        {/* ── Section 4: Lifestyle ────────────────────────────────── */}
+        <Section title="Lifestyle">
+          <PillarAssessmentSection
+            entries={athlete.ragLog?.lifestyle}
+            emptyMsg="No lifestyle assessment recorded yet."
+          />
         </Section>
 
-        {/* 4. Performance Testing */}
+        {/* ── Section 5: Nutrition ────────────────────────────────── */}
+        <Section title="Nutrition">
+          <PillarAssessmentSection
+            entries={athlete.ragLog?.nutrition}
+            emptyMsg="No nutrition assessment recorded yet."
+          />
+        </Section>
+
+        {/* ── Section 6: Performance Testing ─────────────────────── */}
         <Section title="Performance Testing">
-          <PerformanceTestingSection
+          <PerformanceSection
             performanceEntries={phase2?.performance?.entries || {}}
             bragRatings={phase2?.performanceBrag || {}}
             onSaveBrag={onSaveBrag}
           />
+        </Section>
+
+        {/* ── Section 7: Areas to Address ────────────────────────── */}
+        <Section title="Areas to Address">
+          <AreasToAddressSection phase2={phase2} />
         </Section>
 
       </div>

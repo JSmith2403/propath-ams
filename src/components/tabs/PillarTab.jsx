@@ -3,7 +3,7 @@ import { Star } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
-const DEFAULT_ENTRY_TYPES = ['General note', 'Quarterly Review', 'Check in', 'Testing', 'Baseline', 'Camp debrief'];
+const DEFAULT_ENTRY_TYPES = ['Assessment', 'Check-in', 'Observation'];
 
 function within4Months(timestamp) {
   const cutoff = new Date();
@@ -97,7 +97,7 @@ export default function PillarTab({
 
   const [staff, setStaff] = useState('');
   const [note, setNote] = useState('');
-  const [entryType, setEntryType] = useState('General note');
+  const [entryType, setEntryType] = useState('Assessment');
   const [entryRag, setEntryRag] = useState(status);   // per-entry RAG rating
   const [sessionDate, setSessionDate] = useState(todayStr);
   const [flashId, setFlashId] = useState(null);
@@ -139,7 +139,7 @@ export default function PillarTab({
     onAddEntry({ staff: staff.trim(), note: note.trim(), entryType, status: entryRag, sessionDate });
     setStaff('');
     setNote('');
-    setEntryType('General note');
+    setEntryType('Assessment');
     setSessionDate(todayStr());
     // keep entryRag — practitioner's last rating is a sensible default for next entry
   };
