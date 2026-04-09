@@ -275,6 +275,7 @@ export default function AthleteProfile({
           <PerformanceTestingTab
             athlete={localAthlete}
             entries={p2.performance?.entries || {}}
+            maturationEntries={p2.maturation?.entries || []}
             bragRatings={p2.performanceBrag || {}}
             onSaveBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}
             onAddEntry={(metric, entry) => onAddPerformanceEntry(localAthlete.id, metric, entry)}
