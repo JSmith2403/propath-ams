@@ -20,6 +20,7 @@ export default function App() {
     savePsychWorkingOn, saveNutritionWorkingOn,
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
     updateLatestEntry,
+    deleteRagEntry, deletePhysioEntry,
     syncSessionData,
     addCheckIn,
   } = useAthletes();
@@ -121,6 +122,8 @@ export default function App() {
             onSaveLifestyleWorkingOn={saveLifestyleWorkingOn}
             onSavePerformanceBrag={savePerformanceBrag}
             onAddCheckIn={addCheckIn}
+            onDeleteRagEntry={deleteRagEntry}
+            onDeletePhysioEntry={deletePhysioEntry}
           />
         )}
 

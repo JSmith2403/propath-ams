@@ -72,6 +72,7 @@ export default function AthleteProfile({
   onSavePsychWorkingOn, onSaveNutritionWorkingOn,
   onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag,
   onAddCheckIn,
+  onDeleteRagEntry, onDeletePhysioEntry,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [localAthlete, setLocalAthlete] = useState(athlete);
@@ -146,6 +147,28 @@ export default function AthleteProfile({
       phase2: { ...a.phase2, nutrition: { ...a.phase2?.nutrition, workingOn } },
     }));
     onSaveNutritionWorkingOn(localAthlete.id, workingOn);
+  };
+
+  const handleDeleteRagEntry = (domain, entryId) => {
+    setLocalAthlete(a => ({
+      ...a,
+      ragLog: {
+        ...a.ragLog,
+        [domain]: (a.ragLog?.[domain] || []).filter(e => e.id !== entryId),
+      },
+    }));
+    onDeleteRagEntry(localAthlete.id, domain, entryId);
+  };
+
+  const handleDeletePhysioEntry = (entryId) => {
+    setLocalAthlete(a => ({
+      ...a,
+      phase2: {
+        ...a.phase2,
+        physio: { entries: (a.phase2?.physio?.entries || []).filter(e => e.id !== entryId) },
+      },
+    }));
+    onDeletePhysioEntry(localAthlete.id, entryId);
   };
 
   const handleAddCheckIn = (entry) => {
@@ -232,6 +255,7 @@ export default function AthleteProfile({
           logEntries={localAthlete.ragLog?.[domain] || []}
           onStatusChange={status => handleStatusChange(domain, status)}
           onAddEntry={data => handleAddRagEntry(domain, data)}
+          onDeleteEntry={entryId => handleDeleteRagEntry(domain, entryId)}
           highlightEntryId={highlightEntry?.domain === domain ? highlightEntry.entryId : null}
           onClearHighlight={() => setHighlightEntry(null)}
           preContent={preContent}
@@ -288,6 +312,7 @@ export default function AthleteProfile({
           <PhysioTab
             entries={p2.physio?.entries || []}
             onAddEntry={entry => onAddPhysioEntry(localAthlete.id, entry)}
+            onDeleteEntry={handleDeletePhysioEntry}
           />
         );
       case 'report':

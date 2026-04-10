@@ -286,6 +286,21 @@ export function useAthletes() {
       checkIns: [entry, ...(a.checkIns || [])],
     })), [update]);
 
+  const deleteRagEntry = useCallback((id, domain, entryId) =>
+    update(id, a => ({
+      ...a,
+      ragLog: {
+        ...a.ragLog,
+        [domain]: (a.ragLog?.[domain] || []).filter(e => e.id !== entryId),
+      },
+    })), [update]);
+
+  const deletePhysioEntry = useCallback((id, entryId) =>
+    p2update(id, p2 => ({
+      ...p2,
+      physio: { entries: (p2.physio?.entries || []).filter(e => e.id !== entryId) },
+    })), [p2update]);
+
   const savePerformanceBrag = useCallback((id, metricKey, color) =>
     p2update(id, p2 => ({
       ...p2,
@@ -421,6 +436,8 @@ export function useAthletes() {
     savePsychWorkingOn, saveNutritionWorkingOn,
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
     updateLatestEntry,
+    // Delete operations
+    deleteRagEntry, deletePhysioEntry,
     // Session sync
     syncSessionData,
   };

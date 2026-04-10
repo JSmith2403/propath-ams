@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Star } from 'lucide-react';
+import { Star, Trash2 } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
@@ -21,15 +21,21 @@ function formatTimestamp(iso) {
 }
 
 // ─── Single entry row ────────────────────────────────────────────────────────
-function EntryRow({ entry, flashId, fading }) {
+function EntryRow({ entry, flashId, fading, onDelete }) {
   const config = RAG_CONFIG[entry.status] || RAG_CONFIG.grey;
   const isReview = entry.source === 'quarterly_review';
   const isFlashing = flashId === entry.id;
 
+  const handleDelete = () => {
+    if (window.confirm('Are you sure you want to delete this entry? This cannot be undone.')) {
+      onDelete(entry.id);
+    }
+  };
+
   return (
     <div
       id={`entry-${entry.id}`}
-      className="flex gap-3 py-3 border-b border-gray-50 last:border-0 rounded"
+      className="group flex gap-3 border-b border-gray-50 last:border-0 rounded"
       style={{
         padding: '12px 8px',
         backgroundColor: isFlashing
@@ -61,6 +67,13 @@ function EntryRow({ entry, flashId, fading }) {
           ? <p className="text-sm text-gray-600 leading-relaxed">{entry.note}</p>
           : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
       </div>
+      <button
+        onClick={handleDelete}
+        title="Delete entry"
+        className="shrink-0 self-start mt-0.5 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+      >
+        <Trash2 size={13} />
+      </button>
     </div>
   );
 }
@@ -86,6 +99,7 @@ export default function PillarTab({
   logEntries = [],
   onStatusChange,
   onAddEntry,
+  onDeleteEntry,
   highlightEntryId,
   onClearHighlight,
   extraContent = null,
@@ -170,11 +184,11 @@ export default function PillarTab({
             <p className="text-xs text-gray-400 italic mb-2">No entries in the last 4 months.</p>
           )}
           {recent.map(e => (
-            <EntryRow key={e.id} entry={e} flashId={flashId} fading={fading} />
+            <EntryRow key={e.id} entry={e} flashId={flashId} fading={fading} onDelete={onDeleteEntry} />
           ))}
           {older.length > 0 && <Divider />}
           {older.map(e => (
-            <EntryRow key={e.id} entry={e} flashId={flashId} fading={fading} />
+            <EntryRow key={e.id} entry={e} flashId={flashId} fading={fading} onDelete={onDeleteEntry} />
           ))}
         </>
       )}
