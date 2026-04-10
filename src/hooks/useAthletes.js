@@ -76,7 +76,7 @@ async function persistAthlete(athlete) {
   if (error) console.error('[ProPath] Failed to save athlete', athlete.id, error);
 }
 
-export function useAthletes() {
+export function useAthletes({ seedEnabled = true } = {}) {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -93,14 +93,18 @@ export function useAthletes() {
       }
 
       if (!data || data.length === 0) {
-        // Seed with dummy data on first run
-        const seeded = DUMMY_ATHLETES.map(ensureAthlete);
-        setAthletes(seeded);
-        await Promise.all(
-          seeded.map(a =>
-            supabase.from('athletes').upsert({ id: a.id, data: a, updated_at: new Date().toISOString() })
-          )
-        );
+        if (seedEnabled) {
+          // Seed with dummy data on first admin run
+          const seeded = DUMMY_ATHLETES.map(ensureAthlete);
+          setAthletes(seeded);
+          await Promise.all(
+            seeded.map(a =>
+              supabase.from('athletes').upsert({ id: a.id, data: a, updated_at: new Date().toISOString() })
+            )
+          );
+        } else {
+          setAthletes([]);
+        }
       } else {
         setAthletes(data.map(row => ensureAthlete(row.data)));
       }

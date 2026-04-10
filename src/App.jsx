@@ -4,13 +4,36 @@ import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
 import SessionTracker from './components/SessionTracker';
+import LoginScreen from './components/LoginScreen';
 import { useAthletes } from './hooks/useAthletes';
+import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 
-export default function App() {
-  const [view, setView]               = useState('roster');
-  const [selectedId, setSelectedId]   = useState(null);
-  const [profileNav, setProfileNav]   = useState(null);
+// ── Loading spinner shared by both auth and data loading states ───────────────
+function LoadingSpinner({ message }) {
+  return (
+    <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#1C1C1C' }}>
+      <div className="flex flex-col items-center gap-4">
+        <div
+          className="w-10 h-10 rounded-full border-4 animate-spin"
+          style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: '#A58D69' }}
+        />
+        {message && (
+          <p className="text-sm font-medium" style={{ color: '#A58D69' }}>{message}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main app — only mounted when a valid session exists ───────────────────────
+function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
+  const isExternal = role === 'external';
+
+  const [view,       setView]       = useState('roster');
+  const [selectedId, setSelectedId] = useState(null);
+  const [profileNav, setProfileNav] = useState(null);
+
   const {
     athletes, loading, getAthlete,
     addAthlete, updateAthlete, updateRag, addRagEntry,
@@ -23,14 +46,12 @@ export default function App() {
     deleteRagEntry, deletePhysioEntry,
     syncSessionData,
     addCheckIn,
-  } = useAthletes();
+  } = useAthletes({ seedEnabled: !isExternal });
 
-  // Re-sync all saved sessions once after athletes have loaded.
-  // This ensures phase2 performance entries are populated even for sessions
-  // saved before syncSessionData existed, or sessions with L/R cell formats.
+  // Re-sync all saved sessions once after athletes load (admin/co_admin only).
   const initialSyncDone = useRef(false);
   useEffect(() => {
-    if (loading || initialSyncDone.current) return;
+    if (loading || initialSyncDone.current || isExternal) return;
     initialSyncDone.current = true;
     supabase.from('sessions').select('data').then(({ data }) => {
       if (!data) return;
@@ -40,10 +61,36 @@ export default function App() {
     });
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Redirect external users away from admin-only views.
+  useEffect(() => {
+    if (isExternal && (view === 'dataentry' || view === 'sessions')) {
+      setView('roster');
+    }
+  }, [isExternal, view]);
+
+  if (loading) return <LoadingSpinner message="Loading ProPath…" />;
+
+  // External providers only see their allocated athletes.
+  const visibleAthletes = isExternal
+    ? athletes.filter(a => allocations.includes(a.id))
+    : athletes;
+
+  // External providers cannot delete notes.
+  const canDelete = !isExternal;
+
   const handleNavigate = (v) => {
+    if (isExternal && (v === 'dataentry' || v === 'sessions')) return;
     setView(v);
-    if (v === 'roster') { setSelectedId(null); }
+    if (v === 'roster') setSelectedId(null);
   };
+
+  const handleSelectAthlete = (id) => {
+    if (isExternal && !allocations.includes(id)) return;
+    setSelectedId(id);
+    setView('profile');
+  };
+
+  const handleBack = () => { setView('roster'); setSelectedId(null); };
 
   const PILLAR_TAB_MAP = {
     psych:     'rag-psych',
@@ -62,47 +109,42 @@ export default function App() {
     setView('profile');
   };
 
-  const handleSelectAthlete = id => { setSelectedId(id); setView('profile'); };
-  const handleBack = () => { setView('roster'); setSelectedId(null); };
   const selectedAthlete = selectedId ? getAthlete(selectedId) : null;
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#111827' }}>
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin"
-            style={{ borderColor: '#A58D69', borderTopColor: 'transparent' }}
-          />
-          <p className="text-sm font-medium" style={{ color: '#A58D69' }}>Loading ProPath…</p>
-        </div>
-      </div>
-    );
-  }
+  // Guard: if an external user somehow has an unallocated athlete selected,
+  // treat it as no selection (component won't render).
+  const accessibleAthlete =
+    selectedAthlete && isExternal && !allocations.includes(selectedAthlete.id)
+      ? null
+      : selectedAthlete;
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
       <Sidebar
         view={view}
         onNavigate={handleNavigate}
+        role={role}
+        userEmail={userEmail}
+        onSignOut={signOut}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
+
         {view === 'roster' && (
           <AthleteRoster
-            athletes={athletes}
+            athletes={visibleAthletes}
             onSelectAthlete={handleSelectAthlete}
-            onAddAthlete={addAthlete}
+            onAddAthlete={canDelete ? addAthlete : undefined}
           />
         )}
 
-        {view === 'profile' && selectedAthlete && (
+        {view === 'profile' && accessibleAthlete && (
           <AthleteProfile
             key={selectedId + '-' + (profileNav?.navId || '0')}
-            athlete={selectedAthlete}
+            athlete={accessibleAthlete}
             initialTab={profileNav?.tab}
             initialHighlight={profileNav?.highlight}
-            allAthletes={athletes}
+            allAthletes={visibleAthletes}
             onBack={handleBack}
             onUpdate={updateAthlete}
             onUpdateRag={updateRag}
@@ -122,12 +164,12 @@ export default function App() {
             onSaveLifestyleWorkingOn={saveLifestyleWorkingOn}
             onSavePerformanceBrag={savePerformanceBrag}
             onAddCheckIn={addCheckIn}
-            onDeleteRagEntry={deleteRagEntry}
-            onDeletePhysioEntry={deletePhysioEntry}
+            onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
+            onDeletePhysioEntry={canDelete ? deletePhysioEntry : undefined}
           />
         )}
 
-        {view === 'dataentry' && (
+        {view === 'dataentry' && !isExternal && (
           <DataEntryView
             athletes={athletes}
             syncSessionData={syncSessionData}
@@ -136,13 +178,32 @@ export default function App() {
           />
         )}
 
-        {view === 'sessions' && (
+        {view === 'sessions' && !isExternal && (
           <SessionTracker
             athletes={athletes}
             onNavigateToNote={handleNavigateToNote}
           />
         )}
+
       </main>
     </div>
+  );
+}
+
+// ── Root — handles auth gate before rendering the app ─────────────────────────
+export default function App() {
+  const { session, user, role, allocations, loading, signIn, signOut } = useAuth();
+
+  if (loading) return <LoadingSpinner />;
+
+  if (!session) return <LoginScreen onSignIn={signIn} />;
+
+  return (
+    <AuthenticatedApp
+      role={role}
+      allocations={allocations}
+      userEmail={user?.email}
+      signOut={signOut}
+    />
   );
 }

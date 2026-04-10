@@ -158,17 +158,19 @@ export default function PhysioTab({ entries = [], onAddEntry, onDeleteEntry }) {
                   <span className="text-sm font-semibold text-gray-700">{formatDate(entry.date)}</span>
                   <span className="text-xs text-gray-400">{assessor}</span>
                   {noteType && <NoteTypeTag type={noteType} />}
-                  <button
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to delete this entry? This cannot be undone.')) {
-                        onDeleteEntry?.(entry.id);
-                      }
-                    }}
-                    title="Delete entry"
-                    className="ml-auto p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  {onDeleteEntry && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this entry? This cannot be undone.')) {
+                          onDeleteEntry(entry.id);
+                        }
+                      }}
+                      title="Delete entry"
+                      className="ml-auto p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
                 <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{noteText}</p>
               </div>

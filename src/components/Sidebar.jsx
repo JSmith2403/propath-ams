@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database } from 'lucide-react';
+import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut } from 'lucide-react';
 
 const Logo = () => (
   <div
@@ -73,9 +73,16 @@ const SubNavItem = ({ label, active, onClick }) => (
   </div>
 );
 
-export default function Sidebar({ view = 'roster', onNavigate = () => {} }) {
+export default function Sidebar({
+  view = 'roster',
+  onNavigate = () => {},
+  role,
+  userEmail,
+  onSignOut,
+}) {
   const isRoster    = view === 'roster' || view === 'profile';
   const isDataEntry = view === 'dataentry';
+  const isExternal  = role === 'external';
 
   return (
     <aside
@@ -104,29 +111,55 @@ export default function Sidebar({ view = 'roster', onNavigate = () => {} }) {
           />
         </NavItem>
 
-        <NavItem
-          icon={Database}
-          label="Data Entry"
-          active={isDataEntry}
-          onClick={() => onNavigate('dataentry')}
-        />
+        {!isExternal && (
+          <NavItem
+            icon={Database}
+            label="Data Entry"
+            active={isDataEntry}
+            onClick={() => onNavigate('dataentry')}
+          />
+        )}
 
-        <div className="px-6 mt-4 mb-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Modules</p>
-        </div>
+        {!isExternal && (
+          <>
+            <div className="px-6 mt-4 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Modules</p>
+            </div>
 
-        <NavItem icon={Heart}     label="Wellness"  disabled />
-        <NavItem
-          icon={Calendar}
-          label="Sessions"
-          active={view === 'sessions'}
-          onClick={() => onNavigate('sessions')}
-        />
+            <NavItem icon={Heart} label="Wellness" disabled />
+
+            <NavItem
+              icon={Calendar}
+              label="Sessions"
+              active={view === 'sessions'}
+              onClick={() => onNavigate('sessions')}
+            />
+          </>
+        )}
       </nav>
 
-      <div className="px-6 py-4 border-t border-white/10">
-        <p className="text-xs text-white/25">ProPath Academy</p>
-        <p className="text-xs text-white/20">Abu Dhabi · Phase 1</p>
+      {/* ── Footer: user info + logout ── */}
+      <div className="px-5 py-4 border-t border-white/10">
+        {userEmail && (
+          <p className="text-xs text-white/35 truncate mb-3" title={userEmail}>
+            {userEmail}
+          </p>
+        )}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-white/25">ProPath Academy</p>
+            <p className="text-xs text-white/20">Abu Dhabi · Phase 1</p>
+          </div>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              title="Sign out"
+              className="p-1.5 rounded transition-colors text-white/30 hover:text-white/70 hover:bg-white/5"
+            >
+              <LogOut size={14} />
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   );

@@ -27,6 +27,7 @@ function EntryRow({ entry, flashId, fading, onDelete }) {
   const isFlashing = flashId === entry.id;
 
   const handleDelete = () => {
+    if (!onDelete) return;
     if (window.confirm('Are you sure you want to delete this entry? This cannot be undone.')) {
       onDelete(entry.id);
     }
@@ -67,13 +68,15 @@ function EntryRow({ entry, flashId, fading, onDelete }) {
           ? <p className="text-sm text-gray-600 leading-relaxed">{entry.note}</p>
           : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
       </div>
-      <button
-        onClick={handleDelete}
-        title="Delete entry"
-        className="shrink-0 self-start mt-0.5 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-      >
-        <Trash2 size={13} />
-      </button>
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          title="Delete entry"
+          className="shrink-0 self-start mt-0.5 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
     </div>
   );
 }
