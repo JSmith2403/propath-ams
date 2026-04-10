@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import logo from '../assets/Propath_Primary Logo_White.png';
 
-// Shared input style — mirrors LoginScreen
 const inputStyle = {
   width: '100%',
   boxSizing: 'border-box',
@@ -30,17 +29,71 @@ const labelStyle = {
 
 /**
  * Shown when the user arrives via a password-reset or invite link.
- * Lets them set (or confirm) their password, then signs them out
- * and redirects to the login screen.
  *
- * onDone — called after sign-out so App clears the intercept flag.
+ * On mount this component explicitly reads the access_token and refresh_token
+ * from the URL hash and calls supabase.auth.setSession() directly. This is
+ * required because mobile in-app browsers (Mail.app, Gmail app, etc.) do not
+ * reliably persist the session that Supabase's detectSessionInUrl establishes
+ * in memory across the page-load → form-submit lifecycle, causing updateUser()
+ * to fail with "Auth session missing".
+ *
+ * onDone — called after sign-out so App clears the needsPasswordSet flag.
  */
 export default function ResetPasswordScreen({ onDone }) {
-  const [password,  setPassword]  = useState('');
-  const [confirm,   setConfirm]   = useState('');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [succeeded, setSucceeded] = useState(false);
+  // 'verifying' | 'ready' | 'link_error'
+  const [stage,    setStage]    = useState('verifying');
+  const [linkError, setLinkError] = useState('');
+
+  const [password, setPassword] = useState('');
+  const [confirm,  setConfirm]  = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+
+  useEffect(() => {
+    async function establishSession() {
+      // ── Step 1: try to use tokens from the URL hash ──────────────────────
+      // Supabase always puts invite/recovery tokens in the fragment as:
+      //   #access_token=AAA&refresh_token=BBB&type=invite
+      // Reading and applying them here makes the flow reliable on mobile
+      // in-app browsers that may not persist the session to storage.
+      const hash   = window.location.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      const accessToken  = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        const { error: sessionErr } = await supabase.auth.setSession({
+          access_token:  accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (sessionErr) {
+          setLinkError('This link has expired or has already been used. Please request a new one from your administrator.');
+          setStage('link_error');
+          return;
+        }
+
+        // Remove tokens from the URL bar so they aren't visible or bookmarked
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        setStage('ready');
+        return;
+      }
+
+      // ── Step 2: no hash tokens — check for an existing session ──────────
+      // This covers a page reload after the hash was already cleared above.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setStage('ready');
+        return;
+      }
+
+      // ── Step 3: nothing usable found ────────────────────────────────────
+      setLinkError('This link has expired or is invalid. Please request a new one from your administrator.');
+      setStage('link_error');
+    }
+
+    establishSession();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -64,8 +117,7 @@ export default function ResetPasswordScreen({ onDone }) {
       return;
     }
 
-    // Password set — sign out so they start a clean session at the login screen
-    setSucceeded(true);
+    // Password saved — sign out so they start a clean session at the login screen
     await supabase.auth.signOut();
     onDone();
   };
@@ -95,8 +147,32 @@ export default function ResetPasswordScreen({ onDone }) {
           </p>
         </div>
 
-        {/* ── Form ── */}
-        {!succeeded && (
+        {/* ── Verifying session ── */}
+        {stage === 'verifying' && (
+          <div className="flex justify-center py-4">
+            <div
+              className="w-8 h-8 rounded-full border-4 animate-spin"
+              style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: '#A58D69' }}
+            />
+          </div>
+        )}
+
+        {/* ── Invalid / expired link ── */}
+        {stage === 'link_error' && (
+          <p
+            className="text-sm rounded-lg px-4 py-3 text-center"
+            style={{
+              color: '#fca5a5',
+              backgroundColor: 'rgba(239,68,68,0.1)',
+              fontFamily: 'Arial, sans-serif',
+            }}
+          >
+            {linkError}
+          </p>
+        )}
+
+        {/* ── Password form — only shown once session is confirmed ── */}
+        {stage === 'ready' && (
           <form onSubmit={handleSubmit} className="space-y-4">
 
             <div>
@@ -174,6 +250,7 @@ export default function ResetPasswordScreen({ onDone }) {
         >
           Contact your administrator if you need help.
         </p>
+
       </div>
     </div>
   );
