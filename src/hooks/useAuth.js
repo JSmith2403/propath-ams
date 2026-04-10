@@ -11,6 +11,16 @@ import { supabase } from '../lib/supabase';
  *   invite link — app should show ResetPasswordScreen instead of the main app.
  */
 
+// ── Dev bypass ────────────────────────────────────────────────────────────────
+// import.meta.env.DEV is true only during `vite dev`. Vite replaces it with
+// the literal `false` in production builds, so this branch is tree-shaken
+// and never ships to Vercel.
+const DEV_BYPASS = import.meta.env.DEV;
+
+// Mock session object — just needs a truthy shape with user.email
+const DEV_SESSION = { user: { email: 'dev@localhost' } };
+
+// ── Hash-type capture ─────────────────────────────────────────────────────────
 // Read the hash type BEFORE Supabase's getSession() clears it.
 // Supabase appends  #access_token=...&type=recovery  or  &type=invite
 // to the redirect URL. This IIFE runs once at module import time.
@@ -24,14 +34,19 @@ const _initialHashType = (() => {
 })();
 
 export function useAuth() {
-  const [session,          setSession]          = useState(null);
-  const [role,             setRole]             = useState(null);
-  const [userName,         setUserName]         = useState('');
+  // In dev, seed state with admin values so the app renders immediately
+  // without touching Supabase auth at all.
+  const [session,          setSession]          = useState(DEV_BYPASS ? DEV_SESSION : null);
+  const [role,             setRole]             = useState(DEV_BYPASS ? 'admin' : null);
+  const [userName,         setUserName]         = useState(DEV_BYPASS ? 'Dev Admin' : '');
   const [allocations,      setAllocations]      = useState([]);
-  const [loading,          setLoading]          = useState(true);
+  const [loading,          setLoading]          = useState(!DEV_BYPASS); // false immediately in dev
   const [needsPasswordSet, setNeedsPasswordSet] = useState(false);
 
   useEffect(() => {
+    // Skip all Supabase auth in development — bypass is active
+    if (DEV_BYPASS) return;
+
     // Restore existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       // If the page was opened from a recovery/invite link, getSession will
@@ -109,7 +124,9 @@ export function useAuth() {
   const signIn  = (email, password) =>
     supabase.auth.signInWithPassword({ email, password });
 
-  const signOut = () => supabase.auth.signOut();
+  const signOut = DEV_BYPASS
+    ? () => {} // no-op in dev — bypass stays active for the session
+    : () => supabase.auth.signOut();
 
   // Called by LoginScreen's "Forgot password?" flow.
   // Supabase sends a reset email with a link back to window.location.origin.

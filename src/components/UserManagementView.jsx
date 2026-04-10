@@ -133,7 +133,7 @@ function InviteModal({ onClose, onInvite }) {
   );
 }
 
-// ── Athlete permissions panel (external users only) ───────────────────────────
+// ── Athlete permissions panel (external provider users only) ──────────────────
 function AthletePermissions({ user, athletes, onAdd, onRemove }) {
   const [busy, setBusy] = useState(null);
 
@@ -151,31 +151,27 @@ function AthletePermissions({ user, athletes, onAdd, onRemove }) {
     .map(a => ({ ...a, allocated: user.allocations.includes(a.id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const assignedCount = user.allocations.length;
-
   return (
-    <div className="border-t border-gray-100 px-5 py-4">
+    <div className="border-t border-gray-100 px-5 py-4 bg-gray-50">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
           Athlete Access
         </p>
         <span className="text-xs text-gray-400">
-          {assignedCount} of {athletes.length} assigned
+          {user.allocations.length} of {athletes.length} assigned
         </span>
       </div>
 
       {athletes.length === 0 ? (
         <p className="text-xs text-gray-400 italic">No athletes in the system yet.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 max-h-56 overflow-y-auto">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 max-h-56 overflow-y-auto">
           {sorted.map(athlete => {
             const isBusy = busy === athlete.id;
             return (
               <label
                 key={athlete.id}
-                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors ${
-                  athlete.allocated ? 'bg-[rgba(165,141,105,0.07)]' : 'hover:bg-gray-50'
-                }`}
+                className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors hover:bg-white"
               >
                 <input
                   type="checkbox"
@@ -187,7 +183,7 @@ function AthletePermissions({ user, athletes, onAdd, onRemove }) {
                 />
                 <span
                   className="text-sm truncate"
-                  style={{ color: athlete.allocated ? '#1C1C1C' : '#6b7280' }}
+                  style={{ color: athlete.allocated ? '#1a1a1a' : '#9ca3af' }}
                 >
                   {athlete.name}
                 </span>
@@ -201,26 +197,38 @@ function AthletePermissions({ user, athletes, onAdd, onRemove }) {
   );
 }
 
-// ── User card ─────────────────────────────────────────────────────────────────
-function UserCard({ user, athletes, onAddAllocation, onRemoveAllocation }) {
-  const [expanded, setExpanded] = useState(false);
-  const isExternal = user.role === 'external';
+// ── Full-access panel (admin / co_admin) ──────────────────────────────────────
+function FullAccessPanel() {
+  return (
+    <div className="border-t border-gray-100 px-5 py-4 bg-gray-50">
+      <p className="text-xs text-gray-400 italic">
+        Full access — this user can view and manage all athletes.
+      </p>
+    </div>
+  );
+}
 
+// ── User card ─────────────────────────────────────────────────────────────────
+// isExpanded and onToggle are controlled by the parent so only one card is
+// open at a time.
+function UserCard({ user, athletes, isExpanded, onToggle, onAddAllocation, onRemoveAllocation }) {
+  const isExternal    = user.role === 'external';
   const displayName   = user.fullName || '—';
   const avatarLetter  = (user.fullName || '?').charAt(0).toUpperCase();
 
   return (
     <div
-      className="bg-white rounded-xl border overflow-hidden transition-colors"
+      className="bg-white rounded-xl border overflow-hidden"
       style={{
-        borderColor: expanded ? '#e5e7eb' : '#f3f4f6',
+        borderColor: isExpanded ? '#d1d5db' : '#f3f4f6',
         boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
       }}
     >
-      {/* ── Card header ── */}
-      <div
-        className={`flex items-center gap-4 px-5 py-4 ${isExternal ? 'cursor-pointer' : ''}`}
-        onClick={isExternal ? () => setExpanded(e => !e) : undefined}
+      {/* ── Clickable header ── */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
         {/* Avatar */}
         <div
@@ -231,7 +239,7 @@ function UserCard({ user, athletes, onAddAllocation, onRemoveAllocation }) {
         </div>
 
         {/* Name + role */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 text-left">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-gray-800">{displayName}</span>
             <RoleBadge role={user.role} />
@@ -243,22 +251,24 @@ function UserCard({ user, athletes, onAddAllocation, onRemoveAllocation }) {
           )}
         </div>
 
-        {/* Expand chevron — external only */}
-        {isExternal && (
-          <div className="shrink-0 text-gray-400">
-            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </div>
-        )}
-      </div>
+        {/* Chevron — always visible so all cards appear clickable */}
+        <div className="shrink-0 text-gray-300">
+          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </button>
 
-      {/* ── Athlete permissions panel — external only, inline beneath header ── */}
-      {isExternal && expanded && (
-        <AthletePermissions
-          user={user}
-          athletes={athletes}
-          onAdd={onAddAllocation}
-          onRemove={onRemoveAllocation}
-        />
+      {/* ── Expanded panel ── */}
+      {isExpanded && (
+        isExternal ? (
+          <AthletePermissions
+            user={user}
+            athletes={athletes}
+            onAdd={onAddAllocation}
+            onRemove={onRemoveAllocation}
+          />
+        ) : (
+          <FullAccessPanel />
+        )
       )}
     </div>
   );
@@ -271,7 +281,13 @@ export default function UserManagementView({ athletes = [] }) {
     inviteUser, addAllocation, removeAllocation,
   } = useUserManagement();
 
-  const [showInvite, setShowInvite] = useState(false);
+  const [showInvite,  setShowInvite]  = useState(false);
+  // Only one card open at a time — tracks user.id of the expanded card
+  const [expandedId,  setExpandedId]  = useState(null);
+
+  const handleToggle = (userId) => {
+    setExpandedId(prev => prev === userId ? null : userId);
+  };
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ backgroundColor: '#f4f5f7' }}>
@@ -324,6 +340,8 @@ export default function UserManagementView({ athletes = [] }) {
                     key={user.id}
                     user={user}
                     athletes={athletes}
+                    isExpanded={expandedId === user.id}
+                    onToggle={() => handleToggle(user.id)}
                     onAddAllocation={addAllocation}
                     onRemoveAllocation={removeAllocation}
                   />
