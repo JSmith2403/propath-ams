@@ -6,6 +6,7 @@ import DataEntryView from './components/dataentry/DataEntryView';
 import SessionTracker from './components/SessionTracker';
 import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
+import ResetPasswordScreen from './components/ResetPasswordScreen';
 import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -203,11 +204,22 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
 
 // ── Root — handles auth gate before rendering the app ─────────────────────────
 export default function App() {
-  const { session, user, role, allocations, loading, signIn, signOut } = useAuth();
+  const {
+    session, user, role, allocations, loading,
+    needsPasswordSet, clearNeedsPasswordSet,
+    signIn, signOut, sendPasswordReset,
+  } = useAuth();
 
   if (loading) return <LoadingSpinner />;
 
-  if (!session) return <LoginScreen onSignIn={signIn} />;
+  // Intercept password-reset and invite links before entering the main app.
+  if (needsPasswordSet) {
+    return <ResetPasswordScreen onDone={clearNeedsPasswordSet} />;
+  }
+
+  if (!session) {
+    return <LoginScreen onSignIn={signIn} onResetPassword={sendPasswordReset} />;
+  }
 
   return (
     <AuthenticatedApp

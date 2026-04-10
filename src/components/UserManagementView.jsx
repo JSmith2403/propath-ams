@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { UserPlus, Trash2, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, X } from 'lucide-react';
+import { UserPlus, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useUserManagement } from '../hooks/useUserManagement';
 
 const ROLE_LABELS = { admin: 'Admin', co_admin: 'Co-Admin', external: 'External' };
 
 const ROLE_COLORS = {
-  admin:    { bg: 'rgba(67,126,141,0.12)',   text: '#085777' },
-  co_admin: { bg: 'rgba(165,141,105,0.12)',  text: '#7a6540' },
-  external: { bg: '#f3f4f6',                 text: '#6b7280' },
+  admin:    { bg: 'rgba(67,126,141,0.12)',  text: '#085777' },
+  co_admin: { bg: 'rgba(165,141,105,0.12)', text: '#7a6540' },
+  external: { bg: '#f3f4f6',                text: '#6b7280' },
 };
 
 function RoleBadge({ role }) {
@@ -117,7 +117,7 @@ function InviteModal({ onClose, onInvite }) {
 
 // ── Allocation Manager (expanded inline) ──────────────────────────────────────
 function AllocationManager({ user, athletes, onAdd, onRemove }) {
-  const [busy, setBusy] = useState(null); // athleteId being toggled
+  const [busy, setBusy] = useState(null);
 
   const allocated   = athletes.filter(a => user.allocations.includes(a.id));
   const unallocated = athletes.filter(a => !user.allocations.includes(a.id));
@@ -176,40 +176,34 @@ function AllocationManager({ user, athletes, onAdd, onRemove }) {
 }
 
 // ── User Row ──────────────────────────────────────────────────────────────────
-function UserRow({ user, athletes, onSetActive, onAddAllocation, onRemoveAllocation }) {
-  const [expanded,   setExpanded]   = useState(false);
-  const [togglingActive, setTogglingActive] = useState(false);
-
-  const handleToggleActive = async () => {
-    setTogglingActive(true);
-    try { await onSetActive(user.id, !user.isActive); }
-    finally { setTogglingActive(false); }
-  };
-
+function UserRow({ user, athletes, onAddAllocation, onRemoveAllocation }) {
+  const [expanded, setExpanded] = useState(false);
   const isExternal = user.role === 'external';
 
+  // Display a short identifier from the UUID
+  const shortId = user.id ? user.id.slice(0, 8) : '—';
+
   return (
-    <div className={`bg-white rounded-xl border transition-colors ${expanded ? 'border-gray-200' : 'border-gray-100'}`}
-      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+    <div
+      className={`bg-white rounded-xl border transition-colors ${expanded ? 'border-gray-200' : 'border-gray-100'}`}
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+    >
       <div className="flex items-center gap-4 px-5 py-4">
         {/* Avatar */}
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold font-mono"
           style={{ backgroundColor: 'rgba(165,141,105,0.12)', color: '#A58D69' }}
         >
-          {user.name ? user.name.charAt(0).toUpperCase() : '?'}
+          {shortId.slice(0, 2).toUpperCase()}
         </div>
 
-        {/* Name + email */}
+        {/* ID + role */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-gray-800">{user.name || '—'}</span>
+            <span className="text-sm font-semibold text-gray-800 font-mono">{shortId}</span>
             <RoleBadge role={user.role} />
-            {!user.isActive && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-400">Inactive</span>
-            )}
           </div>
-          <p className="text-xs text-gray-400 truncate mt-0.5">{user.email}</p>
+          <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">{user.id}</p>
         </div>
 
         {/* Allocation count (external only) */}
@@ -219,31 +213,16 @@ function UserRow({ user, athletes, onSetActive, onAddAllocation, onRemoveAllocat
           </span>
         )}
 
-        {/* Controls */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Active toggle */}
+        {/* Expand allocations (external only) */}
+        {isExternal && (
           <button
-            onClick={handleToggleActive}
-            disabled={togglingActive}
-            title={user.isActive ? 'Deactivate user' : 'Reactivate user'}
-            className="p-1 rounded transition-colors disabled:opacity-40"
+            onClick={() => setExpanded(e => !e)}
+            title="Manage allocations"
+            className="p-1 rounded text-gray-400 hover:text-gray-600 transition-colors shrink-0"
           >
-            {user.isActive
-              ? <ToggleRight size={20} style={{ color: '#A58D69' }} />
-              : <ToggleLeft  size={20} className="text-gray-300" />}
+            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-
-          {/* Expand allocations (external only) */}
-          {isExternal && (
-            <button
-              onClick={() => setExpanded(e => !e)}
-              title="Manage allocations"
-              className="p-1 rounded text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {isExternal && expanded && (
@@ -264,16 +243,10 @@ function UserRow({ user, athletes, onSetActive, onAddAllocation, onRemoveAllocat
 export default function UserManagementView({ athletes = [] }) {
   const {
     users, loading, error,
-    inviteUser, setUserActive, addAllocation, removeAllocation,
+    inviteUser, addAllocation, removeAllocation,
   } = useUserManagement();
 
   const [showInvite, setShowInvite] = useState(false);
-  const [inviteError, setInviteError] = useState('');
-
-  const handleInvite = async (data) => {
-    setInviteError('');
-    await inviteUser(data);
-  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -326,7 +299,6 @@ export default function UserManagementView({ athletes = [] }) {
                     key={user.id}
                     user={user}
                     athletes={athletes}
-                    onSetActive={setUserActive}
                     onAddAllocation={addAllocation}
                     onRemoveAllocation={removeAllocation}
                   />
@@ -344,7 +316,7 @@ export default function UserManagementView({ athletes = [] }) {
       {showInvite && (
         <InviteModal
           onClose={() => setShowInvite(false)}
-          onInvite={handleInvite}
+          onInvite={inviteUser}
         />
       )}
     </div>

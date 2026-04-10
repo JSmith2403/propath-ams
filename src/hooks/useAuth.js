@@ -6,16 +6,39 @@ import { supabase } from '../lib/supabase';
  *
  * role:        'admin' | 'co_admin' | 'external'
  * allocations: array of athlete IDs visible to an external provider
+ *
+ * needsPasswordSet: true when the user arrived via a password-reset or
+ *   invite link — app should show ResetPasswordScreen instead of the main app.
  */
+
+// Read the hash type BEFORE Supabase's getSession() clears it.
+// Supabase appends  #access_token=...&type=recovery  or  &type=invite
+// to the redirect URL. This IIFE runs once at module import time.
+const _initialHashType = (() => {
+  try {
+    const hash = window.location.hash.replace(/^#/, '');
+    return new URLSearchParams(hash).get('type'); // 'recovery' | 'invite' | null
+  } catch {
+    return null;
+  }
+})();
+
 export function useAuth() {
-  const [session,     setSession]     = useState(null);
-  const [role,        setRole]        = useState(null);
-  const [allocations, setAllocations] = useState([]);
-  const [loading,     setLoading]     = useState(true);
+  const [session,          setSession]          = useState(null);
+  const [role,             setRole]             = useState(null);
+  const [allocations,      setAllocations]      = useState([]);
+  const [loading,          setLoading]          = useState(true);
+  const [needsPasswordSet, setNeedsPasswordSet] = useState(false);
 
   useEffect(() => {
     // Restore existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // If the page was opened from a recovery/invite link, getSession will
+      // return a session (Supabase exchanged the token). onAuthStateChange
+      // fires synchronously with the right event, so we defer to that handler
+      // and skip the setSession call here to avoid a double-load.
+      if (_initialHashType === 'recovery' || _initialHashType === 'invite') return;
+
       setSession(session);
       if (session?.user) {
         loadProfile(session.user.id);
@@ -24,8 +47,26 @@ export function useAuth() {
       }
     });
 
-    // Keep in sync with sign-in / sign-out events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Keep in sync with sign-in / sign-out / recovery events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        // User arrived via a password-reset email link.
+        // A session exists but we must not let them into the app yet.
+        setSession(session);
+        setNeedsPasswordSet(true);
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'SIGNED_IN' && _initialHashType === 'invite') {
+        // User arrived via an invite email link (Supabase fires SIGNED_IN, not
+        // a dedicated invite event). Intercept before they reach the app.
+        setSession(session);
+        setNeedsPasswordSet(true);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       if (session?.user) {
         loadProfile(session.user.id);
@@ -40,30 +81,13 @@ export function useAuth() {
   }, []);
 
   async function loadProfile(userId) {
-    const [roleRes, profileRes] = await Promise.all([
-      supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
-      supabase.from('user_profiles').select('is_active, name, email').eq('user_id', userId).maybeSingle(),
-    ]);
+    const { data: roleRow } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    const userRole = roleRes.data?.role ?? 'external';
-
-    // If no profile row exists yet, create one (handles existing users pre-Phase-2)
-    if (!profileRes.data) {
-      const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('user_profiles').upsert({
-        user_id:   userId,
-        name:      user?.user_metadata?.name ?? '',
-        email:     user?.email ?? '',
-        is_active: true,
-      });
-    }
-
-    // If the account has been deactivated, sign out immediately
-    if (profileRes.data && profileRes.data.is_active === false) {
-      await supabase.auth.signOut();
-      return;
-    }
-
+    const userRole = roleRow?.role ?? 'external';
     setRole(userRole);
 
     let athleteAllocations = [];
@@ -84,13 +108,28 @@ export function useAuth() {
 
   const signOut = () => supabase.auth.signOut();
 
+  // Called by LoginScreen's "Forgot password?" flow.
+  // Supabase sends a reset email with a link back to window.location.origin.
+  const sendPasswordReset = (email) =>
+    supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin,
+    });
+
+  // Called by ResetPasswordScreen after the password has been updated and
+  // the user has been signed out — clears the intercept flag so App can
+  // re-render the login screen.
+  const clearNeedsPasswordSet = () => setNeedsPasswordSet(false);
+
   return {
     session,
     user:        session?.user ?? null,
     role,
     allocations,
     loading,
+    needsPasswordSet,
     signIn,
     signOut,
+    sendPasswordReset,
+    clearNeedsPasswordSet,
   };
 }

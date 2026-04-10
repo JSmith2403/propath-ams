@@ -88,14 +88,6 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = inviteData.user.id;
 
-    // Create user_profiles row
-    await adminClient.from('user_profiles').upsert({
-      user_id:  newUserId,
-      name:     name.trim(),
-      email:    email.trim().toLowerCase(),
-      is_active: true,
-    });
-
     // Create user_roles row
     await adminClient.from('user_roles').upsert({
       user_id: newUserId,

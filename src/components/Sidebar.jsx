@@ -4,8 +4,7 @@ import logo from '../assets/Propath_Primary Logo_White.png';
 
 const Logo = () => (
   <div
-    className="flex items-center justify-center border-b border-white/10"
-    style={{ height: '72px' }}
+    className="flex items-center justify-center border-b border-white/10 px-6 py-5"
   >
     <img src={logo} alt="ProPath Academy" style={{ width: '140px', objectFit: 'contain' }} />
   </div>
