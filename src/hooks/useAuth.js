@@ -40,13 +40,30 @@ export function useAuth() {
   }, []);
 
   async function loadProfile(userId) {
-    const { data: roleRow } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const [roleRes, profileRes] = await Promise.all([
+      supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_profiles').select('is_active, name, email').eq('user_id', userId).maybeSingle(),
+    ]);
 
-    const userRole = roleRow?.role ?? 'external';
+    const userRole = roleRes.data?.role ?? 'external';
+
+    // If no profile row exists yet, create one (handles existing users pre-Phase-2)
+    if (!profileRes.data) {
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('user_profiles').upsert({
+        user_id:   userId,
+        name:      user?.user_metadata?.name ?? '',
+        email:     user?.email ?? '',
+        is_active: true,
+      });
+    }
+
+    // If the account has been deactivated, sign out immediately
+    if (profileRes.data && profileRes.data.is_active === false) {
+      await supabase.auth.signOut();
+      return;
+    }
+
     setRole(userRole);
 
     let athleteAllocations = [];

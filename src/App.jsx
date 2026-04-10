@@ -4,6 +4,7 @@ import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
 import SessionTracker from './components/SessionTracker';
+import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
 import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
@@ -29,6 +30,7 @@ function LoadingSpinner({ message }) {
 // ── Main app — only mounted when a valid session exists ───────────────────────
 function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
   const isExternal = role === 'external';
+  const isAdmin    = role === 'admin';
 
   const [view,       setView]       = useState('roster');
   const [selectedId, setSelectedId] = useState(null);
@@ -61,12 +63,15 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
     });
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redirect external users away from admin-only views.
+  // Redirect non-admin/external users away from restricted views.
   useEffect(() => {
-    if (isExternal && (view === 'dataentry' || view === 'sessions')) {
+    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users')) {
       setView('roster');
     }
-  }, [isExternal, view]);
+    if (!isAdmin && view === 'users') {
+      setView('roster');
+    }
+  }, [isExternal, isAdmin, view]);
 
   if (loading) return <LoadingSpinner message="Loading ProPath…" />;
 
@@ -79,7 +84,8 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
   const canDelete = !isExternal;
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions')) return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users')) return;
+    if (!isAdmin && v === 'users') return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
   };
@@ -126,6 +132,7 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
         role={role}
         userEmail={userEmail}
         onSignOut={signOut}
+        isAdmin={isAdmin}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -183,6 +190,10 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
             athletes={athletes}
             onNavigateToNote={handleNavigateToNote}
           />
+        )}
+
+        {view === 'users' && isAdmin && (
+          <UserManagementView athletes={athletes} />
         )}
 
       </main>

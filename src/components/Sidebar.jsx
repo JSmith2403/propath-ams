@@ -1,19 +1,13 @@
-import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut } from 'lucide-react';
+import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut, Shield } from 'lucide-react';
+
+import logo from '../assets/Propath_Primary Logo_White.png';
 
 const Logo = () => (
   <div
     className="flex items-center justify-center border-b border-white/10"
     style={{ height: '72px' }}
   >
-    <div
-      className="rounded"
-      style={{
-        width: '140px',
-        height: '40px',
-        backgroundColor: 'rgba(255,255,255,0.06)',
-        border: '1px dashed rgba(255,255,255,0.12)',
-      }}
-    />
+    <img src={logo} alt="ProPath Academy" style={{ width: '140px', objectFit: 'contain' }} />
   </div>
 );
 
@@ -79,6 +73,7 @@ export default function Sidebar({
   role,
   userEmail,
   onSignOut,
+  isAdmin = false,
 }) {
   const isRoster    = view === 'roster' || view === 'profile';
   const isDataEntry = view === 'dataentry';
@@ -133,6 +128,21 @@ export default function Sidebar({
               label="Sessions"
               active={view === 'sessions'}
               onClick={() => onNavigate('sessions')}
+            />
+          </>
+        )}
+
+        {isAdmin && (
+          <>
+            <div className="px-6 mt-4 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Admin</p>
+            </div>
+
+            <NavItem
+              icon={Shield}
+              label="User Management"
+              active={view === 'users'}
+              onClick={() => onNavigate('users')}
             />
           </>
         )}
