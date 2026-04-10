@@ -26,6 +26,7 @@ const _initialHashType = (() => {
 export function useAuth() {
   const [session,          setSession]          = useState(null);
   const [role,             setRole]             = useState(null);
+  const [userName,         setUserName]         = useState('');
   const [allocations,      setAllocations]      = useState([]);
   const [loading,          setLoading]          = useState(true);
   const [needsPasswordSet, setNeedsPasswordSet] = useState(false);
@@ -72,6 +73,7 @@ export function useAuth() {
         loadProfile(session.user.id);
       } else {
         setRole(null);
+        setUserName('');
         setAllocations([]);
         setLoading(false);
       }
@@ -83,12 +85,13 @@ export function useAuth() {
   async function loadProfile(userId) {
     const { data: roleRow } = await supabase
       .from('user_roles')
-      .select('role')
+      .select('role, full_name')
       .eq('user_id', userId)
       .maybeSingle();
 
     const userRole = roleRow?.role ?? 'external';
     setRole(userRole);
+    setUserName(roleRow?.full_name || '');
 
     let athleteAllocations = [];
     if (userRole === 'external') {
@@ -124,6 +127,7 @@ export function useAuth() {
     session,
     user:        session?.user ?? null,
     role,
+    userName,
     allocations,
     loading,
     needsPasswordSet,

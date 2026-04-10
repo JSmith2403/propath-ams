@@ -29,7 +29,7 @@ function LoadingSpinner({ message }) {
 }
 
 // ── Main app — only mounted when a valid session exists ───────────────────────
-function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
+function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const isExternal = role === 'external';
   const isAdmin    = role === 'admin';
 
@@ -132,6 +132,7 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
         onNavigate={handleNavigate}
         role={role}
         userEmail={userEmail}
+        userName={userName}
         onSignOut={signOut}
         isAdmin={isAdmin}
       />
@@ -205,7 +206,7 @@ function AuthenticatedApp({ role, allocations, userEmail, signOut }) {
 // ── Root — handles auth gate before rendering the app ─────────────────────────
 export default function App() {
   const {
-    session, user, role, allocations, loading,
+    session, user, role, userName, allocations, loading,
     needsPasswordSet, clearNeedsPasswordSet,
     signIn, signOut, sendPasswordReset,
   } = useAuth();
@@ -226,6 +227,7 @@ export default function App() {
       role={role}
       allocations={allocations}
       userEmail={user?.email}
+      userName={userName}
       signOut={signOut}
     />
   );

@@ -180,8 +180,10 @@ function UserRow({ user, athletes, onAddAllocation, onRemoveAllocation }) {
   const [expanded, setExpanded] = useState(false);
   const isExternal = user.role === 'external';
 
-  // Display a short identifier from the UUID
-  const shortId = user.id ? user.id.slice(0, 8) : '—';
+  const displayName = user.fullName || user.id.slice(0, 8);
+  const avatarLetter = user.fullName
+    ? user.fullName.charAt(0).toUpperCase()
+    : user.id.slice(0, 2).toUpperCase();
 
   return (
     <div
@@ -191,19 +193,21 @@ function UserRow({ user, athletes, onAddAllocation, onRemoveAllocation }) {
       <div className="flex items-center gap-4 px-5 py-4">
         {/* Avatar */}
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold font-mono"
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
           style={{ backgroundColor: 'rgba(165,141,105,0.12)', color: '#A58D69' }}
         >
-          {shortId.slice(0, 2).toUpperCase()}
+          {avatarLetter}
         </div>
 
-        {/* ID + role */}
+        {/* Name + role */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-gray-800 font-mono">{shortId}</span>
+            <span className="text-sm font-semibold text-gray-800">{displayName}</span>
             <RoleBadge role={user.role} />
           </div>
-          <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">{user.id}</p>
+          {user.fullName && (
+            <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">{user.id}</p>
+          )}
         </div>
 
         {/* Allocation count (external only) */}

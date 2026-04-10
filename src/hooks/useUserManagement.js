@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 /**
  * Loads and manages all users for the admin User Management view.
  *
- * users: [{ id, role, allocations: [athleteId] }]
+ * users: [{ id, role, fullName, allocations: [athleteId] }]
  * Source tables: user_roles, provider_allocations
  */
 export function useUserManagement() {
@@ -17,7 +17,7 @@ export function useUserManagement() {
     setError(null);
 
     const [rolesRes, allocationsRes] = await Promise.all([
-      supabase.from('user_roles').select('user_id, role'),
+      supabase.from('user_roles').select('user_id, role, full_name'),
       supabase.from('provider_allocations').select('user_id, athlete_id'),
     ]);
 
@@ -35,12 +35,17 @@ export function useUserManagement() {
     const combined = roles.map(r => ({
       id:          r.user_id,
       role:        r.role,
+      fullName:    r.full_name || '',
       allocations: allocationMap[r.user_id] ?? [],
     }));
 
-    // Sort: admin first, then co_admin, then external
+    // Sort: admin first, then co_admin, then external; alphabetical by name within each group
     const roleOrder = { admin: 0, co_admin: 1, external: 2 };
-    combined.sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3));
+    combined.sort((a, b) => {
+      const rd = (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3);
+      if (rd !== 0) return rd;
+      return (a.fullName || a.id).localeCompare(b.fullName || b.id);
+    });
 
     setUsers(combined);
     setLoading(false);

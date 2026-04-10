@@ -71,6 +71,7 @@ export default function Sidebar({
   onNavigate = () => {},
   role,
   userEmail,
+  userName,
   onSignOut,
   isAdmin = false,
 }) {
@@ -149,21 +150,24 @@ export default function Sidebar({
 
       {/* ── Footer: user info + logout ── */}
       <div className="px-5 py-4 border-t border-white/10">
-        {userEmail && (
-          <p className="text-xs text-white/35 truncate mb-3" title={userEmail}>
-            {userEmail}
-          </p>
-        )}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-white/25">ProPath Academy</p>
-            <p className="text-xs text-white/20">Abu Dhabi · Phase 1</p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            {userName && (
+              <p className="text-xs font-medium text-white/60 truncate" title={userName}>
+                {userName}
+              </p>
+            )}
+            {userEmail && (
+              <p className="text-xs text-white/25 truncate mt-0.5" title={userEmail}>
+                {userEmail}
+              </p>
+            )}
           </div>
           {onSignOut && (
             <button
               onClick={onSignOut}
               title="Sign out"
-              className="p-1.5 rounded transition-colors text-white/30 hover:text-white/70 hover:bg-white/5"
+              className="p-1.5 rounded transition-colors text-white/30 hover:text-white/70 hover:bg-white/5 shrink-0"
             >
               <LogOut size={14} />
             </button>

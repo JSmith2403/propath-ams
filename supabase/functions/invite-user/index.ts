@@ -88,10 +88,11 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = inviteData.user.id;
 
-    // Create user_roles row
+    // Create user_roles row (includes full_name so it appears in User Management)
     await adminClient.from('user_roles').upsert({
-      user_id: newUserId,
+      user_id:   newUserId,
       role,
+      full_name: name.trim(),
     });
 
     return new Response(JSON.stringify({ userId: newUserId }), {
