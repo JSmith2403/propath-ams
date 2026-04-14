@@ -11,6 +11,7 @@ import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import { useWellnessRoster } from './hooks/useWellnessRoster';
+import WellnessOverview from './components/WellnessOverview';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -75,15 +76,13 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     }
   }, [isExternal, isAdmin, view]);
 
-  if (loading) return <LoadingSpinner message="Loading ProPath…" />;
-
-  // External providers only see their allocated athletes.
-  const visibleAthletes = isExternal
+  // Wellness status for roster cards (must be above early returns — hooks cannot be conditional)
+  const visibleAthletes = loading ? [] : (isExternal
     ? athletes.filter(a => allocations.includes(a.id))
-    : athletes;
-
-  // Wellness status for roster cards
+    : athletes);
   const { wellnessMap } = useWellnessRoster(visibleAthletes.map(a => a.id));
+
+  if (loading) return <LoadingSpinner message="Loading ProPath…" />;
 
   // External providers cannot delete notes.
   const canDelete = !isExternal;
@@ -200,6 +199,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={athletes}
             onNavigateToNote={handleNavigateToNote}
           />
+        )}
+
+        {view === 'wellness' && !isExternal && (
+          <WellnessOverview athletes={visibleAthletes} />
         )}
 
         {view === 'users' && isAdmin && (

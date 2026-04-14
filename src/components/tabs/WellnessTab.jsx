@@ -43,6 +43,7 @@ export default function WellnessTab({ athlete }) {
   };
 
   const handleToggle = async () => {
+    console.log('[Wellness] toggle clicked, isActive:', isActive, 'athleteId:', athlete.id);
     if (isActive) {
       await deactivateWellness();
     } else {

@@ -121,7 +121,12 @@ export default function Sidebar({
               <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Modules</p>
             </div>
 
-            <NavItem icon={Heart} label="Wellness" disabled />
+            <NavItem
+              icon={Heart}
+              label="Wellness"
+              active={view === 'wellness'}
+              onClick={() => onNavigate('wellness')}
+            />
 
             <NavItem
               icon={Calendar}

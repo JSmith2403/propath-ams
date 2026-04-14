@@ -17,7 +17,7 @@ export function useWellness(athleteId) {
       .from('wellness_tokens')
       .select('id, token, is_active')
       .eq('athlete_id', athleteId)
-      .single();
+      .maybeSingle();
     setTokenData(data || null);
   }, [athleteId]);
 
@@ -45,29 +45,35 @@ export function useWellness(athleteId) {
 
   // Activate — generate a new token or reactivate existing one
   const activateWellness = useCallback(async () => {
-    if (tokenData) {
-      // Reactivate existing token
-      await supabase
-        .from('wellness_tokens')
-        .update({ is_active: true })
-        .eq('id', tokenData.id);
-    } else {
-      // Create new token
-      const newToken = crypto.randomUUID();
-      await supabase
-        .from('wellness_tokens')
-        .insert({ athlete_id: athleteId, token: newToken, is_active: true });
+    try {
+      if (tokenData) {
+        const { error } = await supabase
+          .from('wellness_tokens')
+          .update({ is_active: true })
+          .eq('id', tokenData.id);
+        if (error) throw error;
+      } else {
+        const newToken = crypto.randomUUID();
+        const { error } = await supabase
+          .from('wellness_tokens')
+          .insert({ athlete_id: athleteId, token: newToken, is_active: true });
+        if (error) throw error;
+      }
+      await fetchToken();
+    } catch (err) {
+      console.error('[Wellness] activate failed:', err);
+      alert('Failed to activate wellness tracking: ' + (err.message || err));
     }
-    await fetchToken();
   }, [athleteId, tokenData, fetchToken]);
 
   // Deactivate
   const deactivateWellness = useCallback(async () => {
     if (!tokenData) return;
-    await supabase
+    const { error } = await supabase
       .from('wellness_tokens')
       .update({ is_active: false })
       .eq('id', tokenData.id);
+    if (error) console.error('[Wellness] deactivate error:', error);
     await fetchToken();
   }, [tokenData, fetchToken]);
 

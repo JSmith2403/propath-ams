@@ -104,18 +104,22 @@ export function isAnyFlagged(submission, rollingStats) {
 }
 
 /**
- * For roster donut colouring — returns 'red' | 'amber' | 'green' for a metric value.
- * Uses Tier 1 for red, simple proximity for amber.
+ * Tier 1 absolute colour for a single metric value.
+ * Returns 'red' | 'amber' | 'green'.
+ *
+ * Sleep Duration (hours): Green >= 7, Amber 5-6.5, Red <= 4.5
+ * All others (1-7 scale, higher is worse): Green 1-3, Amber 4-5, Red 6-7
  */
 export function getMetricColour(metric, value) {
-  if (isTier1Flagged(metric, value)) return 'red';
-  // Amber zone: approaching threshold
   if (metric === 'sleep_duration') {
-    if (value <= 6) return 'amber';
-  } else {
+    if (value >= 7) return 'green';
     if (value >= 5) return 'amber';
+    return 'red';
   }
-  return 'green';
+  // sleep_quality, fatigue, muscle_soreness, stress
+  if (value <= 3) return 'green';
+  if (value <= 5) return 'amber';
+  return 'red';
 }
 
 export { METRIC_KEYS };
