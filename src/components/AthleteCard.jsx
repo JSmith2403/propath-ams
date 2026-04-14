@@ -1,5 +1,6 @@
 import InitialsAvatar from './InitialsAvatar';
 import { COHORT_CONFIG } from '../data/athletes';
+import WellnessMiniRings from './wellness/WellnessMiniRings';
 
 // Khamis-Roche PAH — compute live PHV proximity + PAH% from maturation entries
 function computeMatCard(athlete) {
@@ -93,7 +94,7 @@ function CheckInBadge({ days }) {
   );
 }
 
-export default function AthleteCard({ athlete, onClick }) {
+export default function AthleteCard({ athlete, onClick, wellnessData }) {
   const age      = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const days     = daysSinceLastCheckIn(athlete.checkIns);
@@ -154,6 +155,29 @@ export default function AthleteCard({ athlete, onClick }) {
           >
             {athlete.sport}
           </span>
+        </div>
+
+        {/* Wellness status */}
+        <div className="pt-1 border-t border-gray-100">
+          {!wellnessData || !wellnessData.isActive ? (
+            <div>
+              <p className="text-xs text-gray-400">Wellness tracking not activated</p>
+              <button
+                onClick={(e) => { e.stopPropagation(); onClick(athlete.id, { tab: 'wellness' }); }}
+                className="text-xs font-medium mt-0.5"
+                style={{ color: '#A58D69' }}
+              >
+                Activate
+              </button>
+            </div>
+          ) : wellnessData.latestSubmission ? (
+            <WellnessMiniRings
+              submission={wellnessData.latestSubmission}
+              date={wellnessData.latestDate}
+            />
+          ) : (
+            <p className="text-xs text-gray-400 italic">Awaiting first submission</p>
+          )}
         </div>
 
         {/* RAG 2×2 grid */}

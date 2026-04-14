@@ -13,6 +13,7 @@ const PhysioTab             = lazy(() => import('./tabs/PhysioTab'));
 const NutritionTab          = lazy(() => import('./tabs/NutritionTab'));
 const PsychTab              = lazy(() => import('./tabs/PsychTab'));
 const ReportTab             = lazy(() => import('./tabs/ReportTab'));
+const WellnessTab           = lazy(() => import('./tabs/WellnessTab'));
 
 const TABS = [
   { id: 'overview',       label: 'Overview'            },
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'rag-psych',      label: 'Psychological'       },
   { id: 'rag-nutrition',  label: 'Nutritional'         },
   { id: 'rag-lifestyle',  label: 'Lifestyle'           },
+  { id: 'wellness',       label: 'Wellness'            },
   { id: 'maturation',     label: 'Maturation'          },
   { id: 'mobility',       label: 'Mobility'            },
   { id: 'performance',    label: 'Performance Testing' },
@@ -315,6 +317,8 @@ export default function AthleteProfile({
             onDeleteEntry={handleDeletePhysioEntry}
           />
         );
+      case 'wellness':
+        return <WellnessTab athlete={localAthlete} />;
       case 'report':
         return (
           <ReportTab

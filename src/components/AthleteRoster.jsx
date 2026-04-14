@@ -21,7 +21,7 @@ function sortAthletes(list) {
   });
 }
 
-export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete }) {
+export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete, wellnessMap = {} }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -105,6 +105,7 @@ export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete 
                 key={athlete.id}
                 athlete={athlete}
                 onClick={onSelectAthlete}
+                wellnessData={wellnessMap[athlete.id]}
               />
             ))}
           </div>

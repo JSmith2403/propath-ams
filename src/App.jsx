@@ -10,6 +10,7 @@ import ResetPasswordScreen from './components/ResetPasswordScreen';
 import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
+import { useWellnessRoster } from './hooks/useWellnessRoster';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -81,6 +82,9 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     ? athletes.filter(a => allocations.includes(a.id))
     : athletes;
 
+  // Wellness status for roster cards
+  const { wellnessMap } = useWellnessRoster(visibleAthletes.map(a => a.id));
+
   // External providers cannot delete notes.
   const canDelete = !isExternal;
 
@@ -91,9 +95,12 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     if (v === 'roster') setSelectedId(null);
   };
 
-  const handleSelectAthlete = (id) => {
+  const handleSelectAthlete = (id, opts) => {
     if (isExternal && !allocations.includes(id)) return;
     setSelectedId(id);
+    if (opts?.tab) {
+      setProfileNav({ tab: opts.tab, navId: Date.now().toString() });
+    }
     setView('profile');
   };
 
@@ -144,6 +151,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={visibleAthletes}
             onSelectAthlete={handleSelectAthlete}
             onAddAthlete={canDelete ? addAthlete : undefined}
+            wellnessMap={wellnessMap}
           />
         )}
 
@@ -203,6 +211,32 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   );
 }
 
+// ── Dev-mode banner — visible on every screen, only on localhost ─────────────
+function DevBanner() {
+  if (!import.meta.env.DEV) return null;
+  console.log('DEV mode:', import.meta.env.DEV);
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 9999,
+        backgroundColor: '#F59E0B',
+        color: '#fff',
+        textAlign: 'center',
+        fontSize: '12px',
+        fontWeight: 700,
+        padding: '4px 0',
+        letterSpacing: '0.05em',
+      }}
+    >
+      DEVELOPMENT MODE
+    </div>
+  );
+}
+
 // ── Root — handles auth gate before rendering the app ─────────────────────────
 export default function App() {
   const {
@@ -211,24 +245,27 @@ export default function App() {
     signIn, signOut, sendPasswordReset,
   } = useAuth();
 
-  if (loading) return <LoadingSpinner />;
+  if (loading) return <><DevBanner /><LoadingSpinner /></>;
 
   // Intercept password-reset and invite links before entering the main app.
   if (needsPasswordSet) {
-    return <ResetPasswordScreen onDone={clearNeedsPasswordSet} />;
+    return <><DevBanner /><ResetPasswordScreen onDone={clearNeedsPasswordSet} /></>;
   }
 
   if (!session) {
-    return <LoginScreen onSignIn={signIn} onResetPassword={sendPasswordReset} />;
+    return <><DevBanner /><LoginScreen onSignIn={signIn} onResetPassword={sendPasswordReset} /></>;
   }
 
   return (
-    <AuthenticatedApp
-      role={role}
-      allocations={allocations}
-      userEmail={user?.email}
-      userName={userName}
-      signOut={signOut}
-    />
+    <>
+      <DevBanner />
+      <AuthenticatedApp
+        role={role}
+        allocations={allocations}
+        userEmail={user?.email}
+        userName={userName}
+        signOut={signOut}
+      />
+    </>
   );
 }
