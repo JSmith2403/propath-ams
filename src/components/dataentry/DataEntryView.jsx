@@ -4,6 +4,7 @@ export default function DataEntryView({
   athletes,
   syncSessionData,
   updateLatestEntry,
+  updateEntryById,
   onUpdateAthlete,
 }) {
   return (
@@ -20,6 +21,7 @@ export default function DataEntryView({
           athletes={athletes}
           syncSessionData={syncSessionData}
           onUpdateEntry={updateLatestEntry}
+          updateEntryById={updateEntryById}
           onUpdateAthlete={onUpdateAthlete}
         />
       </div>

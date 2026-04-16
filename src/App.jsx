@@ -47,7 +47,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
     savePsychWorkingOn, saveNutritionWorkingOn,
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
-    updateLatestEntry,
+    updateLatestEntry, updateEntryById,
     deleteRagEntry, deletePhysioEntry,
     syncSessionData,
     addCheckIn,
@@ -190,6 +190,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={athletes}
             syncSessionData={syncSessionData}
             updateLatestEntry={updateLatestEntry}
+            updateEntryById={updateEntryById}
             onUpdateAthlete={updateAthlete}
           />
         )}

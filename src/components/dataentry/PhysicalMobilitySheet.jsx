@@ -154,7 +154,7 @@ function ImportSummaryModal({ summary, onClose }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpdateEntry, onUpdateAthlete }) {
+export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpdateEntry, updateEntryById, onUpdateAthlete }) {
   const { sessions, createSession, upsertSession, markSaved, getSession, deleteSession } = useSessions();
   const { customMetrics, addCustomMetric } = useCustomMetrics();
 
@@ -257,10 +257,8 @@ export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpd
       {view !== 'session' && subTab === 'storage' && (
         <DataStorageTable
           athletes={athletes}
-          sessions={sessions}
           customMetrics={customMetrics}
-          onUpsertSession={(s) => { upsertSession(s); markSaved(s.id); }}
-          onSyncSession={(s) => syncSessionData?.({ ...s, customMetrics: { ...customMetrics, ...s.customMetrics } })}
+          updateEntryById={updateEntryById}
           onUpdateAthlete={onUpdateAthlete}
         />
       )}

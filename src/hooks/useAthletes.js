@@ -334,6 +334,30 @@ export function useAthletes({ seedEnabled = true } = {}) {
       return p2;
     }), [p2update]);
 
+  // Update a specific entry by its ID inside performance/mobility/maturation
+  const updateEntryById = useCallback((athleteId, bucket, metricKey, entryId, patch) =>
+    p2update(athleteId, p2 => {
+      if (bucket === 'performance') {
+        const list = (p2.performance?.entries[metricKey] || []).map(
+          e => e.id === entryId ? { ...e, ...patch } : e
+        );
+        return { ...p2, performance: { entries: { ...p2.performance.entries, [metricKey]: list } } };
+      }
+      if (bucket === 'mobility') {
+        const list = (p2.mobility?.entries[metricKey] || []).map(
+          e => e.id === entryId ? { ...e, ...patch } : e
+        );
+        return { ...p2, mobility: { entries: { ...p2.mobility.entries, [metricKey]: list } } };
+      }
+      if (bucket === 'maturation') {
+        const list = (p2.maturation?.entries || []).map(
+          e => e.id === entryId ? { ...e, ...patch } : e
+        );
+        return { ...p2, maturation: { entries: list } };
+      }
+      return p2;
+    }), [p2update]);
+
   const getAthlete = useCallback((id) => athletes.find(a => a.id === id), [athletes]);
 
   // ── Session sync ──────────────────────────────────────────────────────────
@@ -439,7 +463,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
     savePsychWorkingOn, saveNutritionWorkingOn,
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
-    updateLatestEntry,
+    updateLatestEntry, updateEntryById,
     // Delete operations
     deleteRagEntry, deletePhysioEntry,
     // Session sync

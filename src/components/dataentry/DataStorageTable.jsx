@@ -1,11 +1,12 @@
 /**
- * DataStorageTable — single source of truth for all physical and mobility testing data.
+ * DataStorageTable — longitudinal view of all physical/mobility testing data.
  *
- * All cells are inline-editable: click any data cell to edit, press Enter or click away to save.
- * Changes are written to Supabase immediately via onUpsertSession / onUpdateAthlete.
+ * Reads directly from athlete.phase2.performance.entries, .mobility.entries,
+ * and .maturation.entries — the same source Performance Testing uses.
+ * Edits write back to the same location via updateEntryById.
  */
 import { useMemo, useState, useRef } from 'react';
-import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
+import { METRIC_CATEGORIES, METRIC_MAP, SYNC_MAP } from '../../data/sessionMetrics';
 
 const GOLD = '#A58D69';
 const METRIC_W = 60;
@@ -13,10 +14,9 @@ const METRIC_W = 60;
 // ── Frozen identity columns ───────────────────────────────────────────────────
 const FROZEN = (() => {
   const defs = [
-    { key: 'athleteId', label: 'ID',      width: 76  },
-    { key: 'name',      label: 'Athlete', width: 148 },
-    { key: 'sport',     label: 'Sport',   width: 84  },
-    { key: 'date',      label: 'Date',    width: 92  },
+    { key: 'name',  label: 'Athlete', width: 148 },
+    { key: 'sport', label: 'Sport',   width: 84  },
+    { key: 'date',  label: 'Date',    width: 92  },
   ];
   let left = 0;
   return defs.map(d => { const f = { ...d, left }; left += d.width; return f; });
@@ -88,19 +88,33 @@ function buildSchema(customMetrics) {
   return groups.filter(g => g.cols.length > 0);
 }
 
-// ── Value extraction ──────────────────────────────────────────────────────────
-function getVal(cell, side) {
-  if (!cell) return null;
-  if (side === 'L') return cell.bestL ?? cell.L ?? cell.left  ?? null;
-  if (side === 'R') return cell.bestR ?? cell.R ?? cell.right ?? null;
-  return cell.best ?? cell.value ?? null;
+// ── Determine which bucket a metricKey lives in ──────────────────────────────
+function getBucket(metricKey) {
+  const sync = SYNC_MAP[metricKey];
+  if (!sync) return 'performance';
+  return sync.type; // 'performance' | 'mobility' | 'maturation'
 }
 
-function computeCalc(col, data) {
-  const cell = data[col.metricKey];
-  if (!cell) return null;
-  const L = cell.bestL ?? cell.L ?? cell.left  ?? null;
-  const R = cell.bestR ?? cell.R ?? cell.right ?? null;
+function getStorageKey(metricKey) {
+  const sync = SYNC_MAP[metricKey];
+  if (!sync) return metricKey;
+  if (sync.type === 'maturation') return null; // maturation uses fields, not metric keys
+  return sync.key;
+}
+
+// ── Value extraction from entries ────────────────────────────────────────────
+function getEntryVal(entry, side) {
+  if (!entry) return null;
+  if (side === 'L') return entry.left ?? null;
+  if (side === 'R') return entry.right ?? null;
+  return entry.value ?? null;
+}
+
+function computeCalc(col, entryMap) {
+  const entry = entryMap[col.metricKey];
+  if (!entry) return null;
+  const L = entry.left ?? null;
+  const R = entry.right ?? null;
   if (col.calcType === 'pct_discrepancy_lr') {
     if (L == null || R == null) return null;
     const avg = (Math.abs(L) + Math.abs(R)) / 2;
@@ -117,6 +131,86 @@ function fmt(v) {
   if (v == null) return null;
   if (typeof v === 'number') return Number.isInteger(v) ? v : parseFloat(v.toFixed(2));
   return v;
+}
+
+// ── Build rows from athlete phase2 data ──────────────────────────────────────
+function buildRows(athletes, allCols) {
+  const rows = [];
+
+  athletes.forEach(athlete => {
+    const p2 = athlete.phase2;
+    if (!p2) return;
+
+    // Collect all entries grouped by date
+    const dateMap = {}; // date → { metricKey → entry }
+
+    // Performance entries
+    const perfEntries = p2.performance?.entries || {};
+    Object.entries(perfEntries).forEach(([metricKey, entryList]) => {
+      (entryList || []).forEach(entry => {
+        if (!entry.date) return;
+        if (!dateMap[entry.date]) dateMap[entry.date] = {};
+        dateMap[entry.date][metricKey] = entry;
+      });
+    });
+
+    // Mobility entries
+    const mobEntries = p2.mobility?.entries || {};
+    Object.entries(mobEntries).forEach(([joint, entryList]) => {
+      (entryList || []).forEach(entry => {
+        if (!entry.date) return;
+        if (!dateMap[entry.date]) dateMap[entry.date] = {};
+        // Map back from mobility storage key to session metric key
+        dateMap[entry.date][joint] = entry;
+      });
+    });
+
+    // Maturation entries → map fields back to metric keys
+    const matEntries = p2.maturation?.entries || [];
+    const matFieldToMetric = {};
+    Object.entries(SYNC_MAP).forEach(([metricKey, sync]) => {
+      if (sync.type === 'maturation') matFieldToMetric[sync.field] = metricKey;
+    });
+    matEntries.forEach(entry => {
+      if (!entry.date) return;
+      if (!dateMap[entry.date]) dateMap[entry.date] = {};
+      // Map each maturation field to its corresponding metric key
+      Object.entries(matFieldToMetric).forEach(([field, metricKey]) => {
+        if (entry[field] != null && entry[field] !== '') {
+          dateMap[entry.date][metricKey] = {
+            id: entry.id,
+            date: entry.date,
+            value: entry[field],
+            _matField: field,
+            _matEntryId: entry.id,
+          };
+        }
+      });
+    });
+
+    // Build a row for each date
+    Object.entries(dateMap).forEach(([date, entryMap]) => {
+      // Check at least one column has data
+      const hasData = allCols.some(col => {
+        if (col.isCalc) return false;
+        const entry = entryMap[col.metricKey];
+        return entry && getEntryVal(entry, col.side) != null;
+      });
+      if (!hasData) return;
+
+      rows.push({
+        key: `${athlete.id}:${date}`,
+        athleteId: athlete.id,
+        name: athlete.name,
+        sport: athlete.sport || 'N/A',
+        date,
+        entryMap, // { metricKey → entry }
+      });
+    });
+  });
+
+  rows.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  return rows;
 }
 
 // ── Style helpers ─────────────────────────────────────────────────────────────
@@ -165,54 +259,20 @@ const INPUT_BASE = {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function DataStorageTable({
   athletes,
-  sessions = [],
   customMetrics = {},
-  onUpsertSession,
-  onSyncSession,
+  updateEntryById,
   onUpdateAthlete,
 }) {
   const schema  = useMemo(() => buildSchema(customMetrics), [customMetrics]);
   const allCols = useMemo(() => schema.flatMap(g => g.cols), [schema]);
 
-  // editCell: { rowKey, field, initValue }
-  // field: 'name' | 'sport' | 'date' | `m${colIdx}`
   const [editCell, setEditCell] = useState(null);
   const editInputRef = useRef(null);
-
-  // Track which sessions have been edited (dirty) for the Save button
-  const [dirtySessionIds, setDirtySessionIds] = useState(new Set());
+  const [dirtyCount, setDirtyCount] = useState(0);
   const [saveMessage, setSaveMessage] = useState(null);
 
-  // ── Rows ───────────────────────────────────────────────────────────────────
-  const rows = useMemo(() => {
-    const athMap = new Map(athletes.map(a => [a.id, a]));
-    const out = [];
-    (sessions || [])
-      .filter(s => s.savedAt)
-      .forEach(s => {
-        (s.athleteIds || []).forEach(aid => {
-          const a = athMap.get(aid);
-          if (!a) return;
-          const data = s.data?.[aid] ?? {};
-          const hasData = Object.values(data).some(
-            cell => cell && Object.values(cell).some(v => v != null && v !== '')
-          );
-          if (!hasData) return;
-          out.push({
-            key:       `${s.id}:${aid}`,
-            sessionId: s.id,
-            date:      s.date  || '',
-            label:     s.label || 'Session',
-            athleteId: aid,
-            name:      a.name,
-            sport:     a.sport || 'N/A',
-            data,
-          });
-        });
-      });
-    out.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
-    return out;
-  }, [athletes, sessions]);
+  // ── Rows from athlete phase2 data ─────────────────────────────────────────
+  const rows = useMemo(() => buildRows(athletes, allCols), [athletes, allCols]);
 
   // ── Editing ────────────────────────────────────────────────────────────────
   function startEdit(rowKey, field, currentValue) {
@@ -224,70 +284,58 @@ export default function DataStorageTable({
   function commitEdit() {
     if (!editCell) return;
     const { rowKey, field } = editCell;
-    // Read from DOM input directly — avoids stale closure with rapid typing
     const value = (editInputRef.current?.value ?? editCell.initValue).trim();
     const row = rows.find(r => r.key === rowKey);
     if (!row) { setEditCell(null); return; }
 
     if (field === 'name') {
       if (value) onUpdateAthlete?.(row.athleteId, { name: value });
-
     } else if (field === 'sport') {
       if (value) onUpdateAthlete?.(row.athleteId, { sport: value });
-
-    } else if (field === 'date') {
-      const session = (sessions || []).find(s => s.id === row.sessionId);
-      if (session && value && onUpsertSession) {
-        const updated = { ...session, date: value };
-        onUpsertSession(updated);
-        onSyncSession?.(updated);
-        setDirtySessionIds(prev => new Set(prev).add(session.id));
-      }
-
     } else if (field.startsWith('m')) {
       const colIdx = parseInt(field.slice(1), 10);
       const col = allCols[colIdx];
       if (!col || col.isCalc) { setEditCell(null); return; }
-      const session = (sessions || []).find(s => s.id === row.sessionId);
-      if (!session || !value) { setEditCell(null); return; }
 
-      const mDef   = METRIC_MAP[col.metricKey] || (customMetrics || {})[col.metricKey];
+      const mDef = METRIC_MAP[col.metricKey] || (customMetrics || {})[col.metricKey];
       const isText = mDef?.text === true;
       const parsed = isText ? value : parseFloat(value);
-      if (!isText && isNaN(parsed)) { setEditCell(null); return; }
+      if (!isText && (!value || isNaN(parsed))) { setEditCell(null); return; }
 
-      // Preserve the existing field name format (bestL/L/bestR/R/best/value)
-      const existing = session.data?.[row.athleteId]?.[col.metricKey] || {};
-      let updatedCell;
-      if (col.side === 'L') {
-        updatedCell = { ...existing, ['bestL' in existing ? 'bestL' : 'L']: parsed };
-      } else if (col.side === 'R') {
-        updatedCell = { ...existing, ['bestR' in existing ? 'bestR' : 'R']: parsed };
-      } else {
-        updatedCell = { ...existing, ['best' in existing ? 'best' : 'value']: parsed };
+      const entry = row.entryMap[col.metricKey];
+      if (!entry) { setEditCell(null); return; }
+
+      // Determine which field to update on the entry
+      let patch;
+      if (entry._matField) {
+        // Maturation entry — update the specific field
+        const bucket = 'maturation';
+        const matPatch = { [entry._matField]: parsed };
+        updateEntryById?.(row.athleteId, bucket, null, entry._matEntryId, matPatch);
+        setDirtyCount(c => c + 1);
+        setEditCell(null);
+        return;
       }
 
-      const updatedData = {
-        ...session.data,
-        [row.athleteId]: { ...(session.data?.[row.athleteId] || {}), [col.metricKey]: updatedCell },
-      };
-      const updatedSession = { ...session, data: updatedData };
-      onUpsertSession?.(updatedSession);
-      onSyncSession?.(updatedSession);
-      setDirtySessionIds(prev => new Set(prev).add(session.id));
+      if (col.side === 'L') {
+        patch = { left: parsed };
+      } else if (col.side === 'R') {
+        patch = { right: parsed };
+      } else {
+        patch = { value: parsed };
+      }
+
+      const bucket = getBucket(col.metricKey);
+      const storageKey = getStorageKey(col.metricKey) || col.metricKey;
+      updateEntryById?.(row.athleteId, bucket, storageKey, entry.id, patch);
+      setDirtyCount(c => c + 1);
     }
 
     setEditCell(null);
   }
 
   function handleSaveAll() {
-    // Re-sync all dirty sessions to ensure athlete profiles are up to date
-    (sessions || []).forEach(s => {
-      if (dirtySessionIds.has(s.id)) {
-        onSyncSession?.(s);
-      }
-    });
-    setDirtySessionIds(new Set());
+    setDirtyCount(0);
     setSaveMessage('Changes saved');
     setTimeout(() => setSaveMessage(null), 2500);
   }
@@ -301,7 +349,6 @@ export default function DataStorageTable({
     return editCell?.rowKey === rowKey && editCell?.field === field;
   }
 
-  // Shared input element rendered into any editing cell
   function renderInput(extraStyle = {}) {
     return (
       <input
@@ -332,8 +379,8 @@ export default function DataStorageTable({
       {/* Save bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white shrink-0">
         <span className="text-xs text-gray-400">
-          {dirtySessionIds.size > 0
-            ? `${dirtySessionIds.size} unsaved change${dirtySessionIds.size > 1 ? 's' : ''}`
+          {dirtyCount > 0
+            ? `${dirtyCount} unsaved change${dirtyCount > 1 ? 's' : ''}`
             : 'All changes saved'}
         </span>
         <div className="flex items-center gap-3">
@@ -342,12 +389,12 @@ export default function DataStorageTable({
           )}
           <button
             onClick={handleSaveAll}
-            disabled={dirtySessionIds.size === 0}
+            disabled={dirtyCount === 0}
             className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg transition-opacity"
             style={{
               backgroundColor: GOLD,
-              opacity: dirtySessionIds.size === 0 ? 0.4 : 1,
-              cursor: dirtySessionIds.size === 0 ? 'default' : 'pointer',
+              opacity: dirtyCount === 0 ? 0.4 : 1,
+              cursor: dirtyCount === 0 ? 'default' : 'pointer',
             }}
           >
             Save Changes
@@ -421,16 +468,8 @@ export default function DataStorageTable({
             return (
               <tr key={row.key}>
 
-                {/* Athlete ID — read-only */}
-                <td style={frozenCell(FROZEN[0], bg, {
-                  fontSize: 10, color: '#9ca3af', fontWeight: 500,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                })}>
-                  {row.athleteId}
-                </td>
-
                 {/* Athlete Name — editable */}
-                <td style={frozenCell(FROZEN[1], bg, { overflow: 'visible' })}>
+                <td style={frozenCell(FROZEN[0], bg, { overflow: 'visible' })}>
                   {isEditingCell(row.key, 'name') ? renderInput({ fontWeight: 600, fontSize: 12 }) : (
                     <div
                       title="Click to edit"
@@ -440,13 +479,12 @@ export default function DataStorageTable({
                       <div style={{ fontWeight: 600, fontSize: 12, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row.name}
                       </div>
-                      <div style={{ fontSize: 9, color: '#9ca3af', marginTop: 1 }}>{row.label}</div>
                     </div>
                   )}
                 </td>
 
                 {/* Sport — editable */}
-                <td style={frozenCell(FROZEN[2], bg, { overflow: 'visible' })}>
+                <td style={frozenCell(FROZEN[1], bg, { overflow: 'visible' })}>
                   {isEditingCell(row.key, 'sport') ? renderInput({ fontSize: 11 }) : (
                     <div
                       title="Click to edit"
@@ -458,24 +496,21 @@ export default function DataStorageTable({
                   )}
                 </td>
 
-                {/* Date — editable */}
-                <td style={frozenCell(FROZEN[3], bg, { overflow: 'visible' })}>
-                  {isEditingCell(row.key, 'date') ? renderInput({ fontSize: 11, fontWeight: 600 }) : (
-                    <div
-                      title="Click to edit"
-                      onClick={() => startEdit(row.key, 'date', row.date)}
-                      style={{ cursor: 'text', fontSize: 11, fontWeight: 600, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    >
-                      {row.date}
-                    </div>
-                  )}
+                {/* Date — read-only */}
+                <td style={frozenCell(FROZEN[2], bg)}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.date}
+                  </div>
                 </td>
 
                 {/* Metric cells */}
                 {allCols.map((col, ci) => {
-                  const field    = `m${ci}`;
-                  const raw      = col.isCalc ? computeCalc(col, row.data) : fmt(getVal(row.data[col.metricKey], col.side));
-                  const editable = !col.isCalc;
+                  const field   = `m${ci}`;
+                  const entry   = row.entryMap[col.metricKey];
+                  const raw     = col.isCalc
+                    ? computeCalc(col, row.entryMap)
+                    : fmt(getEntryVal(entry, col.side));
+                  const editable = !col.isCalc && !!entry;
                   const editing  = isEditingCell(row.key, field);
 
                   return (
