@@ -299,6 +299,12 @@ export function useAthletes({ seedEnabled = true } = {}) {
       },
     })), [update]);
 
+  const updatePhysioEntry = useCallback((id, entryId, updates) =>
+    p2update(id, p2 => ({
+      ...p2,
+      physio: { entries: (p2.physio?.entries || []).map(e => e.id === entryId ? { ...e, ...updates } : e) },
+    })), [p2update]);
+
   const deletePhysioEntry = useCallback((id, entryId) =>
     p2update(id, p2 => ({
       ...p2,
@@ -465,7 +471,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
     updateLatestEntry, updateEntryById,
     // Delete operations
-    deleteRagEntry, deletePhysioEntry,
+    deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
     // Session sync
     syncSessionData,
   };

@@ -74,7 +74,7 @@ export default function AthleteProfile({
   onSavePsychWorkingOn, onSaveNutritionWorkingOn,
   onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag,
   onAddCheckIn,
-  onDeleteRagEntry, onDeletePhysioEntry,
+  onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [localAthlete, setLocalAthlete] = useState(athlete);
@@ -314,6 +314,7 @@ export default function AthleteProfile({
           <PhysioTab
             entries={p2.physio?.entries || []}
             onAddEntry={entry => onAddPhysioEntry(localAthlete.id, entry)}
+            onUpdateEntry={(entryId, updates) => onUpdatePhysioEntry(localAthlete.id, entryId, updates)}
             onDeleteEntry={handleDeletePhysioEntry}
           />
         );

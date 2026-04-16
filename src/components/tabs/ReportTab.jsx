@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import InitialsAvatar from '../InitialsAvatar';
 import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
+import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -235,7 +236,7 @@ function PillarAssessmentSection({ entries, emptyMsg }) {
 
 // ─── Section 6: Performance Testing ──────────────────────────────────────────
 
-function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag }) {
+function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, customMetrics = {} }) {
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
 
   const handleBragChange = (key, color) => {
@@ -267,7 +268,7 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag }) {
             const list     = [...(performanceEntries[key] || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
             const current  = list[0] ?? null;
             const previous = list[1] ?? null;
-            const mDef     = METRIC_MAP[key];
+            const mDef     = METRIC_MAP[key] || customMetrics[key];
             const label    = LABEL_OVERRIDES[key] || mDef?.label || key;
             const unit     = mDef?.unit ? ` ${mDef.unit}` : '';
             const lowerBetter = LOWER_IS_BETTER.has(key);
@@ -365,6 +366,7 @@ function AreasToAddressSection({ phase2 }) {
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function ReportTab({ athlete, phase2, onSaveBrag }) {
+  const { customMetrics } = useCustomMetrics();
   const handlePrint = () => {
     const canvases = document.querySelectorAll('#report-content canvas');
     const restorations = [];
@@ -466,6 +468,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
             performanceEntries={phase2?.performance?.entries || {}}
             bragRatings={phase2?.performanceBrag || {}}
             onSaveBrag={onSaveBrag}
+            customMetrics={customMetrics}
           />
         </Section>
 

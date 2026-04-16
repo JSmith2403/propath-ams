@@ -48,7 +48,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     savePsychWorkingOn, saveNutritionWorkingOn,
     savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
     updateLatestEntry, updateEntryById,
-    deleteRagEntry, deletePhysioEntry,
+    deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
     syncSessionData,
     addCheckIn,
   } = useAthletes({ seedEnabled: !isExternal });
@@ -181,6 +181,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onSavePerformanceBrag={savePerformanceBrag}
             onAddCheckIn={addCheckIn}
             onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
+            onUpdatePhysioEntry={updatePhysioEntry}
             onDeletePhysioEntry={canDelete ? deletePhysioEntry : undefined}
           />
         )}
