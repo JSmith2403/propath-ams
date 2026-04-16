@@ -115,10 +115,10 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
           <h3 className="font-semibold text-gray-900 text-base leading-tight">{athlete.name}</h3>
           <p className="text-xs text-gray-500 mt-1">
             {age != null ? `${age}y` : ''}
-            {age != null && matData?.stage ? '\u00a0|\u00a0' : ''}
-            {matData?.stage ?? (age == null ? '—' : '')}
+            {age != null && matData?.stage && !matData.outOfRange ? '\u00a0|\u00a0' : ''}
+            {(!matData?.outOfRange && matData?.stage) ? matData.stage : (age == null ? '—' : '')}
           </p>
-          {matData && matData.pahPct <= 100 && (
+          {matData && !matData.outOfRange && matData.pahPct <= 100 && (
             <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>
               {matData.pahPct.toFixed(1)}% PAH
             </p>

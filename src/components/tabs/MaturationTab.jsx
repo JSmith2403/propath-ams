@@ -337,13 +337,35 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
             <p className="text-sm text-gray-400 py-8 text-center">
               Enter biometric data via Data Entry to see calculations.
             </p>
+          ) : mat.outOfRange ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-gray-400" title={
+                mat.outOfRange === 'below'
+                  ? 'Below minimum age for Khamis-Roche calculation'
+                  : 'Beyond maximum age for Khamis-Roche calculation'
+              }>
+                <span className="text-3xl font-bold" style={{ color: '#9ca3af' }}>—</span>
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                {mat.outOfRange === 'below'
+                  ? 'Below minimum age for Khamis-Roche calculation (4.0 years).'
+                  : 'Beyond maximum age for Khamis-Roche calculation (19.0 years).'}
+              </p>
+            </div>
           ) : (
             <>
+              {/* Extrapolation marker */}
+              {mat.extrapolated && (
+                <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                  * Extrapolated beyond the validated age range of the Khamis-Roche method (validated to 17.5 years). Values are approximations only.
+                </p>
+              )}
+
               {/* PAH */}
               <StatCard label="Predicted Adult Height (Khamis-Roche)">
                 <div className="flex items-end gap-1 mt-1">
                   <span className="text-4xl font-bold" style={{ color: '#085777' }}>
-                    {fmt1(mat.pah)}
+                    {fmt1(mat.pah)}{mat.extrapolated ? '*' : ''}
                   </span>
                   <span className="text-sm text-gray-400 mb-1">cm</span>
                 </div>
@@ -375,7 +397,7 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
                     ) : (
                       <>
                         <span className="text-3xl font-bold" style={{ color: stageColors?.dot || '#6b7280' }}>
-                          {fmt1(mat.pahPct)}
+                          {fmt1(mat.pahPct)}{mat.extrapolated ? '*' : ''}
                         </span>
                         <span className="text-sm text-gray-400 mb-1">%</span>
                       </>
@@ -389,7 +411,7 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
                     ) : (
                       <>
                         <span className="text-3xl font-bold text-gray-700">
-                          {fmt1(mat.remainingGrowth)}
+                          {fmt1(mat.remainingGrowth)}{mat.extrapolated ? '*' : ''}
                         </span>
                         <span className="text-sm text-gray-400 mb-1">cm</span>
                       </>
@@ -404,14 +426,14 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
                   <div className="flex items-center gap-2">
                     <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: stageColors?.dot }} />
                     <span className="font-bold text-xl" style={{ color: stageColors?.text }}>
-                      {mat.stage}
+                      {mat.stage}{mat.extrapolated ? '*' : ''}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 leading-relaxed">{STAGE_NOTES[mat.stage]}</p>
                   <div className="flex gap-2 text-[10px] text-gray-400 mt-2">
-                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#ccfbf1', color: '#0f766e' }}>Pre PHV &lt;88%</span>
-                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>Circa PHV 88–95%</span>
-                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#e5e7eb', color: '#374151' }}>Post PHV &gt;95%</span>
+                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#ccfbf1', color: '#0f766e' }}>Pre-PHV &lt;88%</span>
+                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>Circa-PHV 88-95%</span>
+                    <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#e5e7eb', color: '#374151' }}>Post-PHV &gt;95%</span>
                   </div>
                 </div>
               </StatCard>
