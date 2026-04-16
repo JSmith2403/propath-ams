@@ -140,7 +140,7 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
             {age != null && matData?.stage ? '\u00a0|\u00a0' : ''}
             {matData?.stage ?? (age == null ? '—' : '')}
           </p>
-          {matData && (
+          {matData && matData.pahPct <= 100 && (
             <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>
               {matData.pahPct.toFixed(1)}% PAH
             </p>

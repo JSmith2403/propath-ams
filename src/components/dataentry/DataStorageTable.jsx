@@ -179,6 +179,10 @@ export default function DataStorageTable({
   const [editCell, setEditCell] = useState(null);
   const editInputRef = useRef(null);
 
+  // Track which sessions have been edited (dirty) for the Save button
+  const [dirtySessionIds, setDirtySessionIds] = useState(new Set());
+  const [saveMessage, setSaveMessage] = useState(null);
+
   // ── Rows ───────────────────────────────────────────────────────────────────
   const rows = useMemo(() => {
     const athMap = new Map(athletes.map(a => [a.id, a]));
@@ -237,6 +241,7 @@ export default function DataStorageTable({
         const updated = { ...session, date: value };
         onUpsertSession(updated);
         onSyncSession?.(updated);
+        setDirtySessionIds(prev => new Set(prev).add(session.id));
       }
 
     } else if (field.startsWith('m')) {
@@ -269,9 +274,22 @@ export default function DataStorageTable({
       const updatedSession = { ...session, data: updatedData };
       onUpsertSession?.(updatedSession);
       onSyncSession?.(updatedSession);
+      setDirtySessionIds(prev => new Set(prev).add(session.id));
     }
 
     setEditCell(null);
+  }
+
+  function handleSaveAll() {
+    // Re-sync all dirty sessions to ensure athlete profiles are up to date
+    (sessions || []).forEach(s => {
+      if (dirtySessionIds.has(s.id)) {
+        onSyncSession?.(s);
+      }
+    });
+    setDirtySessionIds(new Set());
+    setSaveMessage('Changes saved');
+    setTimeout(() => setSaveMessage(null), 2500);
   }
 
   function handleKeyDown(e) {
@@ -310,7 +328,34 @@ export default function DataStorageTable({
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Save bar */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white shrink-0">
+        <span className="text-xs text-gray-400">
+          {dirtySessionIds.size > 0
+            ? `${dirtySessionIds.size} unsaved change${dirtySessionIds.size > 1 ? 's' : ''}`
+            : 'All changes saved'}
+        </span>
+        <div className="flex items-center gap-3">
+          {saveMessage && (
+            <span className="text-xs font-medium" style={{ color: '#22c55e' }}>{saveMessage}</span>
+          )}
+          <button
+            onClick={handleSaveAll}
+            disabled={dirtySessionIds.size === 0}
+            className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg transition-opacity"
+            style={{
+              backgroundColor: GOLD,
+              opacity: dirtySessionIds.size === 0 ? 0.4 : 1,
+              cursor: dirtySessionIds.size === 0 ? 'default' : 'pointer',
+            }}
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto">
       <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <colgroup>
           {FROZEN.map(f => <col key={f.key} style={{ width: f.width }} />)}
@@ -459,6 +504,7 @@ export default function DataStorageTable({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

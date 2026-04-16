@@ -259,8 +259,8 @@ export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpd
           athletes={athletes}
           sessions={sessions}
           customMetrics={customMetrics}
-          onUpsertSession={upsertSession}
-          onSyncSession={syncSessionData}
+          onUpsertSession={(s) => { upsertSession(s); markSaved(s.id); }}
+          onSyncSession={(s) => syncSessionData?.({ ...s, customMetrics: { ...customMetrics, ...s.customMetrics } })}
           onUpdateAthlete={onUpdateAthlete}
         />
       )}

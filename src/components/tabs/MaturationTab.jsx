@@ -464,18 +464,30 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
               <div className="grid grid-cols-2 gap-3">
                 <StatCard label="% of PAH">
                   <div className="flex items-end gap-1 mt-1">
-                    <span className="text-3xl font-bold" style={{ color: stageColors?.dot || '#6b7280' }}>
-                      {fmt1(mat.pahPct)}
-                    </span>
-                    <span className="text-sm text-gray-400 mb-1">%</span>
+                    {mat.pahPct > 100 ? (
+                      <span className="text-3xl font-bold" style={{ color: '#9ca3af' }}>—</span>
+                    ) : (
+                      <>
+                        <span className="text-3xl font-bold" style={{ color: stageColors?.dot || '#6b7280' }}>
+                          {fmt1(mat.pahPct)}
+                        </span>
+                        <span className="text-sm text-gray-400 mb-1">%</span>
+                      </>
+                    )}
                   </div>
                 </StatCard>
                 <StatCard label="Remaining Growth">
                   <div className="flex items-end gap-1 mt-1">
-                    <span className="text-3xl font-bold text-gray-700">
-                      {fmt1(mat.remainingGrowth)}
-                    </span>
-                    <span className="text-sm text-gray-400 mb-1">cm</span>
+                    {mat.remainingGrowth <= 0 ? (
+                      <span className="text-3xl font-bold" style={{ color: '#9ca3af' }}>—</span>
+                    ) : (
+                      <>
+                        <span className="text-3xl font-bold text-gray-700">
+                          {fmt1(mat.remainingGrowth)}
+                        </span>
+                        <span className="text-sm text-gray-400 mb-1">cm</span>
+                      </>
+                    )}
                   </div>
                 </StatCard>
               </div>
