@@ -1,29 +1,7 @@
 import InitialsAvatar from './InitialsAvatar';
 import { COHORT_CONFIG } from '../data/athletes';
 import WellnessMiniRings from './wellness/WellnessMiniRings';
-
-// Khamis-Roche PAH — compute live PHV proximity + PAH% from maturation entries
-function computeMatCard(athlete) {
-  const entries = [...(athlete.phase2?.maturation?.entries || [])]
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const latest = entries[0];
-  if (!latest) return null;
-  const height = latest.standingHeight ?? latest.stature ?? null;
-  const dob    = athlete.dob;
-  const sex    = latest.sex || athlete.gender || 'Male';
-  if (!height || !latest.bodyMass || !latest.motherHeight || !latest.fatherHeight || !dob) return null;
-  const ageDecimal = (new Date(latest.date) - new Date(dob)) / (365.25 * 86400000);
-  if (ageDecimal <= 0) return null;
-  const [s, f, m, b, a] = [height, latest.fatherHeight, latest.motherHeight, latest.bodyMass, ageDecimal].map(Number);
-  if ([s, f, m, b, a].some(v => isNaN(v) || v <= 0)) return null;
-  const pah = sex === 'Female'
-    ? (0.369*s)+(0.271*f)+(0.306*m)+(0.037*b)-(0.009*a*a)+8.96
-    : (0.378*s)+(0.308*f)+(0.270*m)+(0.054*b)-(0.016*a*a)+12.13;
-  if (!pah || pah <= 0) return null;
-  const pahPct = (s / pah) * 100;
-  const stage  = pahPct < 88 ? 'Pre-PHV' : pahPct <= 95 ? 'Circa-PHV' : 'Post-PHV';
-  return { pahPct, stage };
-}
+import { calculateAthleteMaturation } from '../utils/maturation';
 
 const RAG_COLORS = {
   green: '#22c55e',
@@ -98,7 +76,7 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
   const age      = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const days     = daysSinceLastCheckIn(athlete.checkIns);
-  const matData  = computeMatCard(athlete);
+  const matData  = calculateAthleteMaturation(athlete);
 
   return (
     <div

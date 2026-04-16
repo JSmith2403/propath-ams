@@ -18,10 +18,6 @@ export const METRIC_CATEGORIES = [
     metrics: [
       { key: 'motherHeight',     label: "Mother's Height",        unit: 'cm', bilateral: false, attempts: 1 },
       { key: 'fatherHeight',     label: "Father's Height",        unit: 'cm', bilateral: false, attempts: 1 },
-      { key: 'pah',              label: 'Predicted Adult Height', unit: 'cm', bilateral: false, attempts: 1 },
-      { key: 'pahPercent',       label: 'Percentage of PAH',      unit: '%',  bilateral: false, attempts: 1 },
-      { key: 'remainingGrowth',  label: 'Remaining Growth',       unit: 'cm', bilateral: false, attempts: 1 },
-      { key: 'maturityCategory', label: 'Maturity Category',      unit: '',   bilateral: false, attempts: 1, text: true },
     ],
   },
   {
@@ -190,10 +186,6 @@ export const SYNC_MAP = {
   // PAH and Maturation → maturation entry fields
   motherHeight:    { type: 'maturation', field: 'motherHeight'    },
   fatherHeight:    { type: 'maturation', field: 'fatherHeight'    },
-  pah:             { type: 'maturation', field: 'pah'             },
-  pahPercent:      { type: 'maturation', field: 'pahPercent'      },
-  remainingGrowth: { type: 'maturation', field: 'remainingGrowth' },
-  maturityCategory:{ type: 'maturation', field: 'maturityCategory'},
   // Movement Screens → mobility bucket
   cervicalRotation:  { type: 'mobility', key: 'cervicalRotation'  },
   shoulderFlexion:   { type: 'mobility', key: 'shoulderFlexion'   },

@@ -42,37 +42,9 @@ function formatTimestamp(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// ─── Maturation helpers (Khamis-Roche) ───────────────────────────────────────
+// ─── Maturation helpers (centralised) ────────────────────────────────────────
 
-function getHeight(e) { return e?.standingHeight ?? e?.stature ?? null; }
-
-function calcAgeDecimal(dob, d) {
-  return (new Date(d) - new Date(dob)) / (365.25 * 86400000);
-}
-
-function calcAgeYM(dob, d) {
-  const d1 = new Date(dob), d2 = new Date(d);
-  let y = d2.getFullYear() - d1.getFullYear();
-  let m = d2.getMonth()    - d1.getMonth();
-  if (d2.getDate() < d1.getDate()) m--;
-  if (m < 0) { y--; m += 12; }
-  return { years: y, months: m };
-}
-
-function calcPAH(sex, s, f, m, b, a) {
-  [s, f, m, b, a] = [s, f, m, b, a].map(Number);
-  if ([s, f, m, b, a].some(v => isNaN(v) || v <= 0)) return null;
-  return sex === 'Female'
-    ? (0.369*s)+(0.271*f)+(0.306*m)+(0.037*b)-(0.009*a*a)+8.96
-    : (0.378*s)+(0.308*f)+(0.270*m)+(0.054*b)-(0.016*a*a)+12.13;
-}
-
-function calcStage(pct) {
-  if (pct == null) return null;
-  if (pct < 88)  return 'Pre-PHV';
-  if (pct <= 95) return 'Circa-PHV';
-  return 'Post-PHV';
-}
+import { calculateMaturation, getMostRecentMaturationInputs, calcAgeYM } from '../../utils/maturation';
 
 const STAGE_STYLE = {
   'Pre-PHV':   { bg: '#ccfbf1', text: '#0f766e' },
@@ -157,32 +129,31 @@ function MaturationSection({ athlete, maturationEntries }) {
     return <NoAssessment msg="No maturation data recorded yet." />;
   }
 
-  const sorted  = [...maturationEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
-  const latest  = sorted[0];
-  const stature = getHeight(latest);
-  const { bodyMass, motherHeight, fatherHeight, date: measureDate } = latest;
-  const dob     = athlete.dob;
-  const sex     = latest.sex || athlete.gender || 'Male';
+  const inputs = getMostRecentMaturationInputs(athlete);
+  const mat = inputs ? calculateMaturation(inputs) : null;
+  const ageYM = inputs ? calcAgeYM(inputs.dob, inputs.measureDate) : null;
 
-  const ageDecimal = dob && measureDate ? calcAgeDecimal(dob, measureDate) : null;
-  const ageYM      = dob && measureDate ? calcAgeYM(dob, measureDate) : null;
-  const pah        = (stature && motherHeight && fatherHeight && bodyMass && ageDecimal)
-    ? calcPAH(sex, stature, fatherHeight, motherHeight, bodyMass, ageDecimal)
-    : null;
-  const pahPct    = pah && stature ? (parseFloat(stature) / pah) * 100 : null;
-  const stage     = calcStage(pahPct);
-  const remaining = pah && stature ? (pah - parseFloat(stature)).toFixed(1) : null;
+  // Raw inputs for display
+  const sorted = [...maturationEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const latest = sorted[0];
+  const stature = latest?.standingHeight ?? latest?.stature ?? null;
+  const bodyMass = latest?.bodyMass ?? null;
+
+  const pahDisplay = mat ? `${mat.pah} cm` : '—';
+  const pahPctDisplay = mat && mat.pahPct <= 100 ? `${mat.pahPct}%` : '—';
+  const remainingDisplay = mat && mat.remainingGrowth > 0 ? `${mat.remainingGrowth} cm` : '—';
+  const stage = mat?.stage || null;
   const stageStyle = stage ? STAGE_STYLE[stage] : null;
 
   const rows = [
-    ['Measurement Date',                     measureDate ? formatShortDate(measureDate) : '—'],
-    ['Age at Measurement',                   ageYM ? `${ageYM.years}y ${ageYM.months}m` : '—'],
-    ['Standing Height',                      stature ? `${stature} cm` : '—'],
-    ['Body Mass',                            bodyMass ? `${bodyMass} kg` : '—'],
-    ['Predicted Adult Height (Khamis-Roche)', pah ? `${pah.toFixed(1)} cm` : '—'],
-    ['% of Predicted Adult Height',          pahPct ? `${pahPct.toFixed(1)}%` : '—'],
-    ['Remaining Growth',                     remaining ? `${remaining} cm` : '—'],
-    ['Maturation Stage',                     stage || '—'],
+    ['Measurement Date',                      inputs?.measureDate ? formatShortDate(inputs.measureDate) : '—'],
+    ['Age at Measurement',                    ageYM ? `${ageYM.years}y ${ageYM.months}m` : '—'],
+    ['Standing Height',                       stature ? `${stature} cm` : '—'],
+    ['Body Mass',                             bodyMass ? `${bodyMass} kg` : '—'],
+    ['Predicted Adult Height (Khamis-Roche)', pahDisplay],
+    ['% of Predicted Adult Height',           pahPctDisplay],
+    ['Remaining Growth',                      remainingDisplay],
+    ['Maturation Stage',                      stage || '—'],
   ];
 
   return (
@@ -205,9 +176,9 @@ function MaturationSection({ athlete, maturationEntries }) {
           <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: stageStyle.text }}>
             {stage}
           </p>
-          {pahPct && (
+          {mat && mat.pahPct <= 100 && (
             <p className="text-2xl font-bold mb-2" style={{ color: stageStyle.text }}>
-              {pahPct.toFixed(1)}%
+              {mat.pahPct}%
             </p>
           )}
           <p className="text-xs leading-relaxed" style={{ color: stageStyle.text }}>

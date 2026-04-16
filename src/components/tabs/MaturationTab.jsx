@@ -1,75 +1,16 @@
 import { useMemo } from 'react';
-
-// ─── Calculation helpers ──────────────────────────────────────────────────────
-
-function calcAgeDecimal(dob, measureDate) {
-  const d1 = new Date(dob);
-  const d2 = new Date(measureDate);
-  return (d2 - d1) / (365.25 * 24 * 60 * 60 * 1000);
-}
-
-function calcAgeYM(dob, measureDate) {
-  const d1 = new Date(dob);
-  const d2 = new Date(measureDate);
-  let years  = d2.getFullYear() - d1.getFullYear();
-  let months = d2.getMonth()    - d1.getMonth();
-  if (d2.getDate() < d1.getDate()) months--;
-  if (months < 0) { years--; months += 12; }
-  return { years, months };
-}
-
-// Khamis-Roche PAH (cm)
-function calcPAH(sex, stature, fatherHeight, motherHeight, mass, ageDecimal) {
-  const s = parseFloat(stature);
-  const f = parseFloat(fatherHeight);
-  const m = parseFloat(motherHeight);
-  const b = parseFloat(mass);
-  const a = parseFloat(ageDecimal);
-  if ([s, f, m, b, a].some(v => isNaN(v) || v <= 0)) return null;
-  if (sex === 'Female') {
-    return (0.369 * s) + (0.271 * f) + (0.306 * m) + (0.037 * b) - (0.009 * a * a) + 8.96;
-  }
-  return (0.378 * s) + (0.308 * f) + (0.270 * m) + (0.054 * b) - (0.016 * a * a) + 12.13;
-}
-
-// Standard error of estimate
-const SEE = { Male: 2.1, Female: 1.7 };
-
-function calcCI(pah, sex, zScore) {
-  if (!pah) return null;
-  const margin = (SEE[sex] || SEE.Male) * zScore;
-  return {
-    low:  parseFloat((pah - margin).toFixed(1)),
-    high: parseFloat((pah + margin).toFixed(1)),
-  };
-}
-
-// Mid-parent height (target height correction)
-function calcMidParentHeight(sex, fatherHeight, motherHeight) {
-  const f = parseFloat(fatherHeight);
-  const m = parseFloat(motherHeight);
-  if (isNaN(f) || isNaN(m)) return null;
-  return sex === 'Female' ? (f + m - 13) / 2 : (f + m + 13) / 2;
-}
-
-// PHV proximity — updated thresholds per specification
-function calcStage(pahPct) {
-  if (pahPct == null) return null;
-  if (pahPct < 88)  return 'Pre PHV';
-  if (pahPct <= 95) return 'Circa PHV';
-  return 'Post PHV';
-}
+import { calculateAthleteMaturation, calcAgeYM } from '../../utils/maturation';
 
 const STAGE_COLORS = {
-  'Pre PHV':   { bg: '#ccfbf1', text: '#0f766e', dot: '#14b8a6', zone: '#99f6e4' },
-  'Circa PHV': { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b', zone: '#fde68a' },
-  'Post PHV':  { bg: '#e5e7eb', text: '#374151', dot: '#6b7280', zone: '#d1d5db' },
+  'Pre-PHV':   { bg: '#ccfbf1', text: '#0f766e', dot: '#14b8a6', zone: '#99f6e4' },
+  'Circa-PHV': { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b', zone: '#fde68a' },
+  'Post-PHV':  { bg: '#e5e7eb', text: '#374151', dot: '#6b7280', zone: '#d1d5db' },
 };
 
 const STAGE_NOTES = {
-  'Pre PHV':   'Ideal window for building movement foundations, coordination and fundamental athletic skills.',
-  'Circa PHV': 'Rapid growth phase — increased injury risk. Prioritise movement control and technique with adapted load.',
-  'Post PHV':  'Growth stabilised. Develop strength, power and physical robustness with progressively higher loads.',
+  'Pre-PHV':   'Ideal window for building movement foundations, coordination and fundamental athletic skills.',
+  'Circa-PHV': 'Rapid growth phase. Increased injury risk. Prioritise movement control and technique with adapted load.',
+  'Post-PHV':  'Growth stabilised. Develop strength, power and physical robustness with progressively higher loads.',
 };
 
 function birthQuarter(dob) {
@@ -94,30 +35,6 @@ function fmtDate(d) {
 // Extract biometric fields from a maturation entry (handles legacy 'stature' field)
 function getHeight(entry) { return entry?.standingHeight ?? entry?.stature ?? null; }
 
-// Compute maturation data for any athlete (for cohort timeline)
-function computeMat(athlete) {
-  const entries = [...(athlete.phase2?.maturation?.entries || [])]
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const latest = entries[0] || null;
-  if (!latest) return null;
-  const height = getHeight(latest);
-  const sex    = latest.sex || athlete.sex || 'Male';
-  const dob    = athlete.dob;
-  if (!height || !latest.bodyMass || !latest.motherHeight || !latest.fatherHeight || !dob) return null;
-  const ageDecimal = calcAgeDecimal(dob, latest.date);
-  if (ageDecimal <= 0) return null;
-  const pah = calcPAH(sex, height, latest.fatherHeight, latest.motherHeight, latest.bodyMass, ageDecimal);
-  if (!pah) return null;
-  const pahPct         = (height / pah) * 100;
-  const remainingGrowth = pah - height;
-  const midParent      = calcMidParentHeight(sex, latest.fatherHeight, latest.motherHeight);
-  const stage          = calcStage(pahPct);
-  const ci50           = calcCI(pah, sex, 0.674);
-  const ci90           = calcCI(pah, sex, 1.645);
-  const ageYM          = calcAgeYM(dob, latest.date);
-  return { pah, pahPct, remainingGrowth, midParent, stage, ci50, ci90, ageYM, height, sex, latest };
-}
-
 // ─── Cohort Timeline ──────────────────────────────────────────────────────────
 
 const MIN_PCT = 80, MAX_PCT = 105;
@@ -132,7 +49,7 @@ function CohortTimeline({ allAthletes, currentAthleteId }) {
   const cohortData = useMemo(() => {
     return allAthletes
       .map(a => {
-        const mat = computeMat(a);
+        const mat = calculateAthleteMaturation(a);
         if (!mat) return null;
         return { id: a.id, name: a.name, pahPct: mat.pahPct, stage: mat.stage };
       })
@@ -188,7 +105,7 @@ function CohortTimeline({ allAthletes, currentAthleteId }) {
           {cohortData.map(ath => {
             const pos        = timelinePos(ath.pahPct);
             const isCurrent  = ath.id === currentAthleteId;
-            const stageColor = STAGE_COLORS[ath.stage] || STAGE_COLORS['Pre PHV'];
+            const stageColor = STAGE_COLORS[ath.stage] || STAGE_COLORS['Pre-PHV'];
             const topOffset  = ath._row * 22;
             return (
               <div key={ath.id} style={{
@@ -302,22 +219,10 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
   if (!latest?.motherHeight)   missingFields.push("Mother's Height");
   if (!latest?.fatherHeight)   missingFields.push("Father's Height");
 
-  // Auto-calculate
+  // Auto-calculate using centralised function
   const mat = useMemo(() => {
-    if (!latest || !athlete?.dob || !height || !latest.bodyMass || !latest.motherHeight || !latest.fatherHeight) return null;
-    const ageDecimal = calcAgeDecimal(athlete.dob, latest.date);
-    if (ageDecimal <= 0) return null;
-    const pah = calcPAH(sex, height, latest.fatherHeight, latest.motherHeight, latest.bodyMass, ageDecimal);
-    if (!pah) return null;
-    const pahPct          = (height / pah) * 100;
-    const remainingGrowth = pah - height;
-    const midParent       = calcMidParentHeight(sex, latest.fatherHeight, latest.motherHeight);
-    const stage           = calcStage(pahPct);
-    const ci50            = calcCI(pah, sex, 0.674);
-    const ci90            = calcCI(pah, sex, 1.645);
-    const ageYM           = calcAgeYM(athlete.dob, latest.date);
-    return { pah, pahPct, remainingGrowth, midParent, stage, ci50, ci90, ageYM };
-  }, [latest, athlete?.dob, height, sex]);
+    return calculateAthleteMaturation(athlete);
+  }, [athlete]);
 
   const stageColors = mat?.stage ? STAGE_COLORS[mat.stage] : null;
 
@@ -390,11 +295,12 @@ export default function MaturationTab({ athlete, entries = [], allAthletes = [] 
                     {matEntries.map((e, i) => {
                       const eH   = getHeight(e);
                       const eSex = e.sex || athlete?.sex || 'Male';
-                      const eAge = athlete?.dob ? calcAgeDecimal(athlete.dob, e.date) : null;
-                      const ePah = (eH && e.bodyMass && e.motherHeight && e.fatherHeight && eAge)
-                        ? calcPAH(eSex, eH, e.fatherHeight, e.motherHeight, e.bodyMass, eAge) : null;
-                      const ePct   = ePah ? (eH / ePah) * 100 : null;
-                      const eStage = calcStage(ePct);
+                      const eMat = (eH && e.bodyMass && e.motherHeight && e.fatherHeight && athlete?.dob && e.date)
+                        ? calculateAthleteMaturation({ ...athlete, phase2: { ...athlete.phase2, maturation: { entries: [e] } } })
+                        : null;
+                      const ePah   = eMat?.pah ?? null;
+                      const ePct   = eMat?.pahPct ?? null;
+                      const eStage = eMat?.stage ?? null;
                       const esc   = eStage ? STAGE_COLORS[eStage] : null;
                       return (
                         <tr key={e.id || i} className="border-b border-gray-50">
