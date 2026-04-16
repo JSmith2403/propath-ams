@@ -4,6 +4,7 @@ import InitialsAvatar from '../InitialsAvatar';
 import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
+import { renderBold } from '../../utils/renderBold';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ function PhysioSection({ physioEntries }) {
         <span className="text-xs text-gray-500">{assessor}</span>
         <NoteTag type={entry.noteType} />
       </div>
-      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{noteText}</p>
+      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{renderBold(noteText)}</p>
     </div>
   );
 }
@@ -229,7 +230,7 @@ function PillarAssessmentSection({ entries, emptyMsg }) {
         <span className="text-xs text-gray-500">{entry.staff || '—'}</span>
         <NoteTag type={entry.entryType} />
       </div>
-      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note || '—'}</p>
+      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{renderBold(entry.note || '—')}</p>
     </div>
   );
 }
