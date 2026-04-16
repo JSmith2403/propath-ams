@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { Star, Trash2 } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
+import { renderBold } from '../../utils/renderBold';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
 const DEFAULT_ENTRY_TYPES = ['Assessment', 'Check-in', 'Observation'];
@@ -65,7 +66,7 @@ function EntryRow({ entry, flashId, fading, onDelete }) {
           <span className="text-xs text-gray-400 ml-auto">{formatTimestamp(entry.timestamp)}</span>
         </div>
         {entry.note
-          ? <p className="text-sm text-gray-600 leading-relaxed">{entry.note}</p>
+          ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{renderBold(entry.note)}</p>
           : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
       </div>
       {onDelete && (

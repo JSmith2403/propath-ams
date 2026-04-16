@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Trash2, Pencil } from 'lucide-react';
+import { renderBold } from '../../utils/renderBold';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -208,7 +209,7 @@ export default function PhysioTab({ entries = [], onAddEntry, onUpdateEntry, onD
                     )}
                   </div>
                 </div>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{noteText}</p>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{renderBold(noteText)}</p>
               </div>
             );
           })}
