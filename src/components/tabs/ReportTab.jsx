@@ -487,16 +487,6 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
               fontWeight: 600,
-              marginBottom: '6px',
-            }}>
-              Date of Assessment
-            </p>
-            <p style={{
-              color: '#1C1C1C',
-              fontSize: '10px',
-              letterSpacing: '0.15em',
-              textTransform: 'uppercase',
-              fontWeight: 400,
             }}>
               {today}
             </p>

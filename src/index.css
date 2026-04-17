@@ -54,12 +54,17 @@
     display: block !important;
     height: auto !important;
     overflow: visible !important;
-  }
-
-  /* Report content fills the page */
-  #report-content {
+    background: white !important;
     border: none !important;
     box-shadow: none !important;
+  }
+
+  /* Report content fills the page — no visible container frame */
+  #report-content {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: white !important;
     max-width: 100% !important;
     width: 100% !important;
     padding: 0 !important;
@@ -67,11 +72,22 @@
     border-radius: 0 !important;
   }
 
-  /* Make main area fill the page */
+  /* Cover page — pure white, no frame whatsoever */
+  .report-cover {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Make main area fill the page without any wrapper styling leaking in */
   main {
     display: block !important;
     overflow: visible !important;
     height: auto !important;
+    background: white !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 
   /* Section headers slightly larger than body */
