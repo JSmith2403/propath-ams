@@ -475,8 +475,8 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
             </p>
           </div>
 
-          {/* LOWER LEFT — athlete name + date of assessment, anchored at 75% */}
-          <div style={{ position: 'absolute', top: '72%', left: '20mm', right: '20mm', textAlign: 'left' }}>
+          {/* LOWER LEFT — athlete name + date of assessment, anchored at 88% */}
+          <div style={{ position: 'absolute', top: '88%', left: '20mm', right: '20mm', textAlign: 'left' }}>
             <h1 className="cover-athlete-name"
               style={{
                 color: '#1C1C1C',
@@ -535,7 +535,8 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
         </div>
 
         {/* ── Page 2 — Athlete header + Maturation + Physio Screen ────── */}
-        <section className="report-page report-page-break">
+        {/* No break-before here — the cover's break-after already starts page 2 */}
+        <section className="report-page">
           {/* Print-visible athlete header (photo, name, cohort, sport, age) */}
           <div className="flex items-start justify-between pb-5 mb-8 print-header"
             style={{ borderBottom: '1px solid #A58D69' }}>

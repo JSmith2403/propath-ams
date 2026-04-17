@@ -72,6 +72,13 @@
     border-radius: 0 !important;
   }
 
+  /* The on-screen content wrapper uses p-10 (2.5rem padding). In print
+     the @page margin already provides page padding, so kill the inner
+     wrapper padding so nothing pushes past the cover onto a blank page. */
+  #report-content > div {
+    padding: 0 !important;
+  }
+
   /* Cover page — pure white, no frame whatsoever */
   .report-cover {
     border: none !important;
@@ -116,14 +123,15 @@
     display: flex !important;
   }
 
-  /* Individual Section blocks (the inner .break-inside-avoid wrapper)
-     still avoid mid-section breaks, but the parent .report-page does
-     NOT need break-inside: avoid — sections inside a page group flow
-     naturally and break if the content is longer than a page. */
+  /* Individual <Section> wrappers inside a .report-page are allowed to
+     break across pages so pillars flow naturally with normal spacing.
+     Individual note cards and tables further down still use
+     break-inside: avoid to keep single entries intact. */
   #report-content .report-page > div,
-  #report-content .report-page > section {
-    break-inside: auto;
-    page-break-inside: auto;
+  #report-content .report-page > section,
+  #report-content .report-page > .break-inside-avoid {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 
   /* Cover page: always its own page, full A4 height. Inline padding
