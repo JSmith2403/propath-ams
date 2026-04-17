@@ -2,6 +2,7 @@ import { useState, useEffect, Fragment } from 'react';
 import { Star, Trash2 } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
 import { renderBold } from '../../utils/renderBold';
+import WordCounter from '../WordCounter';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
 const DEFAULT_ENTRY_TYPES = ['Assessment', 'Check-in', 'Observation'];
@@ -263,9 +264,10 @@ export default function PillarTab({
             Notes
           </label>
           <textarea rows={4} value={note} onChange={e => setNote(e.target.value)}
-            placeholder="Record observations, interventions, or context…"
+            placeholder="Record observations, interventions, or context..."
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-2 placeholder-gray-300 bg-white"
             style={{ '--tw-ring-color': '#A58D69' }} />
+          {entryType === 'Assessment' && <WordCounter text={note} limit={150} />}
         </div>
         <button onClick={handleSave} disabled={!staff.trim()}
           className="px-4 py-2 text-xs font-semibold text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"

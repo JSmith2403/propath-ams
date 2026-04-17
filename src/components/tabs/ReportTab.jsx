@@ -5,6 +5,7 @@ import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { renderBold } from '../../utils/renderBold';
+import logoPath from '../../assets/Propath_Primary Logo_White.png';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -312,6 +313,11 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, custo
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+                  {/* Plain-text fallback for print */}
+                  <span className="print-only text-xs font-semibold px-2 py-1 rounded"
+                    style={{ backgroundColor: bragOpt.bg, color: bragOpt.text }}>
+                    {bragOpt.label}
+                  </span>
                 </td>
               </tr>
             );
@@ -395,18 +401,62 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   return (
     <div>
       {/* Print button */}
-      <div className="flex justify-end mb-6 no-print">
+      <div className="flex flex-col items-end mb-6 no-print gap-1">
         <button onClick={handlePrint}
           className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg hover:opacity-90 transition-opacity"
           style={{ backgroundColor: '#A58D69' }}>
           <Download size={15} /> Download Report
         </button>
+        <p className="text-xs text-gray-400">Select 'Save as PDF' in the print dialog to download</p>
       </div>
 
-      <div id="report-content" className="bg-white rounded-xl border border-gray-100 p-10 max-w-4xl mx-auto">
+      <div id="report-content" className="bg-white rounded-xl border border-gray-100 max-w-4xl mx-auto">
 
-        {/* ── Section 1: Header ────────────────────────────────────── */}
-        <div className="flex items-start justify-between pb-7 mb-10 border-b-2" style={{ borderColor: '#A58D69' }}>
+        {/* ── Cover Page ─────────────────────────────────────────────── */}
+        <div className="report-cover flex flex-col justify-between p-14"
+          style={{ minHeight: '1000px', backgroundColor: '#ffffff' }}>
+
+          {/* Top block: logo + rule + label */}
+          <div>
+            <div className="inline-block rounded-lg p-6 mb-6" style={{ backgroundColor: '#1C1C1C' }}>
+              <img src={logoPath} alt="ProPath Academy" style={{ width: '180px', objectFit: 'contain' }} />
+            </div>
+            <div style={{ height: '1px', backgroundColor: '#A58D69', width: '100%' }} className="mb-6" />
+            <p className="text-xs font-semibold uppercase tracking-[0.25em]"
+              style={{ color: '#437E8D' }}>
+              ProPath Academy Assessment
+            </p>
+          </div>
+
+          {/* Middle block: athlete name + cohort + sport */}
+          <div className="my-16">
+            <h1 className="cover-athlete-name font-bold leading-tight mb-6"
+              style={{ color: '#1C1C1C', fontSize: '44px' }}>
+              {athlete.name}
+            </h1>
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-bold px-3 py-1 rounded uppercase tracking-wide"
+                style={{ backgroundColor: cohortStyle.bg, color: cohortStyle.text }}>
+                {athlete.cohort || 'Elite'}
+              </span>
+              <span className="text-base" style={{ color: '#6b7280' }}>{athlete.sport}</span>
+            </div>
+          </div>
+
+          {/* Bottom block: date of report */}
+          <div>
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: '#9ca3af' }}>
+              Date of Report
+            </p>
+            <p className="text-base font-semibold" style={{ color: '#1C1C1C' }}>{today}</p>
+          </div>
+        </div>
+
+        {/* ── Content pages ──────────────────────────────────────────── */}
+        <div className="p-10">
+
+        {/* ── Section 1: Header (for on-screen view of content pages) ─ */}
+        <div className="flex items-start justify-between pb-7 mb-10 border-b-2 no-print" style={{ borderColor: '#A58D69' }}>
           <div className="flex items-center gap-5">
             <div className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0"
               style={{ backgroundColor: '#111827' }}>
@@ -478,6 +528,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           <AreasToAddressSection phase2={phase2} />
         </Section>
 
+        </div>{/* /p-10 content wrapper */}
       </div>
     </div>
   );

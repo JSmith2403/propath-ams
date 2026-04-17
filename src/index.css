@@ -19,14 +19,24 @@
   .no-print,
   aside,
   nav,
-  [data-sidebar] {
+  [data-sidebar],
+  .print-hide,
+  button,
+  select {
     display: none !important;
+  }
+
+  /* Show the plain-text BRAG label used only when printing */
+  .print-only {
+    display: inline !important;
   }
 
   /* Reset full-page layout to block flow */
   body {
     background: white !important;
     display: block !important;
+    color: #1C1C1C !important;
+    font-size: 10pt !important;
   }
 
   /* The top-level flex wrapper must collapse */
@@ -42,7 +52,7 @@
     box-shadow: none !important;
     max-width: 100% !important;
     width: 100% !important;
-    padding: 12mm 14mm !important;
+    padding: 0 !important;
     margin: 0 !important;
     border-radius: 0 !important;
   }
@@ -54,16 +64,41 @@
     height: auto !important;
   }
 
-  /* Avoid page-break inside key sections */
-  .break-inside-avoid {
-    break-inside: avoid;
+  /* Section headers slightly larger than body */
+  #report-content h2 {
+    font-size: 12pt !important;
   }
 
-  /* Page settings */
+  /* Do not break mid-section; allow natural breaks between sections */
+  .break-inside-avoid,
+  #report-content section,
+  #report-content table,
+  #report-content tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Cover page: always its own page */
+  .report-cover {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  /* Athlete name on cover at 24pt */
+  .report-cover .cover-athlete-name {
+    font-size: 24pt !important;
+  }
+
+  /* Page settings — remove browser headers/footers + set margins */
   @page {
     size: A4 portrait;
-    margin: 12mm 14mm;
+    margin: 1.5cm;
   }
+}
+
+/* Hide elements that only appear during print */
+.print-only {
+  display: none;
 }
 
 @layer utilities {

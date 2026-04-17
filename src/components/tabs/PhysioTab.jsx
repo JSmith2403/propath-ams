@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trash2, Pencil } from 'lucide-react';
 import { renderBold } from '../../utils/renderBold';
+import WordCounter from '../WordCounter';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -80,6 +81,7 @@ function AssessmentForm({ initial, onSave, onCancel, title, saveLabel }) {
           placeholder="Clinical observations, findings, recommendations..."
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:border-[#437E8D] transition-colors resize-none"
         />
+        {noteType === 'Assessment' && <WordCounter text={notes} limit={150} />}
       </div>
 
       <div className="flex items-center gap-3">
