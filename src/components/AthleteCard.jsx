@@ -148,10 +148,22 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
                 Activate
               </button>
             </div>
+          ) : !wellnessData.rosterQuestions || wellnessData.rosterQuestions.length === 0 ? (
+            <div>
+              <p className="text-xs text-gray-400">No roster metrics selected</p>
+              <button
+                onClick={(e) => { e.stopPropagation(); onClick(athlete.id, { tab: 'wellness' }); }}
+                className="text-xs font-medium mt-0.5"
+                style={{ color: '#A58D69' }}
+              >
+                Configure
+              </button>
+            </div>
           ) : wellnessData.latestSubmission ? (
             <WellnessMiniRings
               submission={wellnessData.latestSubmission}
               date={wellnessData.latestDate}
+              questions={wellnessData.rosterQuestions}
             />
           ) : (
             <p className="text-xs text-gray-400 italic">Awaiting first submission</p>

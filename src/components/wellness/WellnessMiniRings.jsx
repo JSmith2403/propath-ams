@@ -1,15 +1,15 @@
 import WellnessDonutRing from './WellnessDonutRing';
-import { getMetricColour } from '../../utils/wellnessFlags';
+import { getQuestionColour } from '../../utils/wellnessFlags';
 
-const METRICS = [
-  { key: 'sleep_duration',  label: 'Sleep',    max: 12 },
-  { key: 'sleep_quality',   label: 'Quality',  max: 7 },
-  { key: 'fatigue',         label: 'Fatigue',  max: 7 },
-  { key: 'muscle_soreness', label: 'Soreness', max: 7 },
-  { key: 'stress',          label: 'Stress',   max: 7 },
-];
+/**
+ * Props:
+ *   submission — latest submission row with .responses jsonb
+ *   date — latest submission date
+ *   questions — ordered array of wellness_question rows that have show_on_roster = true
+ */
+export default function WellnessMiniRings({ submission, date, questions }) {
+  if (!questions || questions.length === 0) return null;
 
-export default function WellnessMiniRings({ submission, date }) {
   return (
     <div>
       {date && (
@@ -18,16 +18,23 @@ export default function WellnessMiniRings({ submission, date }) {
         </p>
       )}
       <div className="flex items-start justify-between">
-        {METRICS.map((m) => {
-          const val = Number(submission[m.key]);
-          const colour = getMetricColour(m.key, val);
+        {questions.map((q) => {
+          const raw = submission?.responses?.[q.id];
+          const val = raw == null || raw === '' ? 0 : Number(raw);
+          const max = q.question_type === 'numerical'
+            ? (Number.isFinite(Number(q.numerical_max)) ? Number(q.numerical_max) : 10)
+            : (Number.isFinite(Number(q.scale_max)) ? Number(q.scale_max) : 7);
+          const colour = getQuestionColour(q, val);
+          const label = q.question_text.length > 8
+            ? q.question_text.split(' ').slice(0, 2).join(' ')
+            : q.question_text;
           return (
             <WellnessDonutRing
-              key={m.key}
+              key={q.id}
               value={val}
-              max={m.max}
+              max={max}
               colour={colour}
-              label={m.label}
+              label={label}
               size={36}
             />
           );

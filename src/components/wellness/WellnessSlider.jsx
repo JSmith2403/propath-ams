@@ -1,32 +1,30 @@
 import { useId } from 'react';
 
-const STOPS = [1, 2, 3, 4, 5, 6, 7];
-
-export default function WellnessSlider({ label, value, onChange, leftAnchor, rightAnchor }) {
+export default function WellnessSlider({ label, value, onChange, min = 1, max = 7, leftAnchor, rightAnchor }) {
   const id = useId();
+  const stops = [];
+  for (let i = min; i <= max; i++) stops.push(i);
 
   return (
-    <div className="mb-6">
+    <div>
       <label htmlFor={id} className="block text-sm font-semibold mb-2" style={{ color: '#e5e5e5' }}>
         {label}
       </label>
 
-      {/* Slider track */}
       <div className="relative px-1">
         <input
           id={id}
           type="range"
-          min={1}
-          max={7}
+          min={min}
+          max={max}
           step={1}
-          value={value}
+          value={value ?? min}
           onChange={(e) => onChange(Number(e.target.value))}
           className="wellness-slider w-full"
         />
 
-        {/* Tick marks */}
         <div className="flex justify-between px-[2px] mt-1">
-          {STOPS.map((n) => (
+          {stops.map((n) => (
             <span
               key={n}
               className="text-xs font-medium"
@@ -38,13 +36,11 @@ export default function WellnessSlider({ label, value, onChange, leftAnchor, rig
         </div>
       </div>
 
-      {/* Anchor labels */}
       <div className="flex justify-between mt-1">
         <span className="text-xs" style={{ color: '#888' }}>{leftAnchor}</span>
         <span className="text-xs" style={{ color: '#888' }}>{rightAnchor}</span>
       </div>
 
-      {/* Custom slider styles */}
       <style>{`
         .wellness-slider {
           -webkit-appearance: none;

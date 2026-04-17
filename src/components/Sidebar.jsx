@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut, Shield } from 'lucide-react';
+import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut, Shield, ClipboardList } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -148,6 +148,13 @@ export default function Sidebar({
               label="User Management"
               active={view === 'users'}
               onClick={() => onNavigate('users')}
+            />
+
+            <NavItem
+              icon={ClipboardList}
+              label="Survey Questions"
+              active={view === 'survey-questions'}
+              onClick={() => onNavigate('survey-questions')}
             />
           </>
         )}

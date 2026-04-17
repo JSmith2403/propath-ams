@@ -1,68 +1,78 @@
 /**
- * Wellness flagging logic — Tier 1 (absolute) and Tier 2 (relative).
+ * Flexible wellness flagging logic — operates on a question definition
+ * plus a submitted value.
  *
- * Direction convention:
- *   Sleep Duration  → lower is worse
- *   All others      → higher is worse
+ * A question looks like:
+ *   { id, question_text, question_type, higher_is_worse,
+ *     green_threshold, amber_threshold, scale_min, scale_max,
+ *     numerical_min, numerical_max, ... }
+ *
+ * Colour rules:
+ *   higher_is_worse = true  → green if value <= green_threshold
+ *                              amber if value <= amber_threshold
+ *                              else red
+ *   higher_is_worse = false → green if value >= green_threshold
+ *                              amber if value >= amber_threshold
+ *                              else red
+ *   If thresholds are null/undefined → always green (no flagging)
  */
 
-const TIER1 = {
-  sleep_duration: (v) => v <= 5,
-  sleep_quality:  (v) => v >= 6,
-  fatigue:        (v) => v >= 6,
-  muscle_soreness:(v) => v >= 6,
-  stress:         (v) => v >= 6,
-};
+export function getQuestionColour(question, value) {
+  if (question == null || value == null || value === '') return 'green';
+  const v = Number(value);
+  if (isNaN(v)) return 'green';
 
-// Metrics where a HIGHER value is worse
-const HIGHER_IS_WORSE = new Set([
-  'sleep_quality', 'fatigue', 'muscle_soreness', 'stress',
-]);
+  const green = question.green_threshold;
+  const amber = question.amber_threshold;
+  if (green == null || amber == null) return 'green';
 
-const METRIC_KEYS = [
-  'sleep_duration', 'sleep_quality', 'fatigue', 'muscle_soreness', 'stress',
-];
-
-/** True when the value breaches the absolute threshold. */
-export function isTier1Flagged(metric, value) {
-  const check = TIER1[metric];
-  return check ? check(value) : false;
-}
-
-/**
- * True when the value is > 1.5 SD worse than the personal mean.
- * Returns false if fewer than 5 data points (not enough signal).
- */
-export function isTier2Flagged(metric, value, mean, sd, sampleSize) {
-  if (sampleSize < 5 || sd === 0) return false;
-  if (HIGHER_IS_WORSE.has(metric)) {
-    return value >= mean + 1.5 * sd;
+  if (question.higher_is_worse) {
+    if (v <= Number(green)) return 'green';
+    if (v <= Number(amber)) return 'amber';
+    return 'red';
   }
-  // sleep_duration — lower is worse
-  return value <= mean - 1.5 * sd;
-}
-
-/** Returns 'tier1' | 'tier2' | null for a single metric value. */
-export function getMetricFlag(metric, value, mean, sd, sampleSize) {
-  if (isTier1Flagged(metric, value)) return 'tier1';
-  if (isTier2Flagged(metric, value, mean, sd, sampleSize)) return 'tier2';
-  return null;
+  // lower is worse
+  if (v >= Number(green)) return 'green';
+  if (v >= Number(amber)) return 'amber';
+  return 'red';
 }
 
 /**
- * Compute rolling mean + SD for each metric over the last `windowDays` days.
- * Input: submissions sorted chronologically (oldest first).
- * Returns a Map keyed by submission_date string → { [metric]: { mean, sd, n } }.
+ * A question is Tier-1 flagged when its colour is red.
  */
-export function computeRollingStats(submissions, windowDays = 28) {
+export function isTier1Flagged(question, value) {
+  return getQuestionColour(question, value) === 'red';
+}
+
+/**
+ * Check whether any response in a submission is Tier-1 flagged for the given
+ * set of questions.
+ * submission.responses = { [question_id]: value }
+ */
+export function isAnyResponseFlagged(submission, questions) {
+  const responses = submission?.responses || {};
+  for (const q of questions) {
+    if (q.question_type === 'text' || q.question_type === 'yes_no') continue;
+    const val = responses[q.id];
+    if (val == null || val === '') continue;
+    if (isTier1Flagged(q, val)) return true;
+  }
+  return false;
+}
+
+/**
+ * Compute rolling mean and SD per question, oldest-first.
+ * Returns Map<submission_date, { [question_id]: { mean, sd, n } }>.
+ */
+export function computeRollingStats(submissions, questions, windowDays = 28) {
   const result = new Map();
+  const quantQuestions = questions.filter(q => q.question_type === 'scale' || q.question_type === 'numerical');
 
   submissions.forEach((sub, idx) => {
     const subDate = new Date(sub.submission_date);
     const cutoff = new Date(subDate);
     cutoff.setDate(cutoff.getDate() - windowDays);
 
-    // Gather window — all submissions before (and including) this one within windowDays
     const window = [];
     for (let i = idx; i >= 0; i--) {
       const d = new Date(submissions[i].submission_date);
@@ -71,55 +81,18 @@ export function computeRollingStats(submissions, windowDays = 28) {
     }
 
     const stats = {};
-    for (const key of METRIC_KEYS) {
-      const vals = window.map((s) => Number(s[key])).filter((v) => !isNaN(v));
+    for (const q of quantQuestions) {
+      const vals = window
+        .map(s => Number(s.responses?.[q.id]))
+        .filter(v => !isNaN(v));
       const n = vals.length;
-      if (n === 0) {
-        stats[key] = { mean: 0, sd: 0, n: 0 };
-        continue;
-      }
+      if (n === 0) { stats[q.id] = { mean: 0, sd: 0, n: 0 }; continue; }
       const mean = vals.reduce((a, b) => a + b, 0) / n;
       const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
-      stats[key] = { mean, sd: Math.sqrt(variance), n };
+      stats[q.id] = { mean, sd: Math.sqrt(variance), n };
     }
     result.set(sub.submission_date, stats);
   });
 
   return result;
 }
-
-/**
- * Check whether ANY metric in a submission is flagged (Tier 1 or Tier 2).
- * `rollingStats` is the Map from computeRollingStats.
- */
-export function isAnyFlagged(submission, rollingStats) {
-  const stats = rollingStats.get(submission.submission_date);
-  for (const key of METRIC_KEYS) {
-    const val = Number(submission[key]);
-    if (isNaN(val)) continue;
-    const s = stats?.[key] || { mean: 0, sd: 0, n: 0 };
-    if (getMetricFlag(key, val, s.mean, s.sd, s.n)) return true;
-  }
-  return false;
-}
-
-/**
- * Tier 1 absolute colour for a single metric value.
- * Returns 'red' | 'amber' | 'green'.
- *
- * Sleep Duration (hours): Green >= 7, Amber 5-6.5, Red <= 4.5
- * All others (1-7 scale, higher is worse): Green 1-3, Amber 4-5, Red 6-7
- */
-export function getMetricColour(metric, value) {
-  if (metric === 'sleep_duration') {
-    if (value >= 7) return 'green';
-    if (value >= 5) return 'amber';
-    return 'red';
-  }
-  // sleep_quality, fatigue, muscle_soreness, stress
-  if (value <= 3) return 'green';
-  if (value <= 5) return 'amber';
-  return 'red';
-}
-
-export { METRIC_KEYS };

@@ -12,6 +12,7 @@ import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import { useWellnessRoster } from './hooks/useWellnessRoster';
 import WellnessOverview from './components/WellnessOverview';
+import SurveyQuestionsAdmin from './components/SurveyQuestionsAdmin';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -88,8 +89,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const canDelete = !isExternal;
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users')) return;
-    if (!isAdmin && v === 'users') return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'survey-questions')) return;
+    if (!isAdmin && (v === 'users' || v === 'survey-questions')) return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
   };
@@ -209,6 +210,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
         {view === 'users' && isAdmin && (
           <UserManagementView athletes={athletes} />
+        )}
+
+        {view === 'survey-questions' && isAdmin && (
+          <SurveyQuestionsAdmin />
         )}
 
       </main>

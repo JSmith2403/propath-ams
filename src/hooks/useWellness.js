@@ -3,14 +3,13 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Manages wellness token + submissions for a single athlete.
- * Used by WellnessTab in the athlete profile.
+ * Submissions now store { question_id: value } pairs in the responses jsonb column.
  */
 export function useWellness(athleteId) {
-  const [tokenData, setTokenData] = useState(null);  // { id, token, is_active } | null
-  const [submissions, setSubmissions] = useState([]); // sorted oldest-first
+  const [tokenData, setTokenData] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch token
   const fetchToken = useCallback(async () => {
     if (!athleteId) return;
     const { data } = await supabase
@@ -21,7 +20,6 @@ export function useWellness(athleteId) {
     setTokenData(data || null);
   }, [athleteId]);
 
-  // Fetch submissions (oldest first for chart/stats)
   const fetchSubmissions = useCallback(async () => {
     if (!athleteId) return;
     const { data } = await supabase
@@ -32,7 +30,6 @@ export function useWellness(athleteId) {
     setSubmissions(data || []);
   }, [athleteId]);
 
-  // Initial load
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -43,7 +40,6 @@ export function useWellness(athleteId) {
     return () => { cancelled = true; };
   }, [fetchToken, fetchSubmissions]);
 
-  // Activate — generate a new token or reactivate existing one
   const activateWellness = useCallback(async () => {
     try {
       if (tokenData) {
@@ -66,7 +62,6 @@ export function useWellness(athleteId) {
     }
   }, [athleteId, tokenData, fetchToken]);
 
-  // Deactivate
   const deactivateWellness = useCallback(async () => {
     if (!tokenData) return;
     const { error } = await supabase
@@ -77,7 +72,6 @@ export function useWellness(athleteId) {
     await fetchToken();
   }, [tokenData, fetchToken]);
 
-  // Refresh submissions (call after data changes)
   const refreshSubmissions = useCallback(async () => {
     await fetchSubmissions();
   }, [fetchSubmissions]);

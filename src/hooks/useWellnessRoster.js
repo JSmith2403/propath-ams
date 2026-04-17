@@ -2,8 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
- * Batch-fetch wellness activation status and latest submission for all athletes.
- * Returns a map: { [athleteId]: { isActive, latestSubmission, latestDate } }
+ * Batch-fetch wellness data for the roster.
+ * Returns:
+ *   wellnessMap: { [athleteId]: {
+ *     isActive,
+ *     latestSubmission,         // full row with responses jsonb
+ *     latestDate,
+ *     rosterQuestions: [ question, ... ]   // full question objects, ordered
+ *   }}
  */
 export function useWellnessRoster(athleteIds) {
   const [wellnessMap, setWellnessMap] = useState({});
@@ -21,41 +27,50 @@ export function useWellnessRoster(athleteIds) {
     (async () => {
       setLoading(true);
 
-      // 1. Fetch all tokens for these athletes
-      const { data: tokens } = await supabase
-        .from('wellness_tokens')
-        .select('athlete_id, is_active')
-        .in('athlete_id', athleteIds);
-
-      // 2. Fetch the latest submission per athlete
-      //    Order by submission_date desc, take distinct on athlete_id
-      const { data: subs } = await supabase
-        .from('wellness_submissions')
-        .select('athlete_id, submission_date, sleep_duration, sleep_quality, fatigue, muscle_soreness, stress')
-        .in('athlete_id', athleteIds)
-        .order('submission_date', { ascending: false });
+      const [tokensRes, subsRes, aqRes] = await Promise.all([
+        supabase.from('wellness_tokens').select('athlete_id, is_active').in('athlete_id', athleteIds),
+        supabase.from('wellness_submissions').select('*').in('athlete_id', athleteIds).order('submission_date', { ascending: false }),
+        supabase.from('wellness_athlete_questions').select('athlete_id, question_id, show_on_roster, display_order').in('athlete_id', athleteIds).eq('show_on_roster', true).order('display_order', { ascending: true }),
+      ]);
 
       if (cancelled) return;
 
-      const map = {};
+      // Fetch only the questions needed
+      const questionIds = [...new Set((aqRes.data || []).map(r => r.question_id))];
+      let questions = [];
+      if (questionIds.length > 0) {
+        const { data: qs } = await supabase
+          .from('wellness_questions')
+          .select('*')
+          .in('id', questionIds);
+        questions = qs || [];
+      }
+      const qMap = Object.fromEntries(questions.map(q => [q.id, q]));
 
-      // Index tokens
       const tokenMap = {};
-      (tokens || []).forEach((t) => { tokenMap[t.athlete_id] = t; });
+      (tokensRes.data || []).forEach(t => { tokenMap[t.athlete_id] = t; });
 
-      // Index latest submission per athlete (first occurrence since sorted desc)
       const subMap = {};
-      (subs || []).forEach((s) => {
+      (subsRes.data || []).forEach(s => {
         if (!subMap[s.athlete_id]) subMap[s.athlete_id] = s;
       });
 
-      athleteIds.forEach((id) => {
+      const rosterMap = {};
+      (aqRes.data || []).forEach(r => {
+        if (!rosterMap[r.athlete_id]) rosterMap[r.athlete_id] = [];
+        const q = qMap[r.question_id];
+        if (q) rosterMap[r.athlete_id].push(q);
+      });
+
+      const map = {};
+      athleteIds.forEach(id => {
         const tok = tokenMap[id];
         const sub = subMap[id];
         map[id] = {
           isActive: tok?.is_active ?? false,
           latestSubmission: sub || null,
           latestDate: sub?.submission_date || null,
+          rosterQuestions: rosterMap[id] || [],
         };
       });
 
@@ -66,5 +81,5 @@ export function useWellnessRoster(athleteIds) {
     return () => { cancelled = true; };
   }, [athleteIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { wellnessMap, loading: loading };
+  return { wellnessMap, loading };
 }
