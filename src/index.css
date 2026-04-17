@@ -15,6 +15,16 @@
 
 /* ── Print styles ── */
 @media print {
+  /* Preserve background colours and backgrounds without requiring the
+     user to tick 'Background graphics' in the browser print dialog. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
   /* Hide all interactive chrome */
   .no-print,
   aside,
@@ -78,21 +88,25 @@
     page-break-inside: avoid !important;
   }
 
-  /* Cover page: always its own page */
+  /* Cover page: always its own page, full A4 height. Inline padding
+     on the element provides cover whitespace since @page :first is 0. */
   .report-cover {
     break-after: page !important;
     page-break-after: always !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    min-height: 297mm !important;
   }
 
-  /* Athlete name on cover at 24pt */
-  .report-cover .cover-athlete-name {
-    font-size: 24pt !important;
-  }
-
-  /* Page settings — remove browser headers/footers + set margins */
+  /* Page settings — remove browser headers/footers + set margins.
+     The first page (cover) uses zero margin so its inline padding
+     controls its own whitespace. All other pages use a 1.5cm margin. */
   @page {
     size: A4 portrait;
     margin: 1.5cm;
+  }
+  @page :first {
+    margin: 0;
   }
 }
 

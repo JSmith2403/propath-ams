@@ -420,82 +420,84 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
 
       <div id="report-content" className="bg-white rounded-xl border border-gray-100 max-w-4xl mx-auto">
 
-        {/* ── Cover Page ─────────────────────────────────────────────── */}
-        <div className="report-cover flex flex-col"
-          style={{ minHeight: '1100px', backgroundColor: '#ffffff', padding: '80px 64px' }}>
+        {/* ── Cover Page — full A4, pure black & white ───────────────── */}
+        <div className="report-cover"
+          style={{
+            minHeight: '297mm',
+            backgroundColor: '#ffffff',
+            padding: '20mm 20mm',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+          }}>
 
-          {/* TOP THIRD — logo + gold rule */}
-          <div>
+          {/* TOP RIGHT — CONFIDENTIAL */}
+          <div style={{ textAlign: 'right' }}>
+            <span style={{
+              color: '#1C1C1C',
+              fontSize: '9px',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+            }}>
+              Confidential
+            </span>
+          </div>
+
+          {/* UPPER CENTRE — logo + ASSESSMENT wordmark */}
+          <div style={{ marginTop: '40mm', textAlign: 'center' }}>
             <img
               src={logoPath}
               alt="ProPath Academy"
-              style={{ width: '180px', objectFit: 'contain', display: 'block' }}
+              style={{ width: '220px', objectFit: 'contain', display: 'inline-block' }}
             />
-            <div style={{ height: '1px', backgroundColor: '#A58D69', width: '100%', marginTop: '56px', marginBottom: '56px' }} />
+            <p style={{
+              color: '#1C1C1C',
+              fontSize: '28px',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              marginTop: '4px',
+            }}>
+              Assessment
+            </p>
           </div>
 
-          {/* MIDDLE SECTION — label, athlete name, cohort, sport */}
-          <div>
-            <p style={{
-              color: '#437E8D',
-              fontSize: '11px',
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              marginBottom: '48px',
-            }}>
-              ProPath Academy Assessment
-            </p>
+          {/* Flex spacer pushes the athlete details into the lower third */}
+          <div style={{ flex: 1 }} />
 
+          {/* LOWER LEFT — athlete name + date of assessment */}
+          <div style={{ textAlign: 'left' }}>
             <h1 className="cover-athlete-name"
               style={{
                 color: '#1C1C1C',
-                fontSize: '42px',
+                fontSize: '36px',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
                 fontWeight: 700,
                 lineHeight: 1.1,
-                marginBottom: '20px',
+                marginBottom: '32px',
               }}>
               {athlete.name}
             </h1>
 
-            <div className="flex items-center gap-4 mb-3">
-              <span style={{
-                backgroundColor: '#A58D69',
-                color: '#1C1C1C',
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                padding: '3px 10px',
-                borderRadius: '3px',
-              }}>
-                {athlete.cohort || 'Elite'}
-              </span>
-            </div>
-
-            <p style={{ color: '#666666', fontSize: '16px', fontWeight: 400, marginBottom: '32px' }}>
-              {athlete.sport}
-            </p>
-
-            <div style={{ height: '1px', backgroundColor: '#e5e7eb', width: '100%' }} />
-          </div>
-
-          {/* Spacer pushes the date block to the bottom quarter */}
-          <div style={{ flex: 1 }} />
-
-          {/* BOTTOM SECTION — date of report */}
-          <div>
             <p style={{
-              color: '#999999',
+              color: '#1C1C1C',
               fontSize: '10px',
-              letterSpacing: '0.2em',
+              letterSpacing: '0.15em',
               textTransform: 'uppercase',
               fontWeight: 600,
-              marginBottom: '8px',
+              marginBottom: '6px',
             }}>
-              Date of Report
+              Date of Assessment
             </p>
-            <p style={{ color: '#1C1C1C', fontSize: '16px', fontWeight: 700 }}>
+            <p style={{
+              color: '#1C1C1C',
+              fontSize: '10px',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 400,
+            }}>
               {today}
             </p>
           </div>
