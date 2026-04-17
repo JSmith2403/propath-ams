@@ -5,7 +5,7 @@ import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { renderBold } from '../../utils/renderBold';
-import logoPath from '../../assets/Propath_Primary Logo_White.png';
+import logoPath from '../../assets/Propath_Primary Logo_Black.png';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -398,6 +398,14 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   const cohortStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const today = formatDate(new Date().toISOString());
 
+  // Helpers to decide whether a pillar/physio section has any Assessment content
+  const hasPhysioAssessment = (phase2?.physio?.entries || []).some(e => e.noteType === 'Assessment');
+  const pillarHasAssessment = (entries) => (entries || []).some(e => e.entryType === 'Assessment');
+  const hasLifestyleAssessment = pillarHasAssessment(athlete.ragLog?.lifestyle);
+  const hasNutritionAssessment = pillarHasAssessment(athlete.ragLog?.nutrition);
+  const hasPsychAssessment     = pillarHasAssessment(athlete.ragLog?.psych);
+  const hasPhysicalAssessment  = pillarHasAssessment(athlete.ragLog?.physical);
+
   return (
     <div>
       {/* Print button */}
@@ -413,42 +421,83 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
       <div id="report-content" className="bg-white rounded-xl border border-gray-100 max-w-4xl mx-auto">
 
         {/* ── Cover Page ─────────────────────────────────────────────── */}
-        <div className="report-cover flex flex-col justify-between p-14"
-          style={{ minHeight: '1000px', backgroundColor: '#ffffff' }}>
+        <div className="report-cover flex flex-col"
+          style={{ minHeight: '1100px', backgroundColor: '#ffffff', padding: '80px 64px' }}>
 
-          {/* Top block: logo + rule + label */}
+          {/* TOP THIRD — logo + gold rule */}
           <div>
-            <div className="inline-block rounded-lg p-6 mb-6" style={{ backgroundColor: '#1C1C1C' }}>
-              <img src={logoPath} alt="ProPath Academy" style={{ width: '180px', objectFit: 'contain' }} />
-            </div>
-            <div style={{ height: '1px', backgroundColor: '#A58D69', width: '100%' }} className="mb-6" />
-            <p className="text-xs font-semibold uppercase tracking-[0.25em]"
-              style={{ color: '#437E8D' }}>
+            <img
+              src={logoPath}
+              alt="ProPath Academy"
+              style={{ width: '180px', objectFit: 'contain', display: 'block' }}
+            />
+            <div style={{ height: '1px', backgroundColor: '#A58D69', width: '100%', marginTop: '56px', marginBottom: '56px' }} />
+          </div>
+
+          {/* MIDDLE SECTION — label, athlete name, cohort, sport */}
+          <div>
+            <p style={{
+              color: '#437E8D',
+              fontSize: '11px',
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              marginBottom: '48px',
+            }}>
               ProPath Academy Assessment
             </p>
-          </div>
 
-          {/* Middle block: athlete name + cohort + sport */}
-          <div className="my-16">
-            <h1 className="cover-athlete-name font-bold leading-tight mb-6"
-              style={{ color: '#1C1C1C', fontSize: '44px' }}>
+            <h1 className="cover-athlete-name"
+              style={{
+                color: '#1C1C1C',
+                fontSize: '42px',
+                fontWeight: 700,
+                lineHeight: 1.1,
+                marginBottom: '20px',
+              }}>
               {athlete.name}
             </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-xs font-bold px-3 py-1 rounded uppercase tracking-wide"
-                style={{ backgroundColor: cohortStyle.bg, color: cohortStyle.text }}>
+
+            <div className="flex items-center gap-4 mb-3">
+              <span style={{
+                backgroundColor: '#A58D69',
+                color: '#1C1C1C',
+                fontSize: '10px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                padding: '3px 10px',
+                borderRadius: '3px',
+              }}>
                 {athlete.cohort || 'Elite'}
               </span>
-              <span className="text-base" style={{ color: '#6b7280' }}>{athlete.sport}</span>
             </div>
+
+            <p style={{ color: '#666666', fontSize: '16px', fontWeight: 400, marginBottom: '32px' }}>
+              {athlete.sport}
+            </p>
+
+            <div style={{ height: '1px', backgroundColor: '#e5e7eb', width: '100%' }} />
           </div>
 
-          {/* Bottom block: date of report */}
+          {/* Spacer pushes the date block to the bottom quarter */}
+          <div style={{ flex: 1 }} />
+
+          {/* BOTTOM SECTION — date of report */}
           <div>
-            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: '#9ca3af' }}>
+            <p style={{
+              color: '#999999',
+              fontSize: '10px',
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              marginBottom: '8px',
+            }}>
               Date of Report
             </p>
-            <p className="text-base font-semibold" style={{ color: '#1C1C1C' }}>{today}</p>
+            <p style={{ color: '#1C1C1C', fontSize: '16px', fontWeight: 700 }}>
+              {today}
+            </p>
           </div>
         </div>
 
@@ -492,26 +541,40 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           />
         </Section>
 
-        {/* ── Section 3: Physio Screen ────────────────────────────── */}
-        <Section title="Physio Screen">
-          <PhysioSection physioEntries={phase2?.physio?.entries} />
-        </Section>
+        {/* ── Section 3: Physio Screen — only if an Assessment exists ── */}
+        {hasPhysioAssessment && (
+          <Section title="Physio Screen">
+            <PhysioSection physioEntries={phase2?.physio?.entries} />
+          </Section>
+        )}
 
-        {/* ── Section 4: Lifestyle ────────────────────────────────── */}
-        <Section title="Lifestyle">
-          <PillarAssessmentSection
-            entries={athlete.ragLog?.lifestyle}
-            emptyMsg="No lifestyle assessment recorded yet."
-          />
-        </Section>
+        {/* ── Section 4: Physical — only if an Assessment exists ─────── */}
+        {hasPhysicalAssessment && (
+          <Section title="Physical">
+            <PillarAssessmentSection entries={athlete.ragLog?.physical} />
+          </Section>
+        )}
 
-        {/* ── Section 5: Nutrition ────────────────────────────────── */}
-        <Section title="Nutrition">
-          <PillarAssessmentSection
-            entries={athlete.ragLog?.nutrition}
-            emptyMsg="No nutrition assessment recorded yet."
-          />
-        </Section>
+        {/* ── Section 5: Psychological — only if an Assessment exists ── */}
+        {hasPsychAssessment && (
+          <Section title="Psychological">
+            <PillarAssessmentSection entries={athlete.ragLog?.psych} />
+          </Section>
+        )}
+
+        {/* ── Section 6: Nutrition — only if an Assessment exists ─────── */}
+        {hasNutritionAssessment && (
+          <Section title="Nutrition">
+            <PillarAssessmentSection entries={athlete.ragLog?.nutrition} />
+          </Section>
+        )}
+
+        {/* ── Section 7: Lifestyle — only if an Assessment exists ─────── */}
+        {hasLifestyleAssessment && (
+          <Section title="Lifestyle">
+            <PillarAssessmentSection entries={athlete.ragLog?.lifestyle} />
+          </Section>
+        )}
 
         {/* ── Section 6: Performance Testing ─────────────────────── */}
         <Section title="Performance Testing">
