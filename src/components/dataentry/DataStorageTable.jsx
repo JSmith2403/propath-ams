@@ -103,18 +103,20 @@ function getStorageKey(metricKey) {
 }
 
 // ── Value extraction from entries ────────────────────────────────────────────
+// Accepts both the current value/left/right format and legacy best/bestL/bestR
+// format so entries created before the refactor still render.
 function getEntryVal(entry, side) {
   if (!entry) return null;
-  if (side === 'L') return entry.left ?? null;
-  if (side === 'R') return entry.right ?? null;
-  return entry.value ?? null;
+  if (side === 'L') return entry.left ?? entry.bestL ?? null;
+  if (side === 'R') return entry.right ?? entry.bestR ?? null;
+  return entry.value ?? entry.best ?? null;
 }
 
 function computeCalc(col, entryMap) {
   const entry = entryMap[col.metricKey];
   if (!entry) return null;
-  const L = entry.left ?? null;
-  const R = entry.right ?? null;
+  const L = entry.left ?? entry.bestL ?? null;
+  const R = entry.right ?? entry.bestR ?? null;
   if (col.calcType === 'pct_discrepancy_lr') {
     if (L == null || R == null) return null;
     const avg = (Math.abs(L) + Math.abs(R)) / 2;
@@ -137,28 +139,30 @@ function fmt(v) {
 function buildRows(athletes, allCols) {
   const rows = [];
 
-  athletes.forEach(athlete => {
+  (athletes || []).forEach(athlete => {
+    // Skip athletes without phase2 or with a malformed shape — renders shouldn't
+    // crash because one athlete is missing a nested bucket.
+    if (!athlete || !athlete.phase2) return;
     const p2 = athlete.phase2;
-    if (!p2) return;
 
     // Collect all entries grouped by date
     const dateMap = {}; // date → { metricKey → entry }
 
-    // Performance entries
+    // Performance entries — tolerate missing/null bucket
     const perfEntries = p2.performance?.entries || {};
     Object.entries(perfEntries).forEach(([metricKey, entryList]) => {
       (entryList || []).forEach(entry => {
-        if (!entry.date) return;
+        if (!entry || !entry.date) return;
         if (!dateMap[entry.date]) dateMap[entry.date] = {};
         dateMap[entry.date][metricKey] = entry;
       });
     });
 
-    // Mobility entries
+    // Mobility entries — tolerate missing/null bucket
     const mobEntries = p2.mobility?.entries || {};
     Object.entries(mobEntries).forEach(([joint, entryList]) => {
       (entryList || []).forEach(entry => {
-        if (!entry.date) return;
+        if (!entry || !entry.date) return;
         if (!dateMap[entry.date]) dateMap[entry.date] = {};
         // Map back from mobility storage key to session metric key
         dateMap[entry.date][joint] = entry;
