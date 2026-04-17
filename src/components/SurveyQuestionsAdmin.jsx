@@ -216,18 +216,34 @@ export default function SurveyQuestionsAdmin() {
   const { questions, loading, createQuestion, updateQuestion, deleteQuestion } = useWellnessQuestions();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [error, setError] = useState(null);
 
   const handleCreate = async (payload) => {
-    await createQuestion(payload);
-    setShowForm(false);
+    setError(null);
+    try {
+      await createQuestion(payload);
+      setShowForm(false);
+    } catch (err) {
+      setError('Failed to create question: ' + (err.message || err));
+    }
   };
   const handleUpdate = async (payload) => {
-    await updateQuestion(editing.id, payload);
-    setEditing(null);
+    setError(null);
+    try {
+      await updateQuestion(editing.id, payload);
+      setEditing(null);
+    } catch (err) {
+      setError('Failed to update question: ' + (err.message || err));
+    }
   };
   const handleDelete = async (q) => {
     if (!window.confirm('This will remove this question from all athlete surveys. Are you sure?')) return;
-    await deleteQuestion(q.id);
+    setError(null);
+    try {
+      await deleteQuestion(q.id);
+    } catch (err) {
+      setError('Failed to delete question: ' + (err.message || err));
+    }
   };
 
   return (
@@ -252,6 +268,13 @@ export default function SurveyQuestionsAdmin() {
       </div>
 
       <div className="px-8 pb-8">
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-lg text-sm"
+            style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+            {error}
+          </div>
+        )}
+
         {showForm && (
           <QuestionForm
             title="New Question"

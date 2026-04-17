@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Fetch + manage the global wellness question bank.
+ *
+ * Mutations throw on error so callers can surface messages to the user.
  */
 export function useWellnessQuestions() {
   const [questions, setQuestions] = useState([]);
@@ -26,7 +28,10 @@ export function useWellnessQuestions() {
       .insert(payload)
       .select()
       .single();
-    if (error) { console.error('[Wellness] create question:', error); return null; }
+    if (error) {
+      console.error('[Wellness] create question:', error);
+      throw error;
+    }
     await fetchAll();
     return data;
   }, [fetchAll]);
@@ -36,7 +41,10 @@ export function useWellnessQuestions() {
       .from('wellness_questions')
       .update(patch)
       .eq('id', id);
-    if (error) console.error('[Wellness] update question:', error);
+    if (error) {
+      console.error('[Wellness] update question:', error);
+      throw error;
+    }
     await fetchAll();
   }, [fetchAll]);
 
@@ -45,7 +53,10 @@ export function useWellnessQuestions() {
       .from('wellness_questions')
       .delete()
       .eq('id', id);
-    if (error) console.error('[Wellness] delete question:', error);
+    if (error) {
+      console.error('[Wellness] delete question:', error);
+      throw error;
+    }
     await fetchAll();
   }, [fetchAll]);
 
