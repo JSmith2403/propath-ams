@@ -97,11 +97,33 @@
 
   /* Do not break mid-section; allow natural breaks between sections */
   .break-inside-avoid,
-  #report-content section,
   #report-content table,
   #report-content tr {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }
+
+  /* Each .report-page group starts on a fresh page. The first group
+     (page 2 of the PDF) also gets a page break before it so the cover
+     sits alone on page 1. */
+  .report-page-break {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  /* Show the print-only athlete header on page 2 */
+  .print-header {
+    display: flex !important;
+  }
+
+  /* Individual Section blocks (the inner .break-inside-avoid wrapper)
+     still avoid mid-section breaks, but the parent .report-page does
+     NOT need break-inside: avoid — sections inside a page group flow
+     naturally and break if the content is longer than a page. */
+  #report-content .report-page > div,
+  #report-content .report-page > section {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   /* Cover page: always its own page, full A4 height. Inline padding
@@ -128,6 +150,11 @@
 
 /* Hide elements that only appear during print */
 .print-only {
+  display: none;
+}
+
+/* Print-only athlete header is hidden on screen; shown in @media print */
+.print-header {
   display: none;
 }
 

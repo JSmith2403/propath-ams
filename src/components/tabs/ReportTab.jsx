@@ -398,6 +398,19 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   const cohortStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const today = formatDate(new Date().toISOString());
 
+  // Age from DOB
+  const computeAge = (dob) => {
+    if (!dob) return null;
+    const birth = new Date(dob);
+    if (isNaN(birth.getTime())) return null;
+    const now = new Date();
+    let y = now.getFullYear() - birth.getFullYear();
+    const m = now.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) y--;
+    return y;
+  };
+  const age = computeAge(athlete.dob);
+
   // Helpers to decide whether a pillar/physio section has any Assessment content
   const hasPhysioAssessment = (phase2?.physio?.entries || []).some(e => e.noteType === 'Assessment');
   const pillarHasAssessment = (entries) => (entries || []).some(e => e.entryType === 'Assessment');
@@ -423,16 +436,15 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
         {/* ── Cover Page — full A4, pure black & white ───────────────── */}
         <div className="report-cover"
           style={{
-            minHeight: '297mm',
+            height: '297mm',
             backgroundColor: '#ffffff',
             padding: '20mm 20mm',
-            display: 'flex',
-            flexDirection: 'column',
             position: 'relative',
+            boxSizing: 'border-box',
           }}>
 
           {/* TOP RIGHT — CONFIDENTIAL */}
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ position: 'absolute', top: '20mm', right: '20mm', textAlign: 'right' }}>
             <span style={{
               color: '#1C1C1C',
               fontSize: '9px',
@@ -444,8 +456,8 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
             </span>
           </div>
 
-          {/* UPPER CENTRE — logo + ASSESSMENT wordmark */}
-          <div style={{ marginTop: '40mm', textAlign: 'center' }}>
+          {/* UPPER CENTRE — logo + ASSESSMENT wordmark, ~30% down */}
+          <div style={{ position: 'absolute', top: '30%', left: 0, right: 0, textAlign: 'center' }}>
             <img
               src={logoPath}
               alt="ProPath Academy"
@@ -463,11 +475,8 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
             </p>
           </div>
 
-          {/* Flex spacer pushes the athlete details into the lower third */}
-          <div style={{ flex: 1 }} />
-
-          {/* LOWER LEFT — athlete name + date of assessment */}
-          <div style={{ textAlign: 'left' }}>
+          {/* LOWER LEFT — athlete name + date of assessment, anchored at 75% */}
+          <div style={{ position: 'absolute', top: '72%', left: '20mm', right: '20mm', textAlign: 'left' }}>
             <h1 className="cover-athlete-name"
               style={{
                 color: '#1C1C1C',
@@ -496,7 +505,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
         {/* ── Content pages ──────────────────────────────────────────── */}
         <div className="p-10">
 
-        {/* ── Section 1: Header (for on-screen view of content pages) ─ */}
+        {/* ── On-screen only: page navigation header (hidden in print) ─ */}
         <div className="flex items-start justify-between pb-7 mb-10 border-b-2 no-print" style={{ borderColor: '#A58D69' }}>
           <div className="flex items-center gap-5">
             <div className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0"
@@ -525,63 +534,102 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           </div>
         </div>
 
-        {/* ── Section 2: Maturation ───────────────────────────────── */}
-        <Section title="Maturation">
-          <MaturationSection
-            athlete={athlete}
-            maturationEntries={phase2?.maturation?.entries}
-          />
-        </Section>
+        {/* ── Page 2 — Athlete header + Maturation + Physio Screen ────── */}
+        <section className="report-page report-page-break">
+          {/* Print-visible athlete header (photo, name, cohort, sport, age) */}
+          <div className="flex items-start justify-between pb-5 mb-8 print-header"
+            style={{ borderBottom: '1px solid #A58D69' }}>
+            <div className="flex items-center gap-5">
+              <div className="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0"
+                style={{ backgroundColor: '#085777' }}>
+                {athlete.photo
+                  ? <img src={athlete.photo} alt={athlete.name} className="w-full h-full object-cover" />
+                  : <InitialsAvatar name={athlete.name} size="xl" />}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold" style={{ color: '#1C1C1C' }}>{athlete.name}</h1>
+                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                  <span className="text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide"
+                    style={{ backgroundColor: cohortStyle.bg, color: cohortStyle.text }}>
+                    {athlete.cohort || 'Elite'}
+                  </span>
+                  <span className="text-sm" style={{ color: '#6b7280' }}>{athlete.sport}</span>
+                  {age != null && (
+                    <span className="text-sm" style={{ color: '#6b7280' }}>· {age}y</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-xs mb-0.5" style={{ color: '#9ca3af' }}>Date of Report</p>
+              <p className="text-sm font-semibold" style={{ color: '#374151' }}>{today}</p>
+            </div>
+          </div>
 
-        {/* ── Section 3: Physio Screen — only if an Assessment exists ── */}
-        {hasPhysioAssessment && (
-          <Section title="Physio Screen">
-            <PhysioSection physioEntries={phase2?.physio?.entries} />
+          <Section title="Maturation">
+            <MaturationSection
+              athlete={athlete}
+              maturationEntries={phase2?.maturation?.entries}
+            />
           </Section>
+
+          {hasPhysioAssessment && (
+            <Section title="Physio Screen">
+              <PhysioSection physioEntries={phase2?.physio?.entries} />
+            </Section>
+          )}
+        </section>
+
+        {/* ── Page 3 — Psychological and Lifestyle ───────────────────── */}
+        {(hasPsychAssessment || hasLifestyleAssessment) && (
+          <section className="report-page report-page-break">
+            {hasPsychAssessment && (
+              <Section title="Psychological">
+                <PillarAssessmentSection entries={athlete.ragLog?.psych} />
+              </Section>
+            )}
+            {hasLifestyleAssessment && (
+              <Section title="Lifestyle">
+                <PillarAssessmentSection entries={athlete.ragLog?.lifestyle} />
+              </Section>
+            )}
+          </section>
         )}
 
-        {/* ── Section 4: Physical — only if an Assessment exists ─────── */}
-        {hasPhysicalAssessment && (
-          <Section title="Physical">
-            <PillarAssessmentSection entries={athlete.ragLog?.physical} />
-          </Section>
+        {/* ── Page 4 — Nutrition and Physical ─────────────────────────── */}
+        {(hasNutritionAssessment || hasPhysicalAssessment) && (
+          <section className="report-page report-page-break">
+            {hasNutritionAssessment && (
+              <Section title="Nutrition">
+                <PillarAssessmentSection entries={athlete.ragLog?.nutrition} />
+              </Section>
+            )}
+            {hasPhysicalAssessment && (
+              <Section title="Physical">
+                <PillarAssessmentSection entries={athlete.ragLog?.physical} />
+              </Section>
+            )}
+          </section>
         )}
 
-        {/* ── Section 5: Psychological — only if an Assessment exists ── */}
-        {hasPsychAssessment && (
-          <Section title="Psychological">
-            <PillarAssessmentSection entries={athlete.ragLog?.psych} />
+        {/* ── Page 5 — Performance Testing ────────────────────────────── */}
+        <section className="report-page report-page-break">
+          <Section title="Performance Testing">
+            <PerformanceSection
+              performanceEntries={phase2?.performance?.entries || {}}
+              bragRatings={phase2?.performanceBrag || {}}
+              onSaveBrag={onSaveBrag}
+              customMetrics={customMetrics}
+            />
           </Section>
-        )}
+        </section>
 
-        {/* ── Section 6: Nutrition — only if an Assessment exists ─────── */}
-        {hasNutritionAssessment && (
-          <Section title="Nutrition">
-            <PillarAssessmentSection entries={athlete.ragLog?.nutrition} />
+        {/* ── Page 6 — Areas to Address ───────────────────────────────── */}
+        <section className="report-page report-page-break">
+          <Section title="Areas to Address">
+            <AreasToAddressSection phase2={phase2} />
           </Section>
-        )}
-
-        {/* ── Section 7: Lifestyle — only if an Assessment exists ─────── */}
-        {hasLifestyleAssessment && (
-          <Section title="Lifestyle">
-            <PillarAssessmentSection entries={athlete.ragLog?.lifestyle} />
-          </Section>
-        )}
-
-        {/* ── Section 6: Performance Testing ─────────────────────── */}
-        <Section title="Performance Testing">
-          <PerformanceSection
-            performanceEntries={phase2?.performance?.entries || {}}
-            bragRatings={phase2?.performanceBrag || {}}
-            onSaveBrag={onSaveBrag}
-            customMetrics={customMetrics}
-          />
-        </Section>
-
-        {/* ── Section 7: Areas to Address ────────────────────────── */}
-        <Section title="Areas to Address">
-          <AreasToAddressSection phase2={phase2} />
-        </Section>
+        </section>
 
         </div>{/* /p-10 content wrapper */}
       </div>
