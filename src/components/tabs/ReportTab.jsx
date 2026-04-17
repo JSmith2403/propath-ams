@@ -475,8 +475,8 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
             </p>
           </div>
 
-          {/* LOWER LEFT — athlete name + date of assessment, anchored at 88% */}
-          <div style={{ position: 'absolute', top: '88%', left: '20mm', right: '20mm', textAlign: 'left' }}>
+          {/* LOWER LEFT — athlete name + date of assessment, anchored at 80% */}
+          <div style={{ position: 'absolute', top: '80%', left: '20mm', right: '20mm', textAlign: 'left' }}>
             <h1 className="cover-athlete-name"
               style={{
                 color: '#1C1C1C',
@@ -581,12 +581,12 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           )}
         </section>
 
-        {/* ── Page 3 — Psychological and Lifestyle ───────────────────── */}
-        {(hasPsychAssessment || hasLifestyleAssessment) && (
+        {/* ── Page 3 — Nutrition + Lifestyle + Psychological ──────────── */}
+        {(hasNutritionAssessment || hasLifestyleAssessment || hasPsychAssessment) && (
           <section className="report-page report-page-break">
-            {hasPsychAssessment && (
-              <Section title="Psychological">
-                <PillarAssessmentSection entries={athlete.ragLog?.psych} />
+            {hasNutritionAssessment && (
+              <Section title="Nutrition">
+                <PillarAssessmentSection entries={athlete.ragLog?.nutrition} />
               </Section>
             )}
             {hasLifestyleAssessment && (
@@ -594,27 +594,21 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
                 <PillarAssessmentSection entries={athlete.ragLog?.lifestyle} />
               </Section>
             )}
-          </section>
-        )}
-
-        {/* ── Page 4 — Nutrition and Physical ─────────────────────────── */}
-        {(hasNutritionAssessment || hasPhysicalAssessment) && (
-          <section className="report-page report-page-break">
-            {hasNutritionAssessment && (
-              <Section title="Nutrition">
-                <PillarAssessmentSection entries={athlete.ragLog?.nutrition} />
-              </Section>
-            )}
-            {hasPhysicalAssessment && (
-              <Section title="Physical">
-                <PillarAssessmentSection entries={athlete.ragLog?.physical} />
+            {hasPsychAssessment && (
+              <Section title="Psychological">
+                <PillarAssessmentSection entries={athlete.ragLog?.psych} />
               </Section>
             )}
           </section>
         )}
 
-        {/* ── Page 5 — Performance Testing ────────────────────────────── */}
+        {/* ── Page 4 — Physical + Performance Testing ─────────────────── */}
         <section className="report-page report-page-break">
+          {hasPhysicalAssessment && (
+            <Section title="Physical">
+              <PillarAssessmentSection entries={athlete.ragLog?.physical} />
+            </Section>
+          )}
           <Section title="Performance Testing">
             <PerformanceSection
               performanceEntries={phase2?.performance?.entries || {}}
@@ -625,7 +619,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           </Section>
         </section>
 
-        {/* ── Page 6 — Areas to Address ───────────────────────────────── */}
+        {/* ── Page 5 — Areas to Address ───────────────────────────────── */}
         <section className="report-page report-page-break">
           <Section title="Areas to Address">
             <AreasToAddressSection phase2={phase2} />

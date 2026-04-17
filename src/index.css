@@ -134,14 +134,17 @@
     page-break-inside: auto !important;
   }
 
-  /* Cover page: always its own page, full A4 height. Inline padding
-     on the element provides cover whitespace since @page :first is 0. */
+  /* Cover page: always its own page, hard-capped at A4 height so no
+     content bleeds onto page 2. Both the modern break and the legacy
+     page-break properties are set. */
   .report-cover {
     break-after: page !important;
     page-break-after: always !important;
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-    min-height: 297mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
   }
 
   /* Page settings — remove browser headers/footers + set margins.
