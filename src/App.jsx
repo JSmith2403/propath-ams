@@ -46,7 +46,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
     savePsychWorkingOn, saveNutritionWorkingOn,
-    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
+    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
     syncSessionData,
@@ -179,6 +179,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onSavePhysicalWorkingOn={savePhysicalWorkingOn}
             onSaveLifestyleWorkingOn={saveLifestyleWorkingOn}
             onSavePerformanceBrag={savePerformanceBrag}
+            onSaveReportMetrics={saveReportMetrics}
             onAddCheckIn={addCheckIn}
             onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
             onUpdatePhysioEntry={updatePhysioEntry}

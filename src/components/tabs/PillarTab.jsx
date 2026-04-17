@@ -2,7 +2,7 @@ import { useState, useEffect, Fragment } from 'react';
 import { Star, Trash2 } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
 import { renderBold } from '../../utils/renderBold';
-import WordCounter from '../WordCounter';
+import WordCounter, { countWords, limitWords } from '../WordCounter';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
 const DEFAULT_ENTRY_TYPES = ['Assessment', 'Check-in', 'Observation'];
@@ -100,6 +100,7 @@ function Divider() {
 // ─── Main export ─────────────────────────────────────────────────────────────
 export default function PillarTab({
   label,
+  domain,
   status,
   logEntries = [],
   onStatusChange,
@@ -263,11 +264,26 @@ export default function PillarTab({
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
             Notes
           </label>
-          <textarea rows={4} value={note} onChange={e => setNote(e.target.value)}
+          <textarea rows={4} value={note}
+            onChange={e => {
+              // Physical Assessment notes are hard-capped at 100 words so
+              // they fit alongside the Performance Testing table in the
+              // report. All other pillars use a soft 150-word guidance.
+              const v = e.target.value;
+              if (domain === 'physical' && entryType === 'Assessment' && countWords(v) > 100) {
+                setNote(limitWords(v, 100));
+              } else {
+                setNote(v);
+              }
+            }}
             placeholder="Record observations, interventions, or context..."
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-2 placeholder-gray-300 bg-white"
             style={{ '--tw-ring-color': '#A58D69' }} />
-          {entryType === 'Assessment' && <WordCounter text={note} limit={150} />}
+          {entryType === 'Assessment' && (
+            domain === 'physical'
+              ? <WordCounter text={note} limit={100} hard />
+              : <WordCounter text={note} limit={150} />
+          )}
         </div>
         <button onClick={handleSave} disabled={!staff.trim()}
           className="px-4 py-2 text-xs font-semibold text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"

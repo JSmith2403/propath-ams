@@ -317,6 +317,14 @@ export function useAthletes({ seedEnabled = true } = {}) {
       performanceBrag: { ...(p2.performanceBrag || {}), [metricKey]: color },
     })), [p2update]);
 
+  // Replace the list of metric keys to include in the Performance Testing
+  // section of the report (max 8 enforced at the caller).
+  const saveReportMetrics = useCallback((id, metricKeys) =>
+    p2update(id, p2 => ({
+      ...p2,
+      reportMetrics: Array.isArray(metricKeys) ? metricKeys : [],
+    })), [p2update]);
+
   const updateLatestEntry = useCallback((id, bucket, metricKey, field, value) =>
     p2update(id, p2 => {
       if (bucket === 'performance') {
@@ -468,7 +476,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
     savePsychWorkingOn, saveNutritionWorkingOn,
-    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag,
+    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     // Delete operations
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,

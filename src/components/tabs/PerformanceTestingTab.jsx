@@ -415,7 +415,7 @@ function KpiDot({ cx, cy, payload }) {
   return <circle cx={cx} cy={cy} r={4} fill={payload?.flagged ? '#f59e0b' : TEAL} stroke="white" strokeWidth={1.5} />;
 }
 
-function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemove }) {
+function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemove, includedInReport, onToggleReport, toggleWarning }) {
   const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
   const rawEntries = entries[sourceKey] || [];
 
@@ -525,6 +525,39 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
           )}
         </>
       )}
+
+      {/* Include-in-Report toggle — bottom right */}
+      {onToggleReport && (
+        <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-gray-100">
+          {toggleWarning && (
+            <span className="text-xs mr-auto" style={{ color: '#b91c1c', fontSize: 10 }}>
+              {toggleWarning}
+            </span>
+          )}
+          <span className="text-xs" style={{ color: '#6b7280', fontSize: 10 }}>Include in Report</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!!includedInReport}
+            onClick={() => onToggleReport(metricKey)}
+            className="relative inline-flex items-center rounded-full transition-colors shrink-0"
+            style={{
+              height: 14,
+              width: 26,
+              backgroundColor: includedInReport ? '#437E8D' : '#d1d5db',
+            }}
+          >
+            <span
+              className="inline-block rounded-full bg-white shadow transition-transform"
+              style={{
+                height: 10,
+                width: 10,
+                transform: includedInReport ? 'translateX(14px)' : 'translateX(2px)',
+              }}
+            />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -536,7 +569,9 @@ export default function PerformanceTestingTab({
   entries = {},
   maturationEntries = [],
   bragRatings = {},
+  reportMetrics = [],
   onSaveBrag,
+  onSaveReportMetrics,
 }) {
   const { customMetrics } = useCustomMetrics();
   const athleteId = athlete?.id || '';
@@ -551,6 +586,33 @@ export default function PerformanceTestingTab({
   const addPickerClose = useCallback(() => setAddPickerOpen(false), []);
 
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
+
+  // Report-inclusion selection (max 8). Kept as a Set for cheap lookups.
+  const [reportSet, setReportSet] = useState(() => new Set(reportMetrics || []));
+  const [reportWarning, setReportWarning] = useState(null);
+
+  // Sync local set when the prop changes (e.g. after Supabase load)
+  useEffect(() => {
+    setReportSet(new Set(reportMetrics || []));
+  }, [reportMetrics.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleReportMetric = useCallback((key) => {
+    setReportSet(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        if (next.size >= 8) {
+          setReportWarning('Maximum 8 metrics can be included in the report');
+          setTimeout(() => setReportWarning(null), 3000);
+          return prev;
+        }
+        next.add(key);
+      }
+      onSaveReportMetrics?.(Array.from(next));
+      return next;
+    });
+  }, [onSaveReportMetrics]);
 
   const handleSaveThresholds = useCallback(t => {
     setThresholds(t);
@@ -629,6 +691,9 @@ export default function PerformanceTestingTab({
               matEntries={maturationEntries}
               customMetrics={customMetrics}
               onSwap={newKey => swapKpi(idx, newKey)}
+              includedInReport={reportSet.has(key)}
+              onToggleReport={toggleReportMetric}
+              toggleWarning={reportWarning && !reportSet.has(key) ? reportWarning : null}
             />
           ))}
         </div>
@@ -667,6 +732,9 @@ export default function PerformanceTestingTab({
                 customMetrics={customMetrics}
                 onSwap={newKey => swapAdditional(key, newKey)}
                 onRemove={() => removeAdditional(key)}
+                includedInReport={reportSet.has(key)}
+                onToggleReport={toggleReportMetric}
+                toggleWarning={reportWarning && !reportSet.has(key) ? reportWarning : null}
               />
             ))}
           </div>

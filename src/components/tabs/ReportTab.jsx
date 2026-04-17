@@ -238,7 +238,7 @@ function PillarAssessmentSection({ entries, emptyMsg }) {
 
 // ─── Section 6: Performance Testing ──────────────────────────────────────────
 
-function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, customMetrics = {} }) {
+function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, customMetrics = {}, reportMetrics = [] }) {
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
 
   const handleBragChange = (key, color) => {
@@ -246,8 +246,20 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, custo
     onSaveBrag?.(key, color);
   };
 
-  const metricKeys = Object.keys(performanceEntries || {})
+  const availableKeys = Object.keys(performanceEntries || {})
     .filter(k => (performanceEntries[k] || []).length > 0);
+
+  // Prefer the athlete's saved report selection, preserving its order.
+  // Fallback: any metric with a non-grey BRAG rating assigned, up to 8.
+  const selectedKeys = (reportMetrics || []).filter(k => availableKeys.includes(k));
+  let metricKeys;
+  if (selectedKeys.length > 0) {
+    metricKeys = selectedKeys;
+  } else {
+    metricKeys = availableKeys
+      .filter(k => localBrag[k] && localBrag[k] !== 'grey')
+      .slice(0, 8);
+  }
 
   if (!metricKeys.length) {
     return <NoAssessment msg="No performance data recorded yet." />;
@@ -615,6 +627,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
               bragRatings={phase2?.performanceBrag || {}}
               onSaveBrag={onSaveBrag}
               customMetrics={customMetrics}
+              reportMetrics={phase2?.reportMetrics || []}
             />
           </Section>
         </section>

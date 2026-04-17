@@ -72,7 +72,7 @@ export default function AthleteProfile({
   onAddMaturationEntry, onAddMobilityEntry, onAddPerformanceEntry,
   onAddPhysioEntry, onAddNutritionEntry, onAddAcsi28Entry, onAddPsychNote,
   onSavePsychWorkingOn, onSaveNutritionWorkingOn,
-  onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag,
+  onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag, onSaveReportMetrics,
   onAddCheckIn,
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
@@ -305,7 +305,9 @@ export default function AthleteProfile({
             entries={p2.performance?.entries || {}}
             maturationEntries={p2.maturation?.entries || []}
             bragRatings={p2.performanceBrag || {}}
+            reportMetrics={p2.reportMetrics || []}
             onSaveBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}
+            onSaveReportMetrics={(keys) => onSaveReportMetrics(localAthlete.id, keys)}
             onAddEntry={(metric, entry) => onAddPerformanceEntry(localAthlete.id, metric, entry)}
           />
         );
