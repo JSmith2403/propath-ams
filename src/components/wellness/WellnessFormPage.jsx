@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import logo from '../../assets/Propath_Primary Logo_White.png';
@@ -109,7 +109,88 @@ function YesNoQuestion({ question, value, onChange }) {
   );
 }
 
-function renderQuestion(question, value, onChange) {
+// ── Paired yes/no + numerical (conditional) ────────────────────────────────
+// Renders the Yes/No parent and its numerical child as a single block.
+// The numerical input is disabled unless the parent's value matches the
+// conditional_on_value (typically 'yes').
+function PairedConditional({ parent, child, parentValue, childValue, onParentChange, onChildChange }) {
+  const unlocked = parentValue === (child.conditional_on_value || 'yes');
+  const unit = child.numerical_unit || '';
+  return (
+    <div className="mb-6 rounded-lg p-4" style={{ backgroundColor: '#262626', border: '1px solid #333' }}>
+      <label className="block text-sm font-semibold mb-3" style={{ color: '#e5e5e5' }}>
+        {parent.question_text}
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        {/* LEFT — Yes/No buttons */}
+        <div className="flex flex-col gap-2">
+          {['yes', 'no'].map(opt => {
+            const active = parentValue === opt;
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  onParentChange(opt);
+                  // When switching to 'no', clear the child value
+                  if (opt !== (child.conditional_on_value || 'yes')) {
+                    onChildChange(null);
+                  }
+                }}
+                className="py-3 rounded-lg text-sm font-semibold transition-colors"
+                style={{
+                  backgroundColor: active ? '#A58D69' : '#333',
+                  color: active ? '#1C1C1C' : '#e5e5e5',
+                  border: active ? 'none' : '1px solid #444',
+                }}
+              >
+                {opt === 'yes' ? 'Yes' : 'No'}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* RIGHT — Numerical input (disabled when parent not yes) */}
+        <div>
+          <p className="text-xs mb-2" style={{ color: unlocked ? '#e5e5e5' : '#666' }}>
+            {child.question_text}
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={child.numerical_min ?? undefined}
+              max={child.numerical_max ?? undefined}
+              step={child.numerical_step ?? 'any'}
+              value={childValue ?? ''}
+              disabled={!unlocked}
+              onChange={(e) => onChildChange(e.target.value === '' ? null : Number(e.target.value))}
+              className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+              style={{
+                backgroundColor: unlocked ? '#333' : '#1f1f1f',
+                color: unlocked ? '#e5e5e5' : '#555',
+                border: `1px solid ${unlocked ? '#444' : '#2a2a2a'}`,
+                cursor: unlocked ? 'text' : 'not-allowed',
+              }}
+            />
+            {unit && <span className="text-xs" style={{ color: unlocked ? '#888' : '#444' }}>{unit}</span>}
+          </div>
+          {child.numerical_min != null && child.numerical_max != null && (
+            <div className="flex justify-between mt-1">
+              <span className="text-xs" style={{ color: unlocked ? '#888' : '#444' }}>
+                {child.numerical_min}{unit ? ` ${unit}` : ''}
+              </span>
+              <span className="text-xs" style={{ color: unlocked ? '#888' : '#444' }}>
+                {child.numerical_max}{unit ? ` ${unit}` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderStandalone(question, value, onChange) {
   switch (question.question_type) {
     case 'scale':     return <ScaleQuestion key={question.id} question={question} value={value} onChange={onChange} />;
     case 'numerical': return <NumericalQuestion key={question.id} question={question} value={value} onChange={onChange} />;
@@ -187,6 +268,15 @@ export default function WellnessFormPage() {
     })();
   }, [token]);
 
+  // Build a map of parent question_id → child question (for paired conditional rendering)
+  const childMap = useMemo(() => {
+    const m = {};
+    questions.forEach(q => {
+      if (q.conditional_on_question_id) m[q.conditional_on_question_id] = q;
+    });
+    return m;
+  }, [questions]);
+
   // Check for existing submission when date changes
   const checkExisting = useCallback(async () => {
     if (!athleteId || !date) return;
@@ -216,8 +306,15 @@ export default function WellnessFormPage() {
     e.preventDefault();
     setError(null);
 
-    // Validation: all questions must have a value
+    // Validation: every question must have a value, except a child question
+    // whose parent has not been answered "yes" (or matching conditional value)
     const unanswered = questions.filter(q => {
+      // Skip a child question when its parent's answer doesn't unlock it
+      if (q.conditional_on_question_id) {
+        const parentAns = responses[q.conditional_on_question_id];
+        const expected = q.conditional_on_value || 'yes';
+        if (parentAns !== expected) return false; // locked → not required
+      }
       const v = responses[q.id];
       return v == null || v === '';
     });
@@ -324,7 +421,28 @@ export default function WellnessFormPage() {
           )}
         </div>
 
-        {questions.map(q => renderQuestion(q, responses[q.id], setResp(q.id)))}
+        {questions.map(q => {
+          // Child questions are rendered inline with their parent — skip here
+          if (q.conditional_on_question_id) return null;
+
+          // Yes/No parent with a linked child → render paired conditional block
+          const child = childMap[q.id];
+          if (q.question_type === 'yes_no' && child) {
+            return (
+              <PairedConditional
+                key={q.id}
+                parent={q}
+                child={child}
+                parentValue={responses[q.id]}
+                childValue={responses[child.id]}
+                onParentChange={setResp(q.id)}
+                onChildChange={setResp(child.id)}
+              />
+            );
+          }
+
+          return renderStandalone(q, responses[q.id], setResp(q.id));
+        })}
 
         {error && <p className="text-xs mb-4 px-1" style={{ color: '#ef4444' }}>{error}</p>}
 
