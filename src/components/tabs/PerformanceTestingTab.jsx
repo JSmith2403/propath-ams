@@ -54,12 +54,17 @@ const SPECIAL_METRICS = {
     key: 'cmjRelPower', label: 'CMJ W/kg', unit: 'W/kg',
     sourceKey: 'cmjPeakPower', categoryKey: 'power',
   },
+  imtpRelForce: {
+    key: 'imtpRelForce', label: 'IMTP Relative Force', unit: 'N/kg',
+    sourceKey: 'imtpPeakForce', categoryKey: 'strength',
+  },
 };
 
 // Display label overrides for specific metric keys
 const LABEL_OVERRIDES = {
-  cmjRelPower: 'CMJ W/kg',
-  adduction0:  'Adductor Squeeze',
+  cmjRelPower:   'CMJ W/kg',
+  imtpRelForce:  'IMTP Rel Force',
+  adduction0:    'Adductor Squeeze',
 };
 
 const ZONES = {
@@ -235,6 +240,7 @@ function buildDualKpiData(rawEntries) {
 function buildKpiData(rawEntries, metricKey, matEntries) {
   if (!rawEntries?.length) return null;
   const isRelPower = metricKey === 'cmjRelPower';
+  const isRelForce = metricKey === 'imtpRelForce';
   const sorted     = [...rawEntries].sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const pts = sorted.map(e => {
@@ -243,6 +249,11 @@ function buildKpiData(rawEntries, metricKey, matEntries) {
       const pw = extractScalar(e);
       const bw = getBodyweightAt(e.date, matEntries);
       v = pw != null && bw ? parseFloat((pw / bw).toFixed(2)) : null;
+    } else if (isRelForce) {
+      // IMTP Relative Force = peak force (N) / (bodyweight (kg) * 9.81)
+      const f  = extractScalar(e);
+      const bw = getBodyweightAt(e.date, matEntries);
+      v = f != null && bw ? parseFloat((f / (bw * 9.81)).toFixed(1)) : null;
     } else {
       v = extractScalar(e);
     }
@@ -320,8 +331,11 @@ function MetricPicker({ onSelect, onClose, exclude = [] }) {
       className="absolute z-50 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-y-auto"
       style={{ width: 248, maxHeight: 320, top: 0, right: 0 }}>
       {METRIC_CATEGORIES.map(cat => {
-        const specials = cat.key === 'power'
-          ? [SPECIAL_METRICS.cmjRelPower].filter(s => !exclude.includes(s.key)) : [];
+        const specialsFor =
+          cat.key === 'power'    ? [SPECIAL_METRICS.cmjRelPower] :
+          cat.key === 'strength' ? [SPECIAL_METRICS.imtpRelForce] :
+          [];
+        const specials = specialsFor.filter(s => !exclude.includes(s.key));
         const items = [
           ...cat.metrics.filter(m => !exclude.includes(m.key)),
           ...specials,
@@ -547,7 +561,10 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
           className="flex-1 min-w-0 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:border-gray-400 truncate"
         >
           {METRIC_CATEGORIES.map(cat => {
-            const specials = cat.key === 'power' ? [SPECIAL_METRICS.cmjRelPower] : [];
+            const specials =
+              cat.key === 'power'    ? [SPECIAL_METRICS.cmjRelPower] :
+              cat.key === 'strength' ? [SPECIAL_METRICS.imtpRelForce] :
+              [];
             const items    = [...cat.metrics, ...specials];
             return (
               <optgroup key={cat.key} label={cat.label}>

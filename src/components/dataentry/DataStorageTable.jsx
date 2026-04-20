@@ -49,16 +49,33 @@ function calcUnit(formulaType) {
 }
 
 function buildSchema(customMetrics) {
-  const groups = METRIC_CATEGORIES.map(cat => ({
-    catKey:   cat.key,
-    catLabel: cat.label,
-    cols: cat.metrics.flatMap(m => {
+  const groups = METRIC_CATEGORIES.map(cat => {
+    const cols = cat.metrics.flatMap(m => {
       const base = { metricKey: m.key, label: m.label, unit: m.unit || '', isCalc: false, isCustom: false };
       return m.bilateral
         ? [{ ...base, side: 'L' }, { ...base, side: 'R' }]
         : [{ ...base, side: null }];
-    }),
-  }));
+    });
+
+    // Inject the IMTP Relative Force read-only column into the Strength group,
+    // placed immediately after IMTP Peak Force so it reads naturally.
+    if (cat.key === 'strength') {
+      const calcCol = {
+        metricKey: 'imtpRelForce',
+        label:     'IMTP Rel Force',
+        unit:      'N/kg',
+        isCalc:    true,
+        isCustom:  false,
+        side:      null,
+        calcType:  'imtp_rel_force',
+      };
+      const idx = cols.findIndex(c => c.metricKey === 'imtpPeakForce');
+      if (idx >= 0) cols.splice(idx + 1, 0, calcCol);
+      else cols.push(calcCol);
+    }
+
+    return { catKey: cat.key, catLabel: cat.label, cols };
+  });
 
   const byCategory = {};
   Object.values(customMetrics || {}).forEach(cm => {
@@ -113,6 +130,17 @@ function getEntryVal(entry, side) {
 }
 
 function computeCalc(col, entryMap) {
+  // Cross-metric IMTP Relative Force: peak force / (bodyweight * 9.81)
+  // Both inputs come from the same session (same row in Data Storage).
+  if (col.calcType === 'imtp_rel_force') {
+    const forceEntry  = entryMap.imtpPeakForce;
+    const weightEntry = entryMap.weight;
+    const f  = forceEntry?.value  ?? forceEntry?.best  ?? null;
+    const bw = weightEntry?.value ?? weightEntry?.best ?? null;
+    if (f == null || bw == null || bw <= 0) return null;
+    return parseFloat((Number(f) / (Number(bw) * 9.81)).toFixed(1));
+  }
+
   const entry = entryMap[col.metricKey];
   if (!entry) return null;
   const L = entry.left ?? entry.bestL ?? null;
