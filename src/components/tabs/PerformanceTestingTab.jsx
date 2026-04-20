@@ -18,6 +18,23 @@ const LOWER_IS_BETTER = new Set([
   'sprint10m', 'sprint20m', 'sprint40m', 'mod505', 'reactionTime',
 ]);
 
+// Metrics that render as dual-line charts (Left teal + Right gold) with an LSI
+// readout beneath the chart. This is the explicit allowlist from the spec —
+// bilateral metrics NOT in this set continue to use the single-line chart.
+const DUAL_LINE_METRICS = new Set([
+  'gripStrength',
+  'hamstring0', 'hamstring30', 'hamstring90',
+  'hipFlexionSupine90', 'hipExtensionProne90',
+  'adduction0', 'adduction90',
+  'imtpPeakForceLR',
+  'slBridgeCapacity',
+  'calfRaiseMax',
+  'sidePlank',
+  'cmjHeight',
+  'slDropJumpRSI',
+  'mod505',
+]);
+
 const DEFAULT_KPI_KEYS = [
   'cmjHeight',
   'cmjRelPower',
@@ -129,6 +146,90 @@ function linearTrend(pts) {
   const m = (n * sxy - sx * sy) / den;
   const b = (sy - m * sx) / n;
   return pts.map((d, i) => ({ ...d, trend: parseFloat((m * i + b).toFixed(3)) }));
+}
+
+// Extract separate Left and Right scalars from an entry (no averaging).
+function extractLR(entry) {
+  if (!entry) return { l: null, r: null };
+  const l = entry.left  ?? entry.bestL ?? null;
+  const r = entry.right ?? entry.bestR ?? null;
+  return { l: l != null ? Number(l) : null, r: r != null ? Number(r) : null };
+}
+
+// Rolling window of non-null values only — used per-side for dual-line charts.
+function rollingAvgWindow(values, window = 5) {
+  const w = values.filter(v => v != null).slice(-window);
+  if (!w.length) return null;
+  return w.reduce((s, v) => s + v, 0) / w.length;
+}
+
+// Compute LSI (Limb Symmetry Index) from the most recent entry.
+// LSI = (lower / higher) * 100.  Returns null if either side is missing.
+function computeLSI(entries) {
+  if (!entries?.length) return null;
+  const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+  for (const e of sorted) {
+    const { l, r } = extractLR(e);
+    if (l != null && r != null && (l !== 0 || r !== 0)) {
+      const lower  = Math.min(Math.abs(l), Math.abs(r));
+      const higher = Math.max(Math.abs(l), Math.abs(r));
+      if (higher === 0) return null;
+      return parseFloat(((lower / higher) * 100).toFixed(1));
+    }
+  }
+  return null;
+}
+
+function lsiColour(lsi) {
+  if (lsi == null) return '#6b7280';
+  if (lsi >= 90)    return '#15803d';
+  if (lsi >= 80)    return '#92400e';
+  return '#b91c1c';
+}
+
+// Dual-line data: one point per entry, carrying both L and R plus rolling
+// averages per side. No Rolling SD band (not meaningful for L/R split).
+function buildDualKpiData(rawEntries) {
+  if (!rawEntries?.length) return null;
+  const sorted = [...rawEntries].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const pts = sorted.map(e => {
+    const { l, r } = extractLR(e);
+    if (l == null && r == null) return null;
+    return { date: e.date, l, r };
+  }).filter(Boolean);
+
+  if (!pts.length) return null;
+
+  const lVals = pts.map(p => p.l);
+  const rVals = pts.map(p => p.r);
+
+  // Per-point running averages (using all prior values up to and including i,
+  // capped to last 5). This gives a smooth line on the chart.
+  const chartData = pts.map((p, i) => {
+    const ls = lVals.slice(Math.max(0, i - 4), i + 1).filter(v => v != null);
+    const rs = rVals.slice(Math.max(0, i - 4), i + 1).filter(v => v != null);
+    return {
+      date:     p.date,
+      label:    fmtDate(p.date),
+      valueL:   p.l,
+      valueR:   p.r,
+      rollAvgL: ls.length ? parseFloat((ls.reduce((s, v) => s + v, 0) / ls.length).toFixed(2)) : null,
+      rollAvgR: rs.length ? parseFloat((rs.reduce((s, v) => s + v, 0) / rs.length).toFixed(2)) : null,
+    };
+  });
+
+  const latestL = lVals.slice().reverse().find(v => v != null) ?? null;
+  const latestR = rVals.slice().reverse().find(v => v != null) ?? null;
+
+  return {
+    chartData,
+    latestL,
+    latestR,
+    rollingAvgL: rollingAvgWindow(lVals),
+    rollingAvgR: rollingAvgWindow(rVals),
+    lsi:         computeLSI(rawEntries),
+  };
 }
 
 function buildKpiData(rawEntries, metricKey, matEntries) {
@@ -419,10 +520,14 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
   const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
   const rawEntries = entries[sourceKey] || [];
 
+  const isDualLine = DUAL_LINE_METRICS.has(metricKey);
+
   const chartData = useMemo(
-    () => buildKpiData(rawEntries, metricKey, matEntries),
+    () => isDualLine
+      ? buildDualKpiData(rawEntries)
+      : buildKpiData(rawEntries, metricKey, matEntries),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rawEntries.length, metricKey]
+    [rawEntries.length, metricKey, isDualLine]
   );
 
   const metricDef = SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey];
@@ -474,6 +579,109 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
         <div className="flex items-center justify-center py-8">
           <p className="text-xs text-gray-300 italic">No data recorded yet.</p>
         </div>
+      ) : isDualLine ? (
+        <>
+          {/* Legend */}
+          <div className="flex items-center gap-4 mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block" style={{ width: 12, height: 2, backgroundColor: TEAL }} />
+              <span className="text-xs text-gray-500" style={{ fontSize: 10 }}>Left</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block" style={{ width: 12, height: 2, backgroundColor: GOLD }} />
+              <span className="text-xs text-gray-500" style={{ fontSize: 10 }}>Right</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block" style={{
+                width: 12, height: 0,
+                borderTop: `1.5px dashed ${TEAL}`,
+              }} />
+              <span className="text-xs text-gray-400" style={{ fontSize: 9 }}>L avg</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block" style={{
+                width: 12, height: 0,
+                borderTop: `1.5px dashed ${GOLD}`,
+              }} />
+              <span className="text-xs text-gray-400" style={{ fontSize: 9 }}>R avg</span>
+            </div>
+          </div>
+
+          {/* Dual-line Chart */}
+          <ResponsiveContainer width="100%" height={140}>
+            <ComposedChart data={chartData.chartData} margin={{ top: 4, right: 4, bottom: 0, left: -14 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} width={32} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const p = payload[0]?.payload;
+                  if (!p) return null;
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 shadow-md text-xs">
+                      <p className="text-gray-400 mb-0.5">{p.label}</p>
+                      <p className="font-bold" style={{ color: TEAL }}>
+                        L: {p.valueL != null ? `${fmtNum(p.valueL)}${unit ? ' ' + unit : ''}` : '—'}
+                      </p>
+                      <p className="font-bold" style={{ color: GOLD }}>
+                        R: {p.valueR != null ? `${fmtNum(p.valueR)}${unit ? ' ' + unit : ''}` : '—'}
+                      </p>
+                    </div>
+                  );
+                }}
+              />
+              {/* Rolling averages (dashed) */}
+              <Line type="monotone" dataKey="rollAvgL" stroke={TEAL} strokeWidth={1.5} dot={false}
+                strokeDasharray="4 2" isAnimationActive={false} connectNulls />
+              <Line type="monotone" dataKey="rollAvgR" stroke={GOLD} strokeWidth={1.5} dot={false}
+                strokeDasharray="4 2" isAnimationActive={false} connectNulls />
+              {/* Data lines (solid) */}
+              <Line type="monotone" dataKey="valueL" stroke={TEAL} strokeWidth={2.25}
+                dot={{ r: 3, fill: TEAL, stroke: '#fff', strokeWidth: 1.5 }}
+                activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
+              <Line type="monotone" dataKey="valueR" stroke={GOLD} strokeWidth={2.25}
+                dot={{ r: 3, fill: GOLD, stroke: '#fff', strokeWidth: 1.5 }}
+                activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          {/* Stats row — L/R latest + L/R rolling average */}
+          <div className="grid grid-cols-4 gap-1 mt-3">
+            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
+              <span className="mb-0.5" style={{ fontSize: 9, color: TEAL, fontWeight: 600 }}>L Latest</span>
+              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.latestL)}</span>
+            </div>
+            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
+              <span className="mb-0.5" style={{ fontSize: 9, color: GOLD, fontWeight: 600 }}>R Latest</span>
+              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.latestR)}</span>
+            </div>
+            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
+              <span className="mb-0.5" style={{ fontSize: 9, color: TEAL }}>L Roll Avg</span>
+              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.rollingAvgL)}</span>
+            </div>
+            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
+              <span className="mb-0.5" style={{ fontSize: 9, color: GOLD }}>R Roll Avg</span>
+              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.rollingAvgR)}</span>
+            </div>
+          </div>
+
+          {/* Summary line: L / R and LSI */}
+          <div className="mt-3 flex items-center justify-between flex-wrap gap-x-3 gap-y-1">
+            <span className="text-xs font-semibold text-gray-700">
+              L: {chartData.latestL != null ? `${fmtNum(chartData.latestL)}${unit ? ' ' + unit : ''}` : '—'}
+              <span className="text-gray-300 mx-1.5">/</span>
+              R: {chartData.latestR != null ? `${fmtNum(chartData.latestR)}${unit ? ' ' + unit : ''}` : '—'}
+            </span>
+            {chartData.lsi != null ? (
+              <span className="text-xs font-bold" style={{ color: lsiColour(chartData.lsi) }}>
+                LSI: {chartData.lsi.toFixed(1)}%
+              </span>
+            ) : (
+              <span className="text-xs" style={{ color: '#9ca3af' }}>LSI: insufficient data</span>
+            )}
+          </div>
+        </>
       ) : (
         <>
           {/* Chart */}
