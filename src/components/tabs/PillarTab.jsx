@@ -201,11 +201,36 @@ export default function PillarTab({
     </div>
   );
 
+  // Full-width stacked RAG button — shared style used by both the status
+  // selector (left card) and the session-rating selector (right card).
+  const StackedRagButton = ({ opt, isActive, onClick }) => {
+    const c = RAG_CONFIG[opt];
+    return (
+      <button
+        onClick={onClick}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all border"
+        style={{
+          backgroundColor: isActive ? c.bgColor : 'transparent',
+          borderColor:     isActive ? c.bgColor : '#e5e7eb',
+          color:           isActive ? c.textColor : '#6b7280',
+        }}
+      >
+        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+        {c.label}
+      </button>
+    );
+  };
+
+  // Most-recent note for the "Last note" preview at the bottom of the status card.
+  const lastNote = sorted[0] || null;
+
   const addNoteBlock = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5"
+    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
       <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Add Note</h2>
-      <div className="space-y-3">
+
+      <div className="space-y-3 flex-1 flex flex-col">
+        {/* Session Date + Your Name side by side */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
@@ -226,28 +251,19 @@ export default function PillarTab({
               style={{ '--tw-ring-color': '#A58D69' }} />
           </div>
         </div>
+
+        {/* Session Rating + Entry Type side by side */}
         <div className="grid grid-cols-2 gap-3 items-start">
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
               Session Rating
             </label>
-            <div className="flex gap-1 flex-wrap">
-              {RAG_OPTIONS.map(opt => {
-                const c = RAG_CONFIG[opt];
-                const isActive = entryRag === opt;
-                return (
-                  <button key={opt} onClick={() => setEntryRag(opt)}
-                    className="flex items-center gap-1 px-2 py-1.5 rounded text-xs font-medium border transition-all"
-                    style={{
-                      backgroundColor: isActive ? c.bgColor : 'transparent',
-                      borderColor:     isActive ? c.bgColor : '#e5e7eb',
-                      color:           isActive ? c.textColor : '#9ca3af',
-                    }}>
-                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                    {c.label}
-                  </button>
-                );
-              })}
+            <div className="space-y-1.5">
+              {RAG_OPTIONS.map(opt => (
+                <StackedRagButton key={opt} opt={opt}
+                  isActive={entryRag === opt}
+                  onClick={() => setEntryRag(opt)} />
+              ))}
             </div>
           </div>
           <div>
@@ -260,62 +276,80 @@ export default function PillarTab({
             </select>
           </div>
         </div>
+
+        {/* Notes textarea */}
         <div>
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
             Notes
           </label>
-          <textarea rows={4} value={note}
+          <textarea rows={5} value={note}
             onChange={e => setNote(e.target.value)}
             placeholder="Record observations, interventions, or context..."
             className="w-full text-sm border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-2 placeholder-gray-300 bg-white"
             style={{ '--tw-ring-color': '#A58D69' }} />
-          {entryType === 'Assessment' && <WordCounter text={note} limit={150} />}
         </div>
-        <button onClick={handleSave} disabled={!staff.trim()}
-          className="px-4 py-2 text-xs font-semibold text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-          style={{ backgroundColor: '#A58D69' }}>
-          Save Note
-        </button>
+
+        {/* Word counter (bottom left) + Save button (bottom right) */}
+        <div className="flex items-end justify-between gap-3 mt-auto pt-2">
+          <WordCounter text={note} limit={150} />
+          <button onClick={handleSave} disabled={!staff.trim()}
+            className="px-4 py-2 text-xs font-semibold text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
+            style={{ backgroundColor: '#437E8D' }}>
+            Save Note
+          </button>
+        </div>
       </div>
     </div>
   );
 
-  // Status panel block — rendered side-by-side with addNoteBlock at top of page.
+  // Status panel block — left card in the 30/70 row.
   const statusPanel = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 h-full"
+    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-      <div className="flex items-start justify-between mb-3">
-        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Status</h2>
-        <span className="text-xs font-bold px-2.5 py-1 rounded"
-          style={{ backgroundColor: config.bgColor, color: config.textColor }}>
-          {config.label}
-        </span>
-      </div>
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Status</h2>
 
-      <p className="text-xs text-gray-500 leading-relaxed mb-4">{config.meaning}</p>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        {RAG_OPTIONS.map(opt => {
-          const c = RAG_CONFIG[opt];
-          const isActive = opt === status;
-          return (
-            <button key={opt} onClick={() => onStatusChange(opt)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all border"
-              style={{
-                backgroundColor: isActive ? c.bgColor : 'transparent',
-                borderColor: isActive ? c.bgColor : '#e5e7eb',
-                color: isActive ? c.textColor : '#6b7280',
-              }}>
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-xs text-gray-400 mt-3 italic">
-        Updates automatically on the athlete overview. Cannot be edited there.
+      {/* Current RAG value — large */}
+      <p className="text-3xl font-bold mb-1" style={{ color: config.color }}>
+        {config.label}
       </p>
+      <p className="text-xs italic text-gray-500 leading-relaxed mb-4">{config.meaning}</p>
+
+      {/* Stacked RAG selector buttons */}
+      <div className="space-y-1.5">
+        {RAG_OPTIONS.map(opt => (
+          <StackedRagButton key={opt} opt={opt}
+            isActive={opt === status}
+            onClick={() => onStatusChange(opt)} />
+        ))}
+      </div>
+
+      {/* Dividing line */}
+      <div className="h-px bg-gray-100 my-4" />
+
+      {/* Last note preview */}
+      <div className="mt-auto">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Last Note</p>
+        {lastNote ? (
+          <>
+            <p className="text-xs text-gray-400 mb-1">
+              {formatTimestamp(lastNote.timestamp)}
+              {lastNote.staff && <span> · {lastNote.staff}</span>}
+              {lastNote.entryType && lastNote.entryType !== 'General note' && <span> · {lastNote.entryType}</span>}
+            </p>
+            <p className="text-sm text-gray-700 leading-relaxed"
+              style={{
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 3,
+                overflow: 'hidden',
+              }}>
+              {lastNote.note || 'No notes recorded.'}
+            </p>
+          </>
+        ) : (
+          <p className="text-xs italic text-gray-400">No notes yet.</p>
+        )}
+      </div>
     </div>
   );
 
@@ -325,10 +359,10 @@ export default function PillarTab({
       {/* Title */}
       <h1 className="text-xl font-bold text-gray-900">{label}</h1>
 
-      {/* Row 1: Status panel + Add Note form side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-        {statusPanel}
-        {addNoteBlock}
+      {/* Row 1: Status panel (30%) + Add Note form (70%) side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 items-stretch">
+        <div className="lg:col-span-3">{statusPanel}</div>
+        <div className="lg:col-span-7">{addNoteBlock}</div>
       </div>
 
       {/* Row 2: domain-specific content (Working On cards for every pillar) */}
