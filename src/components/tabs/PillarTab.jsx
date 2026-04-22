@@ -201,21 +201,29 @@ export default function PillarTab({
     </div>
   );
 
-  // Full-width stacked RAG button — shared style used by both the status
-  // selector (left card) and the session-rating selector (right card).
-  const StackedRagButton = ({ opt, isActive, onClick }) => {
+  // Full-width stacked RAG button.
+  // size 'lg' — primary selector used in the Status card (left).
+  // size 'sm' — compact form-input style used for Session Rating in the
+  //             Add Note form (right). About half the height of 'lg'.
+  const StackedRagButton = ({ opt, isActive, onClick, size = 'lg' }) => {
     const c = RAG_CONFIG[opt];
+    const isLarge = size === 'lg';
     return (
       <button
         onClick={onClick}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all border"
+        className={`w-full flex items-center gap-2 rounded-lg font-semibold transition-all border ${
+          isLarge ? 'px-3 py-2 text-sm' : 'px-2.5 py-1 text-xs'
+        }`}
         style={{
           backgroundColor: isActive ? c.bgColor : 'transparent',
           borderColor:     isActive ? c.bgColor : '#e5e7eb',
           color:           isActive ? c.textColor : '#6b7280',
         }}
       >
-        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+        <div
+          className={`rounded-full shrink-0 ${isLarge ? 'w-2.5 h-2.5' : 'w-1.5 h-1.5'}`}
+          style={{ backgroundColor: c.color }}
+        />
         {c.label}
       </button>
     );
@@ -225,7 +233,7 @@ export default function PillarTab({
   const lastNote = sorted[0] || null;
 
   const addNoteBlock = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col"
+    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col h-full"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
       <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Add Note</h2>
 
@@ -258,9 +266,9 @@ export default function PillarTab({
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
               Session Rating
             </label>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {RAG_OPTIONS.map(opt => (
-                <StackedRagButton key={opt} opt={opt}
+                <StackedRagButton key={opt} opt={opt} size="sm"
                   isActive={entryRag === opt}
                   onClick={() => setEntryRag(opt)} />
               ))}
@@ -304,7 +312,7 @@ export default function PillarTab({
 
   // Status panel block — left card in the 30/70 row.
   const statusPanel = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col"
+    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col h-full"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
       <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Status</h2>
 
@@ -361,8 +369,8 @@ export default function PillarTab({
 
       {/* Row 1: Status panel (30%) + Add Note form (70%) side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 items-stretch">
-        <div className="lg:col-span-3">{statusPanel}</div>
-        <div className="lg:col-span-7">{addNoteBlock}</div>
+        <div className="lg:col-span-3 h-full">{statusPanel}</div>
+        <div className="lg:col-span-7 h-full">{addNoteBlock}</div>
       </div>
 
       {/* Row 2: domain-specific content (Working On cards for every pillar) */}
