@@ -33,6 +33,8 @@ const DUAL_LINE_METRICS = new Set([
   'cmjHeight',
   'slDropJumpRSI',
   'mod505',
+  'medBallRotationalPush',
+  'medBallRotationalThrow',
 ]);
 
 const DEFAULT_KPI_KEYS = [
@@ -75,12 +77,12 @@ const ZONES = {
 };
 
 const BRAG_OPTIONS = [
-  { value: 'grey',  label: 'No Assessment', bg: '#e5e7eb', text: '#374151' },
-  { value: 'blue',  label: 'Exceeding',     bg: '#dbeafe', text: '#1d4ed8' },
-  { value: 'green', label: 'Meeting',        bg: '#dcfce7', text: '#15803d' },
-  { value: 'amber', label: 'Below',          bg: '#fef3c7', text: '#92400e' },
-  { value: 'red',   label: 'Well Below',     bg: '#fee2e2', text: '#b91c1c' },
+  { value: 'blue',  label: 'Exceeding expectations', bg: '#dbeafe', text: '#1d4ed8' },
+  { value: 'green', label: 'On track',               bg: '#dcfce7', text: '#15803d' },
+  { value: 'amber', label: 'Area to develop',        bg: '#fef3c7', text: '#92400e' },
+  { value: 'red',   label: 'Priority area',          bg: '#ffe4e6', text: '#be123c' },
 ];
+const UNRATED_STYLE = { bg: '#e5e7eb', text: '#6b7280' };
 
 const MASTER_KEY_ORDER = METRIC_CATEGORIES.flatMap(c => c.metrics.map(m => m.key));
 
@@ -988,17 +990,21 @@ export default function PerformanceTestingTab({
                   const previous = list[1] || null;
                   const mDef    = METRIC_MAP[key] || customMetrics?.[key];
                   const label   = LABEL_OVERRIDES[key] || mDef?.label || key;
-                  const brag    = localBrag[key] || 'grey';
-                  const bragOpt = BRAG_OPTIONS.find(o => o.value === brag) || BRAG_OPTIONS[0];
+                  const brag    = localBrag[key] || '';
+                  const bragOpt = BRAG_OPTIONS.find(o => o.value === brag);
+                  const displayStyle = bragOpt
+                    ? { backgroundColor: bragOpt.bg, color: bragOpt.text }
+                    : { backgroundColor: UNRATED_STYLE.bg, color: UNRATED_STYLE.text };
                   return (
                     <tr key={key} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-3 font-medium text-gray-800 text-sm">{label}</td>
                       <td className="px-4 py-3 text-gray-400 text-sm">{fmtEntry(previous, mDef)}</td>
                       <td className="px-4 py-3 text-gray-700 text-sm font-medium">{fmtEntry(current, mDef)}</td>
                       <td className="px-4 py-3 text-center">
-                        <select value={brag} onChange={e => handleBragChange(key, e.target.value)}
+                        <select value={bragOpt ? brag : ''} onChange={e => handleBragChange(key, e.target.value)}
                           className="text-xs font-semibold px-2 py-1.5 rounded border-0 focus:outline-none cursor-pointer"
-                          style={{ backgroundColor: bragOpt.bg, color: bragOpt.text }}>
+                          style={displayStyle}>
+                          {!bragOpt && <option value="" disabled>Not rated</option>}
                           {BRAG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </td>

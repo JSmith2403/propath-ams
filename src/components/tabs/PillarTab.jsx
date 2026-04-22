@@ -280,67 +280,64 @@ export default function PillarTab({
     </div>
   );
 
+  // Status panel block — rendered side-by-side with addNoteBlock at top of page.
+  const statusPanel = (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 h-full"
+      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+      <div className="flex items-start justify-between mb-3">
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Status</h2>
+        <span className="text-xs font-bold px-2.5 py-1 rounded"
+          style={{ backgroundColor: config.bgColor, color: config.textColor }}>
+          {config.label}
+        </span>
+      </div>
+
+      <p className="text-xs text-gray-500 leading-relaxed mb-4">{config.meaning}</p>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {RAG_OPTIONS.map(opt => {
+          const c = RAG_CONFIG[opt];
+          const isActive = opt === status;
+          return (
+            <button key={opt} onClick={() => onStatusChange(opt)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all border"
+              style={{
+                backgroundColor: isActive ? c.bgColor : 'transparent',
+                borderColor: isActive ? c.bgColor : '#e5e7eb',
+                color: isActive ? c.textColor : '#6b7280',
+              }}>
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-gray-400 mt-3 italic">
+        Updates automatically on the athlete overview. Cannot be edited there.
+      </p>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
 
-      {/* ── Title + RAG selector — constrained ── */}
-      <div className="space-y-6 max-w-2xl">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">{label}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">RAG pillar · source of truth for this domain</p>
-        </div>
+      {/* Title */}
+      <h1 className="text-xl font-bold text-gray-900">{label}</h1>
 
-        {/* RAG Selector */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5"
-          style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <div className="flex items-start justify-between mb-3">
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Status</h2>
-            <span className="text-xs font-bold px-2.5 py-1 rounded"
-              style={{ backgroundColor: config.bgColor, color: config.textColor }}>
-              {config.label}
-            </span>
-          </div>
-
-          <p className="text-xs text-gray-500 leading-relaxed mb-4">{config.meaning}</p>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {RAG_OPTIONS.map(opt => {
-              const c = RAG_CONFIG[opt];
-              const isActive = opt === status;
-              return (
-                <button key={opt} onClick={() => onStatusChange(opt)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all border"
-                  style={{
-                    backgroundColor: isActive ? c.bgColor : 'transparent',
-                    borderColor: isActive ? c.bgColor : '#e5e7eb',
-                    color: isActive ? c.textColor : '#6b7280',
-                  }}>
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                  {c.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="text-xs text-gray-400 mt-3 italic">
-            Updates automatically on the athlete overview. Cannot be edited there.
-          </p>
-        </div>
+      {/* Row 1: Status panel + Add Note form side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        {statusPanel}
+        {addNoteBlock}
       </div>
 
-      {/* ── Domain-specific content above notes log (e.g. ACSI-28 + Working On) ── */}
+      {/* Row 2: domain-specific content (Working On cards for every pillar) */}
       {preContent}
 
-      {/* ── Notes log (add note + full history) — constrained ── */}
-      <div className="space-y-6 max-w-2xl">
-        {noteFormFirst ? (
-          <>{addNoteBlock}{historyBlock}</>
-        ) : (
-          <>{historyBlock}{addNoteBlock}</>
-        )}
-      </div>{/* end notes log max-w-2xl */}
+      {/* Row 3: full note log with 4-month divider */}
+      {historyBlock}
 
-      {/* ── Domain-specific assessment data after notes log (e.g. nutrition tables) ── */}
+      {/* Row 4: extra content (e.g. ACSI for Psychological) */}
       {extraContent && (
         <div>
           <div className="flex items-center gap-3 my-2">

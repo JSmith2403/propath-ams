@@ -205,7 +205,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         )}
 
         {view === 'wellness' && !isExternal && (
-          <WellnessOverview athletes={visibleAthletes} />
+          <WellnessOverview athletes={visibleAthletes} role={role} />
         )}
 
         {view === 'users' && isAdmin && (

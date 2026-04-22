@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getMetricColour, METRIC_KEYS, computeRollingStats, isTier1Flagged } from '../utils/wellnessFlags';
 import WellnessChart from './wellness/WellnessChart';
@@ -36,11 +37,30 @@ function CellValue({ metric, value }) {
   );
 }
 
-export default function WellnessOverview({ athletes }) {
+export default function WellnessOverview({ athletes, role }) {
   const [tokens, setTokens] = useState([]);
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const canDelete = role === 'admin' || role === 'co_admin';
+
+  const handleDeleteSubmission = async (sub) => {
+    const dateLabel = formatDate(sub.submission_date);
+    if (!window.confirm(`Are you sure you want to delete this wellness entry for ${dateLabel}? This cannot be undone.`)) {
+      return;
+    }
+    const { error } = await supabase
+      .from('wellness_submissions')
+      .delete()
+      .eq('id', sub.id);
+    if (error) {
+      alert('Failed to delete submission: ' + (error.message || error));
+      return;
+    }
+    // Remove from local state so the row disappears immediately
+    setSubmissions(prev => prev.filter(s => s.id !== sub.id));
+  };
 
   // Fetch all active wellness tokens
   useEffect(() => {
@@ -190,6 +210,7 @@ export default function WellnessOverview({ athletes }) {
                             {METRIC_LABELS[k]}
                           </th>
                         ))}
+                        {canDelete && <th className="w-8" />}
                       </tr>
                     </thead>
                     <tbody>
@@ -198,7 +219,7 @@ export default function WellnessOverview({ athletes }) {
                         return (
                           <tr
                             key={sub.id}
-                            className="border-t border-gray-100"
+                            className="group border-t border-gray-100"
                             style={flagged ? { backgroundColor: '#fef2f2' } : {}}
                           >
                             <td className="px-3 py-2 font-medium text-gray-700">
@@ -209,6 +230,17 @@ export default function WellnessOverview({ athletes }) {
                                 <CellValue metric={k} value={sub[k]} />
                               </td>
                             ))}
+                            {canDelete && (
+                              <td className="px-2 py-2 text-right">
+                                <button
+                                  onClick={() => handleDeleteSubmission(sub)}
+                                  title="Delete submission"
+                                  className="p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}

@@ -120,11 +120,16 @@ function WorkingOnCard({ card, onChange, onSave, isDirty }) {
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
+// `section` prop controls which region to render:
+//   'working-on' — only the three Currently Working On cards
+//   'acsi'       — only the ACSI-28 block
+//   'full'       — both (backwards compat)
 export default function PsychTab({
   acsi28 = [],
   onAddAcsi28,
   workingOn: initialWorkingOn,
   onSaveWorkingOn,
+  section = 'full',
 }) {
   const [showAcsiForm, setShowAcsiForm] = useState(false);
   const [compareDate, setCompareDate]   = useState('');
@@ -143,7 +148,7 @@ export default function PsychTab({
   const updateCard = (i, field, val) =>
     setCards(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
 
-  const saveCard = (i) => {
+  const saveCard = () => {
     const updated = cards; // already updated in state
     onSaveWorkingOn(updated);
     setSavedCards(updated.map(c => ({ ...c })));
@@ -156,85 +161,91 @@ export default function PsychTab({
   const sortedAcsi    = [...acsi28].sort((a, b) => new Date(b.date) - new Date(a.date));
   const comparableDates = sortedAcsi.slice(1).map(e => e.date);
 
+  const workingOnBlock = (
+    <div>
+      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {cards.map((card, i) => (
+          <WorkingOnCard
+            key={i}
+            card={card}
+            onChange={(field, val) => updateCard(i, field, val)}
+            onSave={saveCard}
+            isDirty={isCardDirty(i)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
+  const acsiBlock = (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">ACSI-28 Assessments</h2>
+        {!showAcsiForm && (
+          <button
+            onClick={() => setShowAcsiForm(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 text-white rounded-lg"
+            style={{ backgroundColor: '#A58D69' }}
+          >
+            <Plus size={13} /> Add Assessment
+          </button>
+        )}
+      </div>
+
+      {showAcsiForm && (
+        <div className="mb-4">
+          <AcsiForm
+            onSave={entry => { onAddAcsi28(entry); setShowAcsiForm(false); }}
+            onCancel={() => setShowAcsiForm(false)}
+          />
+        </div>
+      )}
+
+      {sortedAcsi.length > 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 p-5">
+          {comparableDates.length > 0 && (
+            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+              <label className="text-xs font-semibold text-gray-500">Compare with earlier assessment:</label>
+              <select
+                value={compareDate}
+                onChange={e => setCompareDate(e.target.value)}
+                className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none bg-white"
+              >
+                <option value="">— Select date —</option>
+                {comparableDates.map(d => (
+                  <option key={d} value={d}>
+                    {new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </option>
+                ))}
+              </select>
+              {compareDate && (
+                <button onClick={() => setCompareDate('')}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline">
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+          <AcsiRadar entries={sortedAcsi} compareDate={compareDate || null} />
+        </div>
+      ) : (
+        !showAcsiForm && (
+          <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
+            <p className="text-sm text-gray-400">No ACSI-28 assessments recorded yet.</p>
+          </div>
+        )
+      )}
+    </div>
+  );
+
+  if (section === 'working-on') return workingOnBlock;
+  if (section === 'acsi')       return acsiBlock;
+
   return (
     <div className="space-y-8">
-
-      {/* ── ACSI-28 ───────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">ACSI-28 Assessments</h2>
-          {!showAcsiForm && (
-            <button
-              onClick={() => setShowAcsiForm(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 text-white rounded-lg"
-              style={{ backgroundColor: '#A58D69' }}
-            >
-              <Plus size={13} /> Add Assessment
-            </button>
-          )}
-        </div>
-
-        {showAcsiForm && (
-          <div className="mb-4">
-            <AcsiForm
-              onSave={entry => { onAddAcsi28(entry); setShowAcsiForm(false); }}
-              onCancel={() => setShowAcsiForm(false)}
-            />
-          </div>
-        )}
-
-        {sortedAcsi.length > 0 ? (
-          <div className="bg-white rounded-xl border border-gray-100 p-5">
-            {comparableDates.length > 0 && (
-              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                <label className="text-xs font-semibold text-gray-500">Compare with earlier assessment:</label>
-                <select
-                  value={compareDate}
-                  onChange={e => setCompareDate(e.target.value)}
-                  className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none bg-white"
-                >
-                  <option value="">— Select date —</option>
-                  {comparableDates.map(d => (
-                    <option key={d} value={d}>
-                      {new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </option>
-                  ))}
-                </select>
-                {compareDate && (
-                  <button onClick={() => setCompareDate('')}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline">
-                    Clear
-                  </button>
-                )}
-              </div>
-            )}
-            <AcsiRadar entries={sortedAcsi} compareDate={compareDate || null} />
-          </div>
-        ) : (
-          !showAcsiForm && (
-            <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
-              <p className="text-sm text-gray-400">No ACSI-28 assessments recorded yet.</p>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* ── Currently Working On ─────────────────────────── */}
-      <div>
-        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {cards.map((card, i) => (
-            <WorkingOnCard
-              key={i}
-              card={card}
-              onChange={(field, val) => updateCard(i, field, val)}
-              onSave={() => saveCard(i)}
-              isDirty={isCardDirty(i)}
-            />
-          ))}
-        </div>
-      </div>
-
+      {acsiBlock}
+      {workingOnBlock}
     </div>
   );
 }

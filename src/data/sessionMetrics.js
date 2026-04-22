@@ -55,6 +55,8 @@ export const METRIC_CATEGORIES = [
       { key: 'squatJumpHeight',    label: 'Squat Jump Height',     unit: 'cm', bilateral: false, attempts: 3 },
       { key: 'squatJumpPeakForce', label: 'Squat Jump Peak Force', unit: 'N',  bilateral: false, attempts: 3 },
       { key: 'squatJumpPeakPower', label: 'Squat Jump Peak Power', unit: 'W',  bilateral: false, attempts: 3 },
+      { key: 'medBallRotationalPush',  label: 'Med Ball Rotational Push',  unit: 'm/s', bilateral: true, attempts: 1 },
+      { key: 'medBallRotationalThrow', label: 'Med Ball Rotational Throw', unit: 'm/s', bilateral: true, attempts: 1 },
     ],
   },
   {

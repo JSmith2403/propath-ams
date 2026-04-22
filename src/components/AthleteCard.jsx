@@ -33,15 +33,32 @@ function calculateAge(dob) {
   return age;
 }
 
-function daysSinceLastCheckIn(checkIns) {
-  if (!checkIns || checkIns.length === 0) return null;
-  const latest = checkIns
-    .map(c => c.date)
-    .filter(Boolean)
-    .sort((a, b) => b.localeCompare(a))[0];
-  if (!latest) return null;
-  const today = new Date().toISOString().slice(0, 10);
-  return Math.floor((new Date(today) - new Date(latest)) / (1000 * 60 * 60 * 24));
+// Days since the athlete's most recent Assessment or Check-in across every
+// pillar (Physical, Psychological, Nutritional, Lifestyle) and the Physio
+// Assessment tab. Observation entries do not count.
+function daysSinceLastCheckIn(athlete) {
+  const timestamps = [];
+
+  ['physical', 'psych', 'nutrition', 'lifestyle'].forEach(domain => {
+    (athlete?.ragLog?.[domain] || []).forEach(e => {
+      const t = e.entryType;
+      if ((t === 'Assessment' || t === 'Check-in') && e.timestamp) {
+        timestamps.push(new Date(e.timestamp).getTime());
+      }
+    });
+  });
+
+  (athlete?.phase2?.physio?.entries || []).forEach(e => {
+    const t = e.noteType;
+    if ((t === 'Assessment' || t === 'Check-in') && e.date) {
+      timestamps.push(new Date(e.date).getTime());
+    }
+  });
+
+  if (timestamps.length === 0) return null;
+  const latest = Math.max(...timestamps);
+  if (!Number.isFinite(latest)) return null;
+  return Math.floor((Date.now() - latest) / (1000 * 60 * 60 * 24));
 }
 
 function CheckInBadge({ days }) {
@@ -75,7 +92,7 @@ function CheckInBadge({ days }) {
 export default function AthleteCard({ athlete, onClick, wellnessData }) {
   const age      = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
-  const days     = daysSinceLastCheckIn(athlete.checkIns);
+  const days     = daysSinceLastCheckIn(athlete);
   const matData  = calculateAthleteMaturation(athlete);
 
   return (

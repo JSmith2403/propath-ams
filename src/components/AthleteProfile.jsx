@@ -209,22 +209,30 @@ export default function AthleteProfile({
       let pillarEntryTypes = undefined;
 
       if (domain === 'psych') {
+        const psychWorkingOn = p2.psych?.workingOn || [
+          { title: '', description: '' },
+          { title: '', description: '' },
+          { title: '', description: '' },
+        ];
+        // Working On cards sit above the note log
         preContent = (
           <PsychTab
-            acsi28={p2.psych?.acsi28 || []}
-            workingOn={p2.psych?.workingOn || [
-              { title: '', description: '' },
-              { title: '', description: '' },
-              { title: '', description: '' },
-            ]}
-            onAddAcsi28={entry => onAddAcsi28Entry(localAthlete.id, entry)}
+            section="working-on"
+            workingOn={psychWorkingOn}
             onSaveWorkingOn={handleSavePsychWorkingOn}
+          />
+        );
+        // ACSI assessments sit at the bottom of the tab (below the note log)
+        extraContent = (
+          <PsychTab
+            section="acsi"
+            acsi28={p2.psych?.acsi28 || []}
+            onAddAcsi28={entry => onAddAcsi28Entry(localAthlete.id, entry)}
           />
         );
       } else if (domain === 'nutrition') {
         preContent = (
           <NutritionTab
-            maturationEntries={p2.maturation?.entries || []}
             workingOn={p2.nutrition?.workingOn || [
               { title: '', description: '' },
               { title: '', description: '' },

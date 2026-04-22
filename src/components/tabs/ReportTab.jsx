@@ -21,12 +21,12 @@ const LABEL_OVERRIDES = {
 };
 
 const BRAG_OPTIONS = [
-  { value: 'grey',  label: 'Not yet assessed',       bg: '#e5e7eb', text: '#374151' },
   { value: 'blue',  label: 'Exceeding expectations', bg: '#dbeafe', text: '#1d4ed8' },
   { value: 'green', label: 'On track',               bg: '#dcfce7', text: '#15803d' },
   { value: 'amber', label: 'Area to develop',        bg: '#fef3c7', text: '#92400e' },
-  { value: 'red',   label: 'Priority area',          bg: '#fee2e2', text: '#b91c1c' },
+  { value: 'red',   label: 'Priority area',          bg: '#ffe4e6', text: '#be123c' },
 ];
+const BRAG_UNRATED = { bg: '#e5e7eb', text: '#6b7280', label: 'Not rated' };
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -305,8 +305,12 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, custo
             }
 
             // BRAG
-            const brag    = localBrag[key] || 'grey';
-            const bragOpt = BRAG_OPTIONS.find(o => o.value === brag) || BRAG_OPTIONS[0];
+            const brag    = localBrag[key] || '';
+            const bragOpt = BRAG_OPTIONS.find(o => o.value === brag);
+            const bragStyle = bragOpt
+              ? { backgroundColor: bragOpt.bg,    color: bragOpt.text }
+              : { backgroundColor: BRAG_UNRATED.bg, color: BRAG_UNRATED.text };
+            const bragLabel = bragOpt ? bragOpt.label : BRAG_UNRATED.label;
 
             return (
               <tr key={key} style={{ backgroundColor: ri % 2 === 0 ? '#fff' : '#f9fafb' }}>
@@ -316,19 +320,20 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, custo
                 <td className="px-4 py-3">{changeNode}</td>
                 <td className="px-4 py-3">
                   <select
-                    value={brag}
+                    value={bragOpt ? brag : ''}
                     onChange={e => handleBragChange(key, e.target.value)}
                     className="text-xs font-semibold px-2 py-1 rounded border-0 focus:outline-none cursor-pointer"
-                    style={{ backgroundColor: bragOpt.bg, color: bragOpt.text }}
+                    style={bragStyle}
                   >
+                    {!bragOpt && <option value="" disabled>Not rated</option>}
                     {BRAG_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
                   {/* Plain-text fallback for print */}
                   <span className="print-only text-xs font-semibold px-2 py-1 rounded"
-                    style={{ backgroundColor: bragOpt.bg, color: bragOpt.text }}>
-                    {bragOpt.label}
+                    style={bragStyle}>
+                    {bragLabel}
                   </span>
                 </td>
               </tr>
