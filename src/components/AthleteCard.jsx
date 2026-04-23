@@ -34,24 +34,45 @@ function calculateAge(dob) {
 }
 
 // Days since the athlete's most recent Assessment or Check-in across every
-// pillar (Physical, Psychological, Nutritional, Lifestyle) and the Physio
-// Assessment tab. Observation entries do not count.
+// note location on the profile:
+//   - Physical / Psychological / Nutritional / Lifestyle pillar notes
+//   - Physio Assessment notes
+//   - Overview tab check-in log (athlete.checkIns)
+// Observation entries do not count from any source.
 function daysSinceLastCheckIn(athlete) {
   const timestamps = [];
 
+  // Helper — accept both 'Assessment' and 'Check-in' (case-sensitive as used
+  // in the app). Observation is never counted.
+  const counts = (t) => t === 'Assessment' || t === 'Check-in';
+
+  // Pillar note logs (Physical / Psych / Nutrition / Lifestyle) — entryType
+  // field, timestamp field (ISO).
   ['physical', 'psych', 'nutrition', 'lifestyle'].forEach(domain => {
     (athlete?.ragLog?.[domain] || []).forEach(e => {
-      const t = e.entryType;
-      if ((t === 'Assessment' || t === 'Check-in') && e.timestamp) {
-        timestamps.push(new Date(e.timestamp).getTime());
+      if (counts(e.entryType) && e.timestamp) {
+        const t = new Date(e.timestamp).getTime();
+        if (Number.isFinite(t)) timestamps.push(t);
       }
     });
   });
 
+  // Physio Assessment notes — noteType field, date field (YYYY-MM-DD).
   (athlete?.phase2?.physio?.entries || []).forEach(e => {
-    const t = e.noteType;
-    if ((t === 'Assessment' || t === 'Check-in') && e.date) {
-      timestamps.push(new Date(e.date).getTime());
+    if (counts(e.noteType) && e.date) {
+      const t = new Date(e.date).getTime();
+      if (Number.isFinite(t)) timestamps.push(t);
+    }
+  });
+
+  // Overview tab check-in log — date field, noteType field.
+  (athlete?.checkIns || []).forEach(e => {
+    // Legacy entries may not have noteType set; treat those as Check-in
+    // (the log is explicitly a check-in log).
+    const type = e.noteType ?? 'Check-in';
+    if (counts(type) && e.date) {
+      const t = new Date(e.date).getTime();
+      if (Number.isFinite(t)) timestamps.push(t);
     }
   });
 
