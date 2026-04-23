@@ -3,7 +3,7 @@ import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { X, Check } from 'lucide-react';
 
-/** Render the cropped region to a 400×400 JPEG data URL. */
+/** Render the cropped region to a 400×400 JPEG data URL (full rectangle). */
 function getCroppedDataURL(imgEl, crop) {
   const scaleX = imgEl.naturalWidth  / imgEl.width;
   const scaleY = imgEl.naturalHeight / imgEl.height;
@@ -13,11 +13,6 @@ function getCroppedDataURL(imgEl, crop) {
   canvas.width  = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-
-  // Circular clip so only the circle is painted (transparent corners)
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-  ctx.clip();
 
   // Convert % crop → pixel crop relative to the displayed image
   const px = crop.unit === '%'
@@ -36,7 +31,9 @@ function getCroppedDataURL(imgEl, crop) {
     0, 0, size, size,
   );
 
-  return canvas.toDataURL('image/jpeg', 0.85);
+  // Full rectangle — no circular clip. The card frames the photo into its
+  // own fixed-height rectangle via object-fit: cover at render time.
+  return canvas.toDataURL('image/jpeg', 0.9);
 }
 
 /**
@@ -88,7 +85,6 @@ export default function PhotoCropModal({ src, onConfirm, onCancel }) {
             crop={crop}
             onChange={(_, pct) => setCrop(pct)}
             aspect={1}
-            circularCrop
             minWidth={40}
             keepSelection
           >

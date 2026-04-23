@@ -12,7 +12,7 @@ const RAG_COLORS = {
 
 // Fixed-height card zones so every card on the roster is the same total height
 // regardless of content state (photo / no photo, wellness active / not, etc.)
-const IMAGE_H   = 210;  // px — photo or initials rectangle
+const IMAGE_H   = 260;  // px — photo or initials rectangle
 const COHORT_H  = 28;   // px — cohort bar height (py-1.5 ≈ 28px incl. text)
 const WELLNESS_H = 80;  // px — wellness zone
 const PILLAR_H  = 68;   // px — pillar dots grid
