@@ -1,6 +1,6 @@
-import InitialsAvatar from './InitialsAvatar';
 import { COHORT_CONFIG } from '../data/athletes';
-import WellnessMiniRings from './wellness/WellnessMiniRings';
+import WellnessDonutRing from './wellness/WellnessDonutRing';
+import { getMetricColour } from '../utils/wellnessFlags';
 import { calculateAthleteMaturation } from '../utils/maturation';
 
 const RAG_COLORS = {
@@ -10,17 +10,22 @@ const RAG_COLORS = {
   grey:  '#9ca3af',
 };
 
-function RagDot({ label, status }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <div
-        className="w-2.5 h-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: RAG_COLORS[status] || RAG_COLORS.grey }}
-      />
-      <span className="text-xs text-gray-500 font-medium">{label}</span>
-    </div>
-  );
-}
+// Fixed-height card zones so every card on the roster is the same total height
+// regardless of content state (photo / no photo, wellness active / not, etc.)
+const IMAGE_H   = 210;  // px — photo or initials rectangle
+const COHORT_H  = 28;   // px — cohort bar height (py-1.5 ≈ 28px incl. text)
+const WELLNESS_H = 80;  // px — wellness zone
+const PILLAR_H  = 68;   // px — pillar dots grid
+
+const WELLNESS_METRICS = [
+  { key: 'sleep_duration',  label: 'Sleep',    max: 12 },
+  { key: 'sleep_quality',   label: 'Quality',  max: 7 },
+  { key: 'fatigue',         label: 'Fatigue',  max: 7 },
+  { key: 'muscle_soreness', label: 'Soreness', max: 7 },
+  { key: 'stress',          label: 'Stress',   max: 7 },
+];
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 function calculateAge(dob) {
   if (!dob) return null;
@@ -34,20 +39,12 @@ function calculateAge(dob) {
 }
 
 // Days since the athlete's most recent Assessment or Check-in across every
-// note location on the profile:
-//   - Physical / Psychological / Nutritional / Lifestyle pillar notes
-//   - Physio Assessment notes
-//   - Overview tab check-in log (athlete.checkIns)
+// note location on the profile (pillar notes + physio + Overview check-ins).
 // Observation entries do not count from any source.
 function daysSinceLastCheckIn(athlete) {
   const timestamps = [];
-
-  // Helper — accept both 'Assessment' and 'Check-in' (case-sensitive as used
-  // in the app). Observation is never counted.
   const counts = (t) => t === 'Assessment' || t === 'Check-in';
 
-  // Pillar note logs (Physical / Psych / Nutrition / Lifestyle) — entryType
-  // field, timestamp field (ISO).
   ['physical', 'psych', 'nutrition', 'lifestyle'].forEach(domain => {
     (athlete?.ragLog?.[domain] || []).forEach(e => {
       if (counts(e.entryType) && e.timestamp) {
@@ -57,7 +54,6 @@ function daysSinceLastCheckIn(athlete) {
     });
   });
 
-  // Physio Assessment notes — noteType field, date field (YYYY-MM-DD).
   (athlete?.phase2?.physio?.entries || []).forEach(e => {
     if (counts(e.noteType) && e.date) {
       const t = new Date(e.date).getTime();
@@ -65,10 +61,7 @@ function daysSinceLastCheckIn(athlete) {
     }
   });
 
-  // Overview tab check-in log — date field, noteType field.
   (athlete?.checkIns || []).forEach(e => {
-    // Legacy entries may not have noteType set; treat those as Check-in
-    // (the log is explicitly a check-in log).
     const type = e.noteType ?? 'Check-in';
     if (counts(type) && e.date) {
       const t = new Date(e.date).getTime();
@@ -82,10 +75,26 @@ function daysSinceLastCheckIn(athlete) {
   return Math.floor((Date.now() - latest) / (1000 * 60 * 60 * 24));
 }
 
+function getInitials(name = '') {
+  const parts = name.split(' ').filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function formatShortDate(d) {
+  if (!d) return '';
+  const dt = new Date(d + 'T00:00:00');
+  if (isNaN(dt.getTime())) return '';
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
 function CheckInBadge({ days }) {
   let bg, label;
   if (days === null) {
-    bg = '#9ca3af'; label = '\u2014'; // em dash
+    bg = '#9ca3af'; label = '—';
   } else if (days <= 7) {
     bg = '#22c55e'; label = `${days}d`;
   } else if (days <= 21) {
@@ -103,18 +112,123 @@ function CheckInBadge({ days }) {
       borderRadius: 6,
       lineHeight: 1,
       display: 'inline-block',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
     }}>
       {label}
     </span>
   );
 }
 
+// Rectangular initials fill — teal background, gold letters, fills the full
+// image rectangle when an athlete has no photo.
+function InitialsFill({ name }) {
+  return (
+    <div
+      className="w-full h-full flex items-center justify-center font-bold"
+      style={{
+        backgroundColor: '#085777',
+        color: '#A58D69',
+        fontSize: 56,
+        letterSpacing: '0.03em',
+      }}
+    >
+      {getInitials(name)}
+    </div>
+  );
+}
+
+function RagDot({ label, status }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div
+        className="w-2.5 h-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: RAG_COLORS[status] || RAG_COLORS.grey }}
+      />
+      <span className="text-xs text-gray-600 font-medium">{label}</span>
+    </div>
+  );
+}
+
+// ─── Wellness zone — three fixed-height states ──────────────────────────────
+
+function WellnessZone({ wellnessData, athleteId, onClick }) {
+  const baseStyle = {
+    height: WELLNESS_H,
+    padding: '8px 12px',
+    borderTop: '1px solid #f3f4f6',
+  };
+
+  // State 3 — not activated
+  if (!wellnessData || !wellnessData.isActive) {
+    return (
+      <div style={baseStyle} className="flex items-center justify-center">
+        <p className="text-xs text-gray-500 text-center">
+          Wellness tracking not activated.{' '}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClick(athleteId, { tab: 'wellness' }); }}
+            className="font-semibold hover:underline"
+            style={{ color: '#437E8D' }}
+          >
+            Activate
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  // State 2 — activated, no submissions
+  if (!wellnessData.latestSubmission) {
+    return (
+      <div style={baseStyle} className="flex items-center justify-center">
+        <p className="text-xs italic text-gray-400">Awaiting first submission</p>
+      </div>
+    );
+  }
+
+  // State 1 — active with a submission
+  const submission = wellnessData.latestSubmission;
+  const dateLabel  = formatShortDate(wellnessData.latestDate);
+  return (
+    <div style={baseStyle} className="flex flex-col">
+      <p style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2 }}>
+        Wellness{dateLabel ? ` · ${dateLabel}` : ''}
+      </p>
+      <div className="flex items-start justify-between flex-1">
+        {WELLNESS_METRICS.map((m) => {
+          const val    = Number(submission[m.key]);
+          const colour = getMetricColour(m.key, val);
+          return (
+            <WellnessDonutRing
+              key={m.key}
+              value={val}
+              max={m.max}
+              colour={colour}
+              label={m.label}
+              size={32}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main card ───────────────────────────────────────────────────────────────
+
 export default function AthleteCard({ athlete, onClick, wellnessData }) {
-  const age      = calculateAge(athlete.dob);
+  const age       = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
-  const days     = daysSinceLastCheckIn(athlete);
-  const matData  = calculateAthleteMaturation(athlete);
+  const days      = daysSinceLastCheckIn(athlete);
+  const matData   = calculateAthleteMaturation(athlete);
+
+  const phvLabel = matData && !matData.outOfRange && matData.stage ? matData.stage : null;
+
+  // Meta line beneath the name — age, PHV stage, sport
+  const metaParts = [];
+  if (age != null) metaParts.push(`${age}y`);
+  if (phvLabel)    metaParts.push(phvLabel);
+  if (athlete.sport) metaParts.push(athlete.sport);
+  const meta = metaParts.join(' · ');
 
   return (
     <div
@@ -122,87 +236,68 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
       className="bg-white rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200 flex flex-col"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}
     >
-      {/* Photo / Initials area */}
+      {/* ── 1. Image area (fixed 210px) ─────────────────────────────────── */}
       <div
-        className="relative flex items-center justify-center"
-        style={{ height: '160px', backgroundColor: '#111827' }}
+        className="relative overflow-hidden"
+        style={{ height: IMAGE_H, backgroundColor: '#085777' }}
       >
         {athlete.photo ? (
-          <img src={athlete.photo} alt={athlete.name} className="w-full h-full object-cover" />
+          <img
+            src={athlete.photo}
+            alt={athlete.name}
+            className="w-full h-full"
+            style={{ objectFit: 'cover', objectPosition: 'top center' }}
+          />
         ) : (
-          <InitialsAvatar name={athlete.name} size="xl" />
+          <InitialsFill name={athlete.name} />
         )}
 
-        {/* Days since last check-in badge — top right */}
+        {/* Days-since badge — top right */}
         <div className="absolute top-2 right-2">
           <CheckInBadge days={days} />
         </div>
+
+        {/* Name + meta overlaid at the bottom with a dark gradient fade */}
+        <div
+          className="absolute left-0 right-0 bottom-0 px-3 pt-8 pb-2.5"
+          style={{
+            background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)',
+          }}
+        >
+          <h3 className="text-white font-bold leading-tight truncate" style={{ fontSize: 15 }}>
+            {athlete.name}
+          </h3>
+          {meta && (
+            <p
+              className="truncate"
+              style={{ color: 'rgba(255,255,255,0.82)', fontSize: 11, marginTop: 2 }}
+            >
+              {meta}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Cohort bar — shows Elite / Mini, not gender */}
+      {/* ── 2. Cohort bar (fixed height) ────────────────────────────────── */}
       <div
-        className="text-center py-1.5 text-xs font-bold tracking-widest uppercase"
-        style={{ backgroundColor: tierStyle.bg, color: tierStyle.text }}
+        className="text-center text-xs font-bold tracking-widest uppercase flex items-center justify-center"
+        style={{ height: COHORT_H, backgroundColor: tierStyle.bg, color: tierStyle.text }}
       >
         {athlete.cohort || 'Elite'}
       </div>
 
-      {/* Content */}
-      <div className="p-4 flex flex-col gap-3 flex-1">
-        <div>
-          <h3 className="font-semibold text-gray-900 text-base leading-tight">{athlete.name}</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            {age != null ? `${age}y` : ''}
-            {age != null && matData?.stage && !matData.outOfRange ? '\u00a0|\u00a0' : ''}
-            {(!matData?.outOfRange && matData?.stage) ? matData.stage : (age == null ? '—' : '')}
-          </p>
-          {matData && !matData.outOfRange && matData.pahPct <= 100 && (
-            <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>
-              {matData.pahPct.toFixed(1)}% PAH
-            </p>
-          )}
-        </div>
+      {/* ── 3. Wellness zone (fixed 80px) ───────────────────────────────── */}
+      <WellnessZone wellnessData={wellnessData} athleteId={athlete.id} onClick={onClick} />
 
-        {/* Sport tag */}
-        <div>
-          <span
-            className="inline-block text-xs font-medium px-2 py-0.5 rounded"
-            style={{ backgroundColor: '#f0f4f8', color: '#437E8D' }}
-          >
-            {athlete.sport}
-          </span>
-        </div>
-
-        {/* Wellness status */}
-        <div className="pt-1 border-t border-gray-100">
-          {!wellnessData || !wellnessData.isActive ? (
-            <div>
-              <p className="text-xs text-gray-400">Wellness tracking not activated</p>
-              <button
-                onClick={(e) => { e.stopPropagation(); onClick(athlete.id, { tab: 'wellness' }); }}
-                className="text-xs font-medium mt-0.5"
-                style={{ color: '#A58D69' }}
-              >
-                Activate
-              </button>
-            </div>
-          ) : wellnessData.latestSubmission ? (
-            <WellnessMiniRings
-              submission={wellnessData.latestSubmission}
-              date={wellnessData.latestDate}
-            />
-          ) : (
-            <p className="text-xs text-gray-400 italic">Awaiting first submission</p>
-          )}
-        </div>
-
-        {/* RAG 2×2 grid */}
-        <div className="grid grid-cols-2 gap-y-2 gap-x-3 pt-1 border-t border-gray-100 mt-auto">
-          <RagDot label="Physical"  status={athlete.rag?.physical  || 'grey'} />
-          <RagDot label="Psych"     status={athlete.rag?.psych     || 'grey'} />
-          <RagDot label="Nutrition" status={athlete.rag?.nutrition || 'grey'} />
-          <RagDot label="Lifestyle" status={athlete.rag?.lifestyle || 'grey'} />
-        </div>
+      {/* ── 4. Pillar zone (fixed 68px) ─────────────────────────────────── */}
+      <div
+        className="grid grid-cols-2 gap-y-2 gap-x-4 px-4 py-3"
+        style={{ height: PILLAR_H, borderTop: '1px solid #f3f4f6' }}
+      >
+        <RagDot label="Physical"  status={athlete.rag?.physical  || 'grey'} />
+        <RagDot label="Psych"     status={athlete.rag?.psych     || 'grey'} />
+        <RagDot label="Nutrition" status={athlete.rag?.nutrition || 'grey'} />
+        <RagDot label="Lifestyle" status={athlete.rag?.lifestyle || 'grey'} />
       </div>
     </div>
   );
