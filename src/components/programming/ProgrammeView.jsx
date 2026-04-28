@@ -34,7 +34,14 @@ export default function ProgrammeView({
 
   // ── Events state (only fetched while active) ────────────────────────────
   const athleteIds = useMemo(() => (isActive ? [athlete.id] : []), [isActive, athlete.id]);
-  const { events, loading: eventsLoading, addEvent, updateEvent, deleteEvent } = useCalendarEvents(athleteIds);
+  const {
+    events,
+    loading: eventsLoading,
+    addEvent,
+    updateEvent,
+    updateEventOptimistic,
+    deleteEventOptimistic,
+  } = useCalendarEvents(athleteIds);
 
   // ── Calendar nav state ──────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState('month');
@@ -51,15 +58,17 @@ export default function ProgrammeView({
   const close         = () => setModal(null);
 
   // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState(null); // { msg, kind }
   const toastTimer = useRef(null);
-  const showToast = (msg) => {
+  const showToast = (msg, kind = 'success') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(msg);
+    setToast({ msg, kind });
     toastTimer.current = setTimeout(() => setToast(null), 2200);
   };
 
-  // ── Drag reschedule handler — preserves duration ────────────────────────
+  // ── Drag reschedule handler — optimistic, preserves duration ────────────
+  // The pill repositions instantly; the network update fires silently.
+  // On failure we revert and show an error toast.
   const handleMoveEvent = async (event, newStartISO) => {
     if (!canEdit) return;
     const oldStart = parseDate(event.start_date);
@@ -67,25 +76,38 @@ export default function ProgrammeView({
     const newStart = parseDate(newStartISO);
     const duration = oldEnd ? dayDiff(oldEnd, oldStart) : 0;
     const newEndISO = oldEnd ? toISO(addDays(newStart, duration)) : null;
-    await updateEvent(event.id, {
+
+    const res = await updateEventOptimistic(event.id, {
       start_date: newStartISO,
       end_date: newEndISO,
     });
-    showToast(`Event moved to ${formatToastDate(newStartISO)}`);
+    if (res.ok) {
+      showToast(`Event moved to ${formatToastDate(newStartISO)}`);
+    } else {
+      showToast("Couldn't move event — please try again", 'error');
+    }
   };
 
   const handleSave = async (payload) => {
-    if (modal?.mode === 'edit' && modal.event) {
-      await updateEvent(modal.event.id, payload);
+    if (modal?.mode === 'edit' && modal.event?.id) {
+      // Optimistic edit — close modal immediately, apply patch locally,
+      // network in the background. Revert + toast on failure.
+      const id = modal.event.id;
+      close();
+      const res = await updateEventOptimistic(id, payload);
+      if (!res.ok) showToast("Couldn't save changes — please try again", 'error');
     } else {
+      // New event — DB has to assign an id, so this stays pessimistic.
       await addEvent(payload);
+      close();
     }
-    close();
   };
 
   const handleDelete = async (id) => {
-    await deleteEvent(id);
+    // Optimistic delete — pill disappears instantly, network in background.
     close();
+    const res = await deleteEventOptimistic(id);
+    if (!res.ok) showToast("Couldn't delete event — please try again", 'error');
   };
 
   // ── Activation toggle card ──────────────────────────────────────────────
@@ -197,9 +219,9 @@ export default function ProgrammeView({
       {toast && (
         <div
           className="fixed bottom-6 right-6 px-4 py-2.5 rounded-lg text-xs font-semibold text-white shadow-lg z-[90]"
-          style={{ backgroundColor: '#1C1C1C' }}
+          style={{ backgroundColor: toast.kind === 'error' ? '#dc2626' : '#1C1C1C' }}
         >
-          {toast}
+          {toast.msg}
         </div>
       )}
     </div>

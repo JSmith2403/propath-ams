@@ -95,5 +95,64 @@ export function useCalendarEvents(athleteIds = []) {
     return true;
   }, [refresh]);
 
-  return { events, loading, error, addEvent, updateEvent, deleteEvent, refresh };
+  // ─── Optimistic variants ────────────────────────────────────────────────
+  // Apply the change to local state first so the UI reflects it instantly,
+  // then fire the network call. On failure, revert the local change and
+  // surface an error to the caller. Resolves to { ok, error? }.
+
+  const updateEventOptimistic = useCallback(async (id, patch) => {
+    let snapshot = null;
+    setEvents(prev => {
+      snapshot = prev.find(e => e.id === id);
+      if (!snapshot) return prev;
+      return prev.map(e => e.id === id ? { ...e, ...patch } : e);
+    });
+    if (!snapshot) return { ok: false, error: new Error('event not found') };
+
+    const { error: e } = await supabase
+      .from('athlete_calendar_events')
+      .update(patch)
+      .eq('id', id);
+    if (e) {
+      console.error('[Calendar] optimistic update failed, reverting:', e);
+      setEvents(prev => prev.map(ev => ev.id === id ? snapshot : ev));
+      return { ok: false, error: e };
+    }
+    return { ok: true };
+  }, []);
+
+  const deleteEventOptimistic = useCallback(async (id) => {
+    let snapshot = null;
+    let snapshotIdx = -1;
+    setEvents(prev => {
+      snapshotIdx = prev.findIndex(e => e.id === id);
+      if (snapshotIdx < 0) return prev;
+      snapshot = prev[snapshotIdx];
+      return prev.filter(e => e.id !== id);
+    });
+    if (!snapshot) return { ok: false, error: new Error('event not found') };
+
+    const { error: e } = await supabase
+      .from('athlete_calendar_events')
+      .delete()
+      .eq('id', id);
+    if (e) {
+      console.error('[Calendar] optimistic delete failed, reverting:', e);
+      setEvents(prev => {
+        const next = prev.slice();
+        const insertAt = Math.min(snapshotIdx, next.length);
+        next.splice(insertAt, 0, snapshot);
+        return next;
+      });
+      return { ok: false, error: e };
+    }
+    return { ok: true };
+  }, []);
+
+  return {
+    events, loading, error,
+    addEvent, updateEvent, deleteEvent,
+    updateEventOptimistic, deleteEventOptimistic,
+    refresh,
+  };
 }
