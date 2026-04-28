@@ -11,12 +11,60 @@ const DAY_NUMBER_RESERVE = 22;
 const MAX_LANES_MONTH    = 3;
 const DRAG_THRESHOLD_PX  = 5;
 
-// Priority badge colours — by priority, not by athlete colour.
+// Priority colours.
+//
+// On Surface 1 (per-athlete calendar) the WHOLE pill takes the priority
+// colour and there is no badge — the user only ever sees one athlete on
+// this calendar so athlete colour adds no signal. The mapping below is the
+// agreed Surface 1 scheme: A is the highest-priority hue (Gold).
+//
+// On Surface 2 (master cross-athlete calendar — not built yet) the pill
+// background switches to athlete colour and a small priority badge sits at
+// the right end of competition pills. The badge uses the same priority
+// colour mapping below.
 const PRIORITY_COLOURS = {
-  A: '#085777', // navy
-  B: '#437E8D', // teal
-  C: '#A58D69', // gold
+  A: '#A58D69', // gold
+  B: '#085777', // navy
+  C: '#437E8D', // teal
 };
+
+// Neutral pill colour for non-competition / no-priority events on Surface 1.
+const NEUTRAL_PILL_BG = '#64748b'; // slate-500
+
+/**
+ * Resolve the visual style for a pill given the colour mode.
+ *  mode === 'priority'  (Surface 1, per-athlete)
+ *  mode === 'athlete'   (Surface 2, cross-athlete) — future
+ */
+function getPillStyle(event, mode) {
+  if (mode === 'athlete') {
+    const colour = colourForAthlete(event.athlete_id);
+    return {
+      bg: tintForColour(colour, 0.16),
+      fg: colour,
+      border: colour,
+      showBadge:
+        event.event_type === 'competition'
+        && event.priority
+        && !!PRIORITY_COLOURS[event.priority],
+    };
+  }
+  // 'priority' — Surface 1
+  if (event.event_type === 'competition' && PRIORITY_COLOURS[event.priority]) {
+    return {
+      bg: PRIORITY_COLOURS[event.priority],
+      fg: '#ffffff',
+      border: null,
+      showBadge: false,
+    };
+  }
+  return {
+    bg: NEUTRAL_PILL_BG,
+    fg: '#ffffff',
+    border: null,
+    showBadge: false,
+  };
+}
 
 // ─── Date helpers (Mon-start week) ──────────────────────────────────────────
 
@@ -96,7 +144,7 @@ function formatToastDate(iso) {
 
 // ─── Per-week segment layout with lane assignment ───────────────────────────
 
-function buildWeekSegments(events, weekStart) {
+function buildWeekSegments(events, weekStart, pillColourMode) {
   const weekEnd = addDays(weekStart, 6);
   const raw = [];
 
@@ -112,7 +160,7 @@ function buildWeekSegments(events, weekStart) {
 
     raw.push({
       event: e,
-      athleteColour: colourForAthlete(e.athlete_id),
+      style: getPillStyle(e, pillColourMode),
       startCol,
       endCol,
       leftRounded:  start >= weekStart,
@@ -151,13 +199,11 @@ function buildWeekSegments(events, weekStart) {
 // The badge uses a priority-driven colour, not the athlete colour.
 
 function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
-  const { event, athleteColour, leftRounded, rightRounded } = seg;
-  const tint  = tintForColour(athleteColour, 0.16);
+  const { event, style, leftRounded, rightRounded } = seg;
   const radius = 4;
-  const showBadge = leftRounded
-    && event.event_type === 'competition'
-    && event.priority
-    && PRIORITY_COLOURS[event.priority];
+  // Badge is only rendered on Surface 2 (athlete colour mode). On Surface 1
+  // the priority is communicated by the whole pill colour.
+  const renderBadge = leftRounded && style.showBadge;
 
   return (
     <div
@@ -169,9 +215,9 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
         width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 4px)`,
         top: 0,
         height,
-        backgroundColor: tint,
-        color: athleteColour,
-        borderLeft: leftRounded ? `2px solid ${athleteColour}` : 'none',
+        backgroundColor: style.bg,
+        color: style.fg,
+        borderLeft: leftRounded && style.border ? `2px solid ${style.border}` : 'none',
         borderTopLeftRadius:    leftRounded  ? radius : 0,
         borderBottomLeftRadius: leftRounded  ? radius : 0,
         borderTopRightRadius:   rightRounded ? radius : 0,
@@ -185,7 +231,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
       title={event.event_name}
     >
       <span className="flex-1 truncate">{event.event_name}</span>
-      {showBadge && (
+      {renderBadge && (
         <span
           className="shrink-0 inline-flex items-center justify-center text-[9px] font-bold rounded-sm"
           style={{
@@ -205,8 +251,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
 
 // Ghost preview rendered at the cursor while dragging.
 function DragGhost({ x, y, seg }) {
-  const { event, athleteColour } = seg;
-  const tint = tintForColour(athleteColour, 0.20);
+  const { event, style } = seg;
   return (
     <div
       style={{
@@ -219,9 +264,9 @@ function DragGhost({ x, y, seg }) {
         padding: '0 8px',
         display: 'flex',
         alignItems: 'center',
-        backgroundColor: tint,
-        color: athleteColour,
-        borderLeft: `2px solid ${athleteColour}`,
+        backgroundColor: style.bg,
+        color: style.fg,
+        borderLeft: style.border ? `2px solid ${style.border}` : 'none',
         borderRadius: 4,
         fontSize: 10,
         fontWeight: 600,
@@ -259,6 +304,8 @@ export default function ProgrammeCalendar({
   onMoveEvent,
   events = [],
   onClickEvent,
+  // 'priority' (Surface 1, per-athlete) | 'athlete' (Surface 2, future)
+  pillColourMode = 'priority',
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -427,7 +474,7 @@ export default function ProgrammeCalendar({
 
       {/* ── Week rows ─────────────────────────────────────────────────── */}
       {weekStarts.map((wkStart, wIdx) => {
-        const segments = buildWeekSegments(events, wkStart);
+        const segments = buildWeekSegments(events, wkStart, pillColourMode);
         const visible  = segments.filter(s => s.lane < maxLanes);
         const overflowByCol = {};
         segments.filter(s => s.lane >= maxLanes).forEach(s => {
