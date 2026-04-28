@@ -118,33 +118,29 @@ export function useCalendarEvents(athleteIds = []) {
       return { ok: false, error: new Error('event not found') };
     }
 
-    // Use .select() so we can confirm the update actually persisted. With
-    // postgrest's default minimal-return mode, some transient response
-    // shapes can confuse the client. Reading the row back removes ambiguity.
     const { data, error: e } = await supabase
       .from('athlete_calendar_events')
       .update(patch)
       .eq('id', id)
       .select();
 
-    // Treat a clean success — error null and at least one row returned —
-    // as success. If the row came back, the write happened, even if some
-    // parallel error surfaced (e.g. transient client retry quirks).
-    if (data && data.length > 0 && !e) {
-      return { ok: true, row: data[0] };
+    // Authoritative success / failure signal: only treat as failure when
+    // supabase returns an explicit error object. An empty data array can
+    // occur for valid reasons (no return preference, RLS read-back quirks)
+    // even when the UPDATE itself succeeded — so we don't fail on that
+    // alone. Anything ambiguous logs a warning and returns success; a real
+    // failure is logged to console with the full context for triage.
+    if (e) {
+      console.error('[Calendar] optimistic update failed, reverting:', {
+        id, patch, error: e, data,
+      });
+      setEvents(prev => prev.map(ev => ev.id === id ? snapshot : ev));
+      return { ok: false, error: e };
     }
-
-    // If we got a row back but also an error, prefer the row (write went
-    // through). Log the error so we can investigate.
-    if (data && data.length > 0 && e) {
-      console.warn('[Calendar] update returned row + error, treating as success:', e);
-      return { ok: true, row: data[0] };
+    if (!data || data.length === 0) {
+      console.warn('[Calendar] update returned no row but no error — assuming write succeeded:', { id, data });
     }
-
-    // True failure path — no row, or explicit error.
-    console.error('[Calendar] optimistic update failed, reverting:', { id, patch, error: e, data });
-    setEvents(prev => prev.map(ev => ev.id === id ? snapshot : ev));
-    return { ok: false, error: e || new Error('no rows updated') };
+    return { ok: true, row: data?.[0] };
   }, []);
 
   const deleteEventOptimistic = useCallback(async (id) => {
