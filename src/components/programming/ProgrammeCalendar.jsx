@@ -1,14 +1,22 @@
-import { useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Trophy, Tent, ClipboardList, Circle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Pill geometry (px). Adjust the day-number reservation if you change this.
-const PILL_HEIGHT      = 18;
-const PILL_GAP         = 3;
+const PILL_HEIGHT        = 18;
+const PILL_GAP           = 3;
 const DAY_NUMBER_RESERVE = 22;
-const MAX_LANES_MONTH  = 3;
+const MAX_LANES_MONTH    = 3;
+const DRAG_THRESHOLD_PX  = 5;
+
+// Priority badge colours — by priority, not by athlete colour.
+const PRIORITY_COLOURS = {
+  A: '#085777', // navy
+  B: '#437E8D', // teal
+  C: '#A58D69', // gold
+};
 
 // ─── Date helpers (Mon-start week) ──────────────────────────────────────────
 
@@ -55,8 +63,15 @@ function dayDiff(a, b) {
 }
 
 function parseDate(iso) {
-  // Expect 'YYYY-MM-DD'
   return new Date(iso + 'T00:00:00');
+}
+
+function toISO(d) {
+  // Local-date-aware ISO (avoid UTC shift)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function formatMonthYear(d) {
@@ -75,27 +90,12 @@ function formatWeekRange(start) {
   return `${startStr} – ${endStr}`;
 }
 
-// ─── Event-type icon ─────────────────────────────────────────────────────────
-
-function eventIcon(type, size = 11) {
-  const props = { size, strokeWidth: 2 };
-  switch (type) {
-    case 'competition':   return <Trophy        {...props} />;
-    case 'training_camp': return <Tent          {...props} />;
-    case 'testing':       return <ClipboardList {...props} />;
-    default:              return <Circle        {...props} />;
-  }
+function formatToastDate(iso) {
+  return parseDate(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 // ─── Per-week segment layout with lane assignment ───────────────────────────
 
-/**
- * For a single week (7 consecutive days starting at weekStart), compute the
- * pill segments overlapping that week. Returns array of:
- *   { event, athleteColour, startCol, endCol, leftRounded, rightRounded, lane }
- *
- * Lanes are assigned greedily: longer events first, then earliest-starting.
- */
 function buildWeekSegments(events, weekStart) {
   const weekEnd = addDays(weekStart, 6);
   const raw = [];
@@ -120,12 +120,10 @@ function buildWeekSegments(events, weekStart) {
     });
   });
 
-  // Sort longest first (more aggressive lane allocation), then by startCol
   raw.sort((a, b) =>
     (b.endCol - b.startCol) - (a.endCol - a.startCol) ||
     a.startCol - b.startCol);
 
-  // Greedy lane assignment
   const lanes = [];
   raw.forEach(seg => {
     let laneIdx = 0;
@@ -148,16 +146,24 @@ function buildWeekSegments(events, weekStart) {
   return raw;
 }
 
-// ─── Pill component ──────────────────────────────────────────────────────────
+// ─── Pill ────────────────────────────────────────────────────────────────────
+// No event-type icons — just the name and (for competitions) a priority badge.
+// The badge uses a priority-driven colour, not the athlete colour.
 
-function EventPill({ seg, height = PILL_HEIGHT, onClick }) {
+function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
   const { event, athleteColour, leftRounded, rightRounded } = seg;
-  const tint = tintForColour(athleteColour, 0.16);
+  const tint  = tintForColour(athleteColour, 0.16);
   const radius = 4;
+  const showBadge = leftRounded
+    && event.event_type === 'competition'
+    && event.priority
+    && PRIORITY_COLOURS[event.priority];
+
   return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onClick && onClick(event); }}
-      className="absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold cursor-pointer transition-opacity hover:opacity-80"
+    <div
+      role="button"
+      onPointerDown={onPointerDown}
+      className="absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold cursor-grab select-none"
       style={{
         left: `calc(${(seg.startCol / 7) * 100}% + 2px)`,
         width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 4px)`,
@@ -172,20 +178,18 @@ function EventPill({ seg, height = PILL_HEIGHT, onClick }) {
         borderBottomRightRadius:rightRounded ? radius : 0,
         textAlign: 'left',
         whiteSpace: 'nowrap',
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? 'none' : 'auto',
+        transition: 'opacity 0.08s ease',
       }}
       title={event.event_name}
     >
-      {leftRounded && (
-        <span className="shrink-0 flex items-center" style={{ color: athleteColour }}>
-          {eventIcon(event.event_type)}
-        </span>
-      )}
       <span className="flex-1 truncate">{event.event_name}</span>
-      {leftRounded && event.event_type === 'competition' && event.priority && (
+      {showBadge && (
         <span
           className="shrink-0 inline-flex items-center justify-center text-[9px] font-bold rounded-sm"
           style={{
-            backgroundColor: athleteColour,
+            backgroundColor: PRIORITY_COLOURS[event.priority],
             color: '#fff',
             width: 13,
             height: 13,
@@ -195,28 +199,69 @@ function EventPill({ seg, height = PILL_HEIGHT, onClick }) {
           {event.priority}
         </span>
       )}
-    </button>
+    </div>
+  );
+}
+
+// Ghost preview rendered at the cursor while dragging.
+function DragGhost({ x, y, seg }) {
+  const { event, athleteColour } = seg;
+  const tint = tintForColour(athleteColour, 0.20);
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: x + 8,
+        top: y + 8,
+        height: PILL_HEIGHT,
+        minWidth: 120,
+        maxWidth: 240,
+        padding: '0 8px',
+        display: 'flex',
+        alignItems: 'center',
+        backgroundColor: tint,
+        color: athleteColour,
+        borderLeft: `2px solid ${athleteColour}`,
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+        pointerEvents: 'none',
+        zIndex: 90,
+      }}
+    >
+      {event.event_name}
+    </div>
   );
 }
 
 // ─── Main calendar ───────────────────────────────────────────────────────────
 
 /**
- * ProgrammeCalendar — month / week grid with multi-day event pills.
+ * ProgrammeCalendar — month / week grid.
  *
- * Used by both Surface 1 (single-athlete inside profile) and Surface 2
- * (top-level master view across many athletes). Surface decides which
- * events to pass in.
+ * Pills:
+ *   • Single click   → onClickEvent(event)
+ *   • Drag & drop    → onMoveEvent(event, newStartDateISO)
+ * Cells:
+ *   • Hover affordance "+ Event" → onAddEventOnDate(dateISO) (canEdit only)
+ *   • Add Event toolbar button   → onAddEvent()
  */
 export default function ProgrammeCalendar({
   viewMode, onChangeView,
   viewDate, onChangeDate,
   canEdit = true,
   onAddEvent,
+  onAddEventOnDate,
+  onMoveEvent,
   events = [],
   onClickEvent,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
+  const containerRef = useRef(null);
 
   // Build week-row Mondays
   const weekStarts = useMemo(() => {
@@ -238,8 +283,82 @@ export default function ProgrammeCalendar({
   const rowHeight = viewMode === 'week' ? 320 : 110;
   const maxLanes  = viewMode === 'week' ? 12  : MAX_LANES_MONTH;
 
+  // ─── Drag state ───────────────────────────────────────────────────────
+  // null when idle. While drag-pending: { event, startX, startY, x, y, started, hoveredDate, seg }
+  const [drag, setDrag] = useState(null);
+  const dragRef = useRef(drag);
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  // Pointer capture + global listeners while a drag is in progress
+  useEffect(() => {
+    if (!drag) return;
+
+    const findCellDate = (x, y) => {
+      let n = document.elementFromPoint(x, y);
+      while (n && n !== document.body) {
+        if (n.dataset && n.dataset.date) return n.dataset.date;
+        n = n.parentElement;
+      }
+      return null;
+    };
+
+    const handleMove = (e) => {
+      const cur = dragRef.current;
+      if (!cur) return;
+      const dx = e.clientX - cur.startX;
+      const dy = e.clientY - cur.startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const started = cur.started || dist > DRAG_THRESHOLD_PX;
+      const hoveredDate = started ? findCellDate(e.clientX, e.clientY) : null;
+      setDrag({ ...cur, x: e.clientX, y: e.clientY, started, hoveredDate });
+    };
+
+    const handleUp = () => {
+      const cur = dragRef.current;
+      if (!cur) return;
+      if (cur.started && cur.hoveredDate && cur.hoveredDate !== cur.event.start_date) {
+        onMoveEvent && onMoveEvent(cur.event, cur.hoveredDate);
+      } else if (!cur.started) {
+        onClickEvent && onClickEvent(cur.event);
+      }
+      setDrag(null);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup',   handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup',   handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [drag, onMoveEvent, onClickEvent]);
+
+  const startDrag = (e, seg) => {
+    if (!canEdit) {
+      // External role: clicks still allowed, drag isn't.
+      onClickEvent && onClickEvent(seg.event);
+      return;
+    }
+    e.preventDefault();
+    setDrag({
+      event: seg.event,
+      seg,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      started: false,
+      hoveredDate: null,
+    });
+  };
+
+  // ─── Hover state for the "+ Event" affordance ────────────────────────
+  const [hoverDate, setHoverDate] = useState(null);
+  const isDragging = !!drag?.started;
+
   return (
-    <div className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
+    <div ref={containerRef} className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div className="flex items-center gap-1">
@@ -323,18 +442,26 @@ export default function ProgrammeCalendar({
             className="relative grid grid-cols-7 border-b border-gray-100"
             style={{ height: rowHeight }}
           >
-            {/* Day cells (background) */}
             {[0,1,2,3,4,5,6].map(col => {
               const day = addDays(wkStart, col);
+              const iso = toISO(day);
               const inCurrentMonth = viewMode === 'week' || day.getMonth() === viewDate.getMonth();
               const isToday        = sameDay(day, today);
+              const isDropTarget   = isDragging && drag?.hoveredDate === iso;
+              const isHovered      = !isDragging && hoverDate === iso && inCurrentMonth && canEdit;
+
               return (
                 <div
                   key={col}
+                  data-date={iso}
+                  onMouseEnter={() => !isDragging && setHoverDate(iso)}
+                  onMouseLeave={() => setHoverDate(prev => prev === iso ? null : prev)}
                   className="relative px-1.5 py-1 border-r border-gray-100 overflow-hidden"
                   style={{
                     backgroundColor: inCurrentMonth ? 'white' : '#fafafa',
-                    outline: isToday ? '2px solid #437E8D' : 'none',
+                    outline: isToday      ? '2px solid #437E8D'
+                            : isDropTarget ? '2px solid #437E8D'
+                            : 'none',
                     outlineOffset: '-2px',
                   }}
                 >
@@ -344,6 +471,23 @@ export default function ProgrammeCalendar({
                   >
                     {day.getDate()}
                   </div>
+
+                  {/* Hover-to-add affordance */}
+                  {isHovered && onAddEventOnDate && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAddEventOnDate(iso); }}
+                      className="absolute top-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded transition-opacity"
+                      style={{
+                        backgroundColor: 'rgba(67,126,141,0.10)',
+                        color: '#437E8D',
+                        opacity: 0.95,
+                      }}
+                      title="Add event on this date"
+                    >
+                      <Plus size={10} />
+                      Event
+                    </button>
+                  )}
 
                   {/* +N more indicator */}
                   {overflowByCol[col] > 0 && (
@@ -358,35 +502,42 @@ export default function ProgrammeCalendar({
               );
             })}
 
-            {/* Pills layer (absolute over the row, below the day numbers) */}
+            {/* Pills layer */}
             <div
               className="absolute pointer-events-none"
-              style={{
-                top: DAY_NUMBER_RESERVE,
-                left: 0,
-                right: 0,
-                bottom: 0,
-              }}
+              style={{ top: DAY_NUMBER_RESERVE, left: 0, right: 0, bottom: 0 }}
             >
-              {visible.map((seg, i) => (
-                <div
-                  key={`${seg.event.id}-${i}`}
-                  className="pointer-events-auto"
-                  style={{
-                    position: 'absolute',
-                    top: seg.lane * (PILL_HEIGHT + PILL_GAP),
-                    left: 0,
-                    right: 0,
-                    height: PILL_HEIGHT,
-                  }}
-                >
-                  <EventPill seg={seg} onClick={onClickEvent} />
-                </div>
-              ))}
+              {visible.map((seg, i) => {
+                const isThisDragged = drag?.started && drag.event?.id === seg.event.id;
+                return (
+                  <div
+                    key={`${seg.event.id}-${i}`}
+                    className="pointer-events-auto"
+                    style={{
+                      position: 'absolute',
+                      top: seg.lane * (PILL_HEIGHT + PILL_GAP),
+                      left: 0,
+                      right: 0,
+                      height: PILL_HEIGHT,
+                    }}
+                  >
+                    <EventPill
+                      seg={seg}
+                      hidden={isThisDragged}
+                      onPointerDown={(e) => startDrag(e, seg)}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
+
+      {/* Drag ghost — outside grid so it isn't clipped */}
+      {drag?.started && (
+        <DragGhost x={drag.x} y={drag.y} seg={drag.seg} />
+      )}
 
       {/* Empty-state hint */}
       {events.length === 0 && (
@@ -397,3 +548,6 @@ export default function ProgrammeCalendar({
     </div>
   );
 }
+
+// Re-export helpers used by ProgrammeView (toast formatter, duration math)
+export { addDays as _addDays, dayDiff as _dayDiff, parseDate as _parseDate, toISO as _toISO, formatToastDate as _formatToastDate };

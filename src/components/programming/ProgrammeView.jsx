@@ -1,7 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
-import ProgrammeCalendar from './ProgrammeCalendar';
+import ProgrammeCalendar, {
+  _parseDate as parseDate,
+  _addDays   as addDays,
+  _dayDiff   as dayDiff,
+  _toISO     as toISO,
+  _formatToastDate as formatToastDate,
+} from './ProgrammeCalendar';
 import EventModal from './EventModal';
 
 /**
@@ -35,11 +41,38 @@ export default function ProgrammeView({
   const [viewDate, setViewDate] = useState(() => new Date());
 
   // ── Modal state ─────────────────────────────────────────────────────────
-  const [modal, setModal] = useState(null); // { mode: 'add'|'edit', event }
+  // event === null means a fresh add. event === { start_date, ... } may carry
+  // a default start_date when adding via the cell hover affordance.
+  const [modal, setModal] = useState(null);
 
-  const openAdd  = () => canEdit && setModal({ mode: 'add',  event: null });
-  const openEdit = (event) => canEdit && setModal({ mode: 'edit', event });
-  const close    = () => setModal(null);
+  const openAdd       = () => canEdit && setModal({ mode: 'add',  event: null });
+  const openAddOnDate = (iso) => canEdit && setModal({ mode: 'add', event: { start_date: iso } });
+  const openEdit      = (event) => canEdit && setModal({ mode: 'edit', event });
+  const close         = () => setModal(null);
+
+  // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = (msg) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+
+  // ── Drag reschedule handler — preserves duration ────────────────────────
+  const handleMoveEvent = async (event, newStartISO) => {
+    if (!canEdit) return;
+    const oldStart = parseDate(event.start_date);
+    const oldEnd   = event.end_date ? parseDate(event.end_date) : null;
+    const newStart = parseDate(newStartISO);
+    const duration = oldEnd ? dayDiff(oldEnd, oldStart) : 0;
+    const newEndISO = oldEnd ? toISO(addDays(newStart, duration)) : null;
+    await updateEvent(event.id, {
+      start_date: newStartISO,
+      end_date: newEndISO,
+    });
+    showToast(`Event moved to ${formatToastDate(newStartISO)}`);
+  };
 
   const handleSave = async (payload) => {
     if (modal?.mode === 'edit' && modal.event) {
@@ -141,6 +174,8 @@ export default function ProgrammeView({
           onChangeDate={setViewDate}
           canEdit={canEdit}
           onAddEvent={openAdd}
+          onAddEventOnDate={openAddOnDate}
+          onMoveEvent={handleMoveEvent}
           events={events}
           onClickEvent={canEdit ? openEdit : null}
         />
@@ -156,6 +191,16 @@ export default function ProgrammeView({
           onDelete={modal.mode === 'edit' ? handleDelete : null}
           onClose={close}
         />
+      )}
+
+      {/* Toast — bottom-right of the viewport */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 px-4 py-2.5 rounded-lg text-xs font-semibold text-white shadow-lg z-[90]"
+          style={{ backgroundColor: '#1C1C1C' }}
+        >
+          {toast}
+        </div>
       )}
     </div>
   );
