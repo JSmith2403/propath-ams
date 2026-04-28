@@ -339,8 +339,11 @@ BEGIN
   ]) LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS allow_all ON %I', t);
+    -- TO public covers both anon and authenticated. The AMS uses anon (with
+    -- DEV_BYPASS skipping Supabase Auth) so policies scoped to authenticated
+    -- alone block normal app usage. Matches the wellness_schema.sql pattern.
     EXECUTE format(
-      'CREATE POLICY allow_all ON %I FOR ALL TO authenticated USING (true) WITH CHECK (true)',
+      'CREATE POLICY allow_all ON %I FOR ALL TO public USING (true) WITH CHECK (true)',
       t
     );
   END LOOP;

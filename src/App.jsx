@@ -162,6 +162,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             initialTab={profileNav?.tab}
             initialHighlight={profileNav?.highlight}
             allAthletes={visibleAthletes}
+            role={role}
             onBack={handleBack}
             onUpdate={updateAthlete}
             onUpdateRag={updateRag}

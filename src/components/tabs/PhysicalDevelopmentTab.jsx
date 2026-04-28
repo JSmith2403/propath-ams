@@ -1,10 +1,11 @@
 import { lazy, Suspense } from 'react';
 import WorkingOnSection from '../WorkingOnSection';
 
-// Lazy-load the heavy children — Overview's PillarTab and Testing's
-// PerformanceTestingTab. Programme is a static placeholder until Brief 2 Part B.
+// Lazy-load the heavy children — Overview's PillarTab, Testing's
+// PerformanceTestingTab, and Programme's ProgrammeView.
 const PillarTab             = lazy(() => import('./PillarTab'));
 const PerformanceTestingTab = lazy(() => import('./PerformanceTestingTab'));
+const ProgrammeView         = lazy(() => import('../programming/ProgrammeView'));
 
 const SUBTABS = [
   { id: 'overview',  label: 'Overview'  },
@@ -65,6 +66,8 @@ export default function PhysicalDevelopmentTab({
   // shared
   athlete,
   phase2,
+  allAthletes = [],
+  role,
 
   // Overview (Physical pillar)
   ragStatus,
@@ -108,17 +111,10 @@ export default function PhysicalDevelopmentTab({
         )}
 
         {subTab === 'programme' && (
-          <div
-            className="rounded-xl p-16 text-center"
-            style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
-          >
-            <p className="text-sm font-medium" style={{ color: '#6b7280' }}>
-              Programme
-            </p>
-            <p className="text-xs mt-2" style={{ color: '#9ca3af' }}>
-              Calendar and block builder coming soon.
-            </p>
-          </div>
+          <ProgrammeView
+            athlete={athlete}
+            role={role}
+          />
         )}
 
         {subTab === 'testing' && (

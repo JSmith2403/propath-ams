@@ -65,6 +65,7 @@ function uid() {
 
 export default function AthleteProfile({
   athlete, onBack, allAthletes = [],
+  role,
   initialTab, initialHighlight,
   onUpdate, onUpdateRag, onAddRagEntry, onSaveQuarterlyReview, onUpdatePhoto,
   // Phase 2
@@ -315,6 +316,8 @@ export default function AthleteProfile({
             onChangeSubTab={setPhysicalDevSubTab}
             athlete={localAthlete}
             phase2={p2}
+            allAthletes={allAthletes}
+            role={role}
             // Overview (Physical pillar)
             ragStatus={localAthlete.rag?.physical || 'grey'}
             ragLogEntries={localAthlete.ragLog?.physical || []}
