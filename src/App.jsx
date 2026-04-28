@@ -106,6 +106,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const handleBack = () => { setView('roster'); setSelectedId(null); };
 
   const PILLAR_TAB_MAP = {
+    physical:  'physical-dev',
     psych:     'rag-psych',
     nutrition: 'rag-nutrition',
     physio:    'physio',

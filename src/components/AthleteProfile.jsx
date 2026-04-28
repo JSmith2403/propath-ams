@@ -5,28 +5,27 @@ import WorkingOnSection from './WorkingOnSection';
 import { RAG_DOMAINS } from '../data/athletes';
 
 // Lazy-load heavy tabs to keep initial bundle lean
-const PillarTab             = lazy(() => import('./tabs/PillarTab'));
-const MaturationTab         = lazy(() => import('./tabs/MaturationTab'));
-const MobilityTab           = lazy(() => import('./tabs/MobilityTab'));
-const PerformanceTestingTab = lazy(() => import('./tabs/PerformanceTestingTab'));
-const PhysioTab             = lazy(() => import('./tabs/PhysioTab'));
-const NutritionTab          = lazy(() => import('./tabs/NutritionTab'));
-const PsychTab              = lazy(() => import('./tabs/PsychTab'));
-const ReportTab             = lazy(() => import('./tabs/ReportTab'));
-const WellnessTab           = lazy(() => import('./tabs/WellnessTab'));
+const PillarTab               = lazy(() => import('./tabs/PillarTab'));
+const MaturationTab           = lazy(() => import('./tabs/MaturationTab'));
+const MobilityTab             = lazy(() => import('./tabs/MobilityTab'));
+const PhysicalDevelopmentTab  = lazy(() => import('./tabs/PhysicalDevelopmentTab'));
+const PhysioTab               = lazy(() => import('./tabs/PhysioTab'));
+const NutritionTab            = lazy(() => import('./tabs/NutritionTab'));
+const PsychTab                = lazy(() => import('./tabs/PsychTab'));
+const ReportTab               = lazy(() => import('./tabs/ReportTab'));
+const WellnessTab             = lazy(() => import('./tabs/WellnessTab'));
 
 const TABS = [
-  { id: 'overview',       label: 'Overview'            },
-  { id: 'rag-physical',   label: 'Physical'            },
-  { id: 'rag-psych',      label: 'Psychological'       },
-  { id: 'rag-nutrition',  label: 'Nutritional'         },
-  { id: 'rag-lifestyle',  label: 'Lifestyle'           },
-  { id: 'wellness',       label: 'Wellness'            },
-  { id: 'maturation',     label: 'Maturation'          },
-  { id: 'mobility',       label: 'Mobility'            },
-  { id: 'performance',    label: 'Performance Testing' },
-  { id: 'physio',         label: 'Physio Assessment'   },
-  { id: 'report',         label: 'Report'              },
+  { id: 'overview',       label: 'Overview'             },
+  { id: 'physical-dev',   label: 'Physical Development' },
+  { id: 'rag-psych',      label: 'Psychological'        },
+  { id: 'rag-nutrition',  label: 'Nutritional'          },
+  { id: 'rag-lifestyle',  label: 'Lifestyle'            },
+  { id: 'wellness',       label: 'Wellness'             },
+  { id: 'maturation',     label: 'Maturation'           },
+  { id: 'mobility',       label: 'Mobility'             },
+  { id: 'physio',         label: 'Physio Assessment'    },
+  { id: 'report',         label: 'Report'               },
 ];
 
 function TabBar({ active, onChange }) {
@@ -77,6 +76,10 @@ export default function AthleteProfile({
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+  // Physical Development sub-tab state — persisted across top-level tab
+  // switches for the lifetime of the open profile. Defaults to 'overview'
+  // on first entry per Brief 2 Part A.
+  const [physicalDevSubTab, setPhysicalDevSubTab] = useState('overview');
   const [localAthlete, setLocalAthlete] = useState(athlete);
 
   // Keep localAthlete in sync when the athlete prop updates externally
@@ -127,9 +130,15 @@ export default function AthleteProfile({
     onSaveQuarterlyReview(localAthlete.id, review);
   };
 
-  // Navigate from an overview entry to the pillar section + highlight
+  // Navigate from an overview entry to the pillar section + highlight.
+  // Physical now lives inside Physical Development → Overview sub-tab.
   const handleNavigateToPillar = (domain, entryId) => {
-    setActiveTab(`rag-${domain}`);
+    if (domain === 'physical') {
+      setActiveTab('physical-dev');
+      setPhysicalDevSubTab('overview');
+    } else {
+      setActiveTab(`rag-${domain}`);
+    }
     setHighlightEntry({ domain, entryId });
   };
 
@@ -241,13 +250,6 @@ export default function AthleteProfile({
             onSaveWorkingOn={handleSaveNutritionWorkingOn}
           />
         );
-      } else if (domain === 'physical') {
-        preContent = (
-          <WorkingOnSection
-            workingOn={p2.physical?.workingOn}
-            onSave={handleSavePhysicalWorkingOn}
-          />
-        );
       } else if (domain === 'lifestyle') {
         preContent = (
           <WorkingOnSection
@@ -271,7 +273,7 @@ export default function AthleteProfile({
           preContent={preContent}
           extraContent={extraContent}
           entryTypes={pillarEntryTypes}
-          noteFormFirst={domain === 'psych' || domain === 'nutrition' || domain === 'physical' || domain === 'lifestyle'}
+          noteFormFirst={domain === 'psych' || domain === 'nutrition' || domain === 'lifestyle'}
         />
       );
     }
@@ -306,17 +308,26 @@ export default function AthleteProfile({
             onAddEntry={(joint, entry) => onAddMobilityEntry(localAthlete.id, joint, entry)}
           />
         );
-      case 'performance':
+      case 'physical-dev':
         return (
-          <PerformanceTestingTab
+          <PhysicalDevelopmentTab
+            subTab={physicalDevSubTab}
+            onChangeSubTab={setPhysicalDevSubTab}
             athlete={localAthlete}
-            entries={p2.performance?.entries || {}}
-            maturationEntries={p2.maturation?.entries || []}
-            bragRatings={p2.performanceBrag || {}}
-            reportMetrics={p2.reportMetrics || []}
-            onSaveBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}
+            phase2={p2}
+            // Overview (Physical pillar)
+            ragStatus={localAthlete.rag?.physical || 'grey'}
+            ragLogEntries={localAthlete.ragLog?.physical || []}
+            highlightEntryId={highlightEntry?.domain === 'physical' ? highlightEntry.entryId : null}
+            onStatusChange={status => handleStatusChange('physical', status)}
+            onAddRagEntry={data => handleAddRagEntry('physical', data)}
+            onDeleteRagEntry={entryId => handleDeleteRagEntry('physical', entryId)}
+            onClearHighlight={() => setHighlightEntry(null)}
+            onSavePhysicalWorkingOn={handleSavePhysicalWorkingOn}
+            // Testing (Performance Testing)
+            onAddPerformanceEntry={(metric, entry) => onAddPerformanceEntry(localAthlete.id, metric, entry)}
+            onSavePerformanceBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}
             onSaveReportMetrics={(keys) => onSaveReportMetrics(localAthlete.id, keys)}
-            onAddEntry={(metric, entry) => onAddPerformanceEntry(localAthlete.id, metric, entry)}
           />
         );
       case 'physio':
