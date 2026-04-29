@@ -121,13 +121,15 @@ export default function AthleteSidebar({
         >
           Deselect all
         </button>
-        <button
-          onClick={justThis}
-          className="text-[11px] font-semibold text-left hover:underline"
-          style={{ color: '#437E8D' }}
-        >
-          Just this athlete
-        </button>
+        {currentAthleteId && (
+          <button
+            onClick={justThis}
+            className="text-[11px] font-semibold text-left hover:underline"
+            style={{ color: '#437E8D' }}
+          >
+            Just this athlete
+          </button>
+        )}
       </div>
 
       {/* Cohort groups */}

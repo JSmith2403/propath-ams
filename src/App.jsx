@@ -12,6 +12,7 @@ import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import { useWellnessRoster } from './hooks/useWellnessRoster';
 import WellnessOverview from './components/WellnessOverview';
+import ProgrammeMasterView from './components/programming/ProgrammeMasterView';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -88,7 +89,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const canDelete = !isExternal;
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users')) return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme')) return;
     if (!isAdmin && v === 'users') return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
@@ -208,6 +209,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
         {view === 'wellness' && !isExternal && (
           <WellnessOverview athletes={visibleAthletes} role={role} />
+        )}
+
+        {view === 'programme' && !isExternal && (
+          <ProgrammeMasterView allAthletes={visibleAthletes} role={role} />
         )}
 
         {view === 'users' && isAdmin && (

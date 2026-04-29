@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, ChevronDown, ChevronRight, Database, LogOut, Shield } from 'lucide-react';
+import { Users, Heart, Calendar, CalendarDays, ChevronDown, ChevronRight, Database, LogOut, Shield } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -120,6 +120,13 @@ export default function Sidebar({
             <div className="px-6 mt-4 mb-2">
               <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Modules</p>
             </div>
+
+            <NavItem
+              icon={CalendarDays}
+              label="Programme"
+              active={view === 'programme'}
+              onClick={() => onNavigate('programme')}
+            />
 
             <NavItem
               icon={Heart}
