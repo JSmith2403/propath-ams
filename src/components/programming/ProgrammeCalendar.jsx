@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
+import { formatBlockRange } from '../../utils/blockHelpers';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -250,6 +251,88 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
   );
 }
 
+// Returns blocks overlapping a given ISO date.
+function blocksOverlapping(blocks, dateISO) {
+  if (!blocks || blocks.length === 0) return [];
+  const d = parseDate(dateISO);
+  return blocks.filter(b => {
+    const start = parseDate(b.start_date);
+    const end   = parseDate(b.end_date);
+    return start <= d && d <= end;
+  });
+}
+
+// Whether to render the block name on this cell. Per Brief 3 B1:
+//   - First day of the block, OR
+//   - First cell of a new week (Monday) that the block already spans
+function shouldShowBlockLabel(block, cellISO, weekStartISO) {
+  if (block.start_date === cellISO) return true;
+  if (weekStartISO === cellISO && block.start_date < cellISO) return true;
+  return false;
+}
+
+// ─── Block layers per cell ─────────────────────────────────────────────────
+// SingleBlockLayer — one block on this cell. Soft tint background + clickable
+// name label on the first cell of the block / first cell of each new week.
+function SingleBlockLayer({ block, cellISO, weekStartISO, onClick, canEdit }) {
+  const colour = colourForAthlete(block.athlete_id);
+  const tint   = tintForColour(colour, 0.12);
+  const showLabel = shouldShowBlockLabel(block, cellISO, weekStartISO);
+  const tooltip = `${block.block_name} · ${formatBlockRange(block.start_date, block.end_date)}`;
+  return (
+    <>
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ backgroundColor: tint, zIndex: 0 }}
+      />
+      {showLabel && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (canEdit && onClick) onClick(block); }}
+          className="absolute top-0.5 text-[10px] font-semibold truncate cursor-pointer hover:underline"
+          style={{
+            left: 22,
+            right: 6,
+            color: 'rgba(28,28,28,0.65)',
+            zIndex: 2,
+            cursor: canEdit ? 'pointer' : 'default',
+            background: 'transparent',
+          }}
+          title={tooltip}
+        >
+          {block.block_name}
+        </button>
+      )}
+    </>
+  );
+}
+
+// StripedBlockLayer — 2+ overlapping blocks. Replace the tint with thin
+// athlete-coloured stripes on the left edge to avoid colour-chaos. Each
+// stripe is hoverable for tooltip and clickable to edit.
+function StripedBlockLayer({ blocks, onClick, canEdit }) {
+  return (
+    <div className="absolute top-0 left-0 bottom-0 flex" style={{ zIndex: 0 }}>
+      {blocks.map(b => (
+        <button
+          key={b.id}
+          onClick={(e) => { e.stopPropagation(); if (canEdit && onClick) onClick(b); }}
+          title={`${b.block_name} · ${formatBlockRange(b.start_date, b.end_date)}`}
+          className="cursor-pointer transition-opacity hover:opacity-70"
+          style={{
+            width: 3,
+            marginRight: 1,
+            backgroundColor: colourForAthlete(b.athlete_id),
+            border: 'none',
+            padding: 0,
+            cursor: canEdit ? 'pointer' : 'default',
+          }}
+          aria-label={b.block_name}
+        />
+      ))}
+    </div>
+  );
+}
+
 // Returns events overlapping a given ISO date, sorted earliest start first.
 function eventsOnDate(events, dateISO) {
   const d = parseDate(dateISO);
@@ -437,6 +520,9 @@ export default function ProgrammeCalendar({
   onClickEvent,
   // 'priority' (Surface 1, per-athlete) | 'athlete' (Surface 2, future)
   pillColourMode = 'priority',
+  // Training blocks rendered as background bands beneath events
+  blocks = [],
+  onClickBlock,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -621,6 +707,7 @@ export default function ProgrammeCalendar({
           }
         });
 
+        const wkStartISO = toISO(wkStart);
         return (
           <div
             key={wIdx}
@@ -634,6 +721,7 @@ export default function ProgrammeCalendar({
               const isToday        = sameDay(day, today);
               const isDropTarget   = isDragging && drag?.hoveredDate === iso;
               const isHovered      = !isDragging && hoverDate === iso && inCurrentMonth && canEdit;
+              const cellBlocks     = blocksOverlapping(blocks, iso);
 
               return (
                 <div
@@ -650,9 +738,27 @@ export default function ProgrammeCalendar({
                     outlineOffset: '-2px',
                   }}
                 >
+                  {/* Block bands — beneath events, above the cell background */}
+                  {cellBlocks.length === 1 && (
+                    <SingleBlockLayer
+                      block={cellBlocks[0]}
+                      cellISO={iso}
+                      weekStartISO={wkStartISO}
+                      onClick={onClickBlock}
+                      canEdit={canEdit}
+                    />
+                  )}
+                  {cellBlocks.length >= 2 && (
+                    <StripedBlockLayer
+                      blocks={cellBlocks}
+                      onClick={onClickBlock}
+                      canEdit={canEdit}
+                    />
+                  )}
+
                   <div
-                    className="text-[11px] font-semibold"
-                    style={{ color: inCurrentMonth ? '#1C1C1C' : '#9ca3af' }}
+                    className="text-[11px] font-semibold relative"
+                    style={{ color: inCurrentMonth ? '#1C1C1C' : '#9ca3af', zIndex: 1 }}
                   >
                     {day.getDate()}
                   </div>

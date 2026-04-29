@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveProgrammingAthletes } from '../../hooks/useActiveProgrammingAthletes';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
+import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import AthleteSidebar from './AthleteSidebar';
 import ProgrammeCalendar, {
   _parseDate as parseDate,
@@ -10,6 +11,7 @@ import ProgrammeCalendar, {
   _formatToastDate as formatToastDate,
 } from './ProgrammeCalendar';
 import EventModal from './EventModal';
+import BlockModal from './blocks/BlockModal';
 
 /**
  * ProgrammeMasterView (Surface 2) — top-level "Programme" page.
@@ -42,6 +44,13 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     deleteEventOptimistic,
   } = useCalendarEvents(allActiveIdArr);
 
+  // Training blocks for the same set; filtered visually by sidebar selection.
+  const {
+    blocks: allBlocks,
+    updateBlockOptimistic,
+    deleteBlockOptimistic,
+  } = useTrainingBlocks(allActiveIdArr);
+
   // Sidebar selection — default: all programmable athletes selected on
   // first entry. Subsequent toggles are user-controlled.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -60,6 +69,12 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     [allEvents, selectedIds],
   );
 
+  // Filter blocks to selected athletes (matches the events pattern)
+  const blocks = useMemo(
+    () => allBlocks.filter(b => selectedIds.has(b.athlete_id)),
+    [allBlocks, selectedIds],
+  );
+
   // Calendar nav state
   const [viewMode, setViewMode] = useState('month');
   const [viewDate, setViewDate] = useState(() => new Date());
@@ -67,12 +82,17 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   // Sidebar collapsed state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Modal state
+  // Event modal state
   const [modal, setModal] = useState(null);
   const openAdd       = () => canEdit && setModal({ mode: 'add',  event: null });
   const openAddOnDate = (iso) => canEdit && setModal({ mode: 'add', event: { start_date: iso } });
   const openEdit      = (event) => canEdit && setModal({ mode: 'edit', event });
   const close         = () => setModal(null);
+
+  // Block modal state — Surface 2 only opens in edit mode (no Add list here)
+  const [blockModal, setBlockModal] = useState(null);
+  const openBlockEdit = (block) => canEdit && setBlockModal({ mode: 'edit', block });
+  const closeBlock    = () => setBlockModal(null);
 
   // Toast state
   const [toast, setToast] = useState(null);
@@ -101,6 +121,42 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     const res = await deleteEventOptimistic(id);
     if (!res.ok) showToast("Couldn't delete event — please try again", 'error');
   };
+
+  // Block save / delete (edit only on Surface 2)
+  const handleBlockSave = async (payload) => {
+    if (blockModal?.mode === 'edit' && blockModal.block?.id) {
+      const id = blockModal.block.id;
+      closeBlock();
+      const res = await updateBlockOptimistic(id, payload);
+      if (!res.ok) showToast("Couldn't save block — please try again", 'error');
+    }
+  };
+
+  const handleBlockDelete = async (block) => {
+    closeBlock();
+    const res = await deleteBlockOptimistic(block.id);
+    if (!res.ok) showToast("Couldn't delete block — please try again", 'error');
+  };
+
+  // Per Brief 3 #5: edit mode shows ALL competition events for the block's
+  // athlete (past and future).
+  const blockModalEventOptions = useMemo(() => {
+    if (!blockModal?.block) return [];
+    const athleteId = blockModal.block.athlete_id;
+    return allEvents.filter(e => e.event_type === 'competition' && e.athlete_id === athleteId);
+  }, [blockModal, allEvents]);
+
+  // Existing blocks for the same athlete (overlap validation)
+  const blockModalExistingBlocks = useMemo(() => {
+    if (!blockModal?.block) return [];
+    return allBlocks.filter(b => b.athlete_id === blockModal.block.athlete_id);
+  }, [blockModal, allBlocks]);
+
+  const blockModalAthleteName = useMemo(() => {
+    if (!blockModal?.block) return '';
+    const a = allAthletes.find(x => x.id === blockModal.block.athlete_id);
+    return a?.name || '';
+  }, [blockModal, allAthletes]);
 
   const handleMoveEvent = async (event, newStartISO) => {
     if (!canEdit) return;
@@ -201,6 +257,8 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
                 events={events}
                 onClickEvent={canEdit ? openEdit : null}
                 pillColourMode="athlete"
+                blocks={blocks}
+                onClickBlock={canEdit ? openBlockEdit : null}
               />
             )}
           </div>
@@ -216,6 +274,20 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           onSave={handleSave}
           onDelete={modal.mode === 'edit' ? handleDelete : null}
           onClose={close}
+        />
+      )}
+
+      {blockModal && (
+        <BlockModal
+          mode={blockModal.mode}
+          initialBlock={blockModal.block}
+          athleteId={blockModal.block?.athlete_id}
+          athleteName={blockModalAthleteName}
+          existingBlocks={blockModalExistingBlocks}
+          targetEventOptions={blockModalEventOptions}
+          onSave={handleBlockSave}
+          onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
+          onClose={closeBlock}
         />
       )}
 

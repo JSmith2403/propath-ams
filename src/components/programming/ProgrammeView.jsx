@@ -251,6 +251,8 @@ export default function ProgrammeView({
           onMoveEvent={handleMoveEvent}
           events={events}
           onClickEvent={canEdit ? openEdit : null}
+          blocks={blocks}
+          onClickBlock={canEdit ? openBlockEdit : null}
         />
       )}
 
