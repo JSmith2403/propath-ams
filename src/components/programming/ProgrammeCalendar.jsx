@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -249,6 +250,136 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
   );
 }
 
+// Returns events overlapping a given ISO date, sorted earliest start first.
+function eventsOnDate(events, dateISO) {
+  const d = parseDate(dateISO);
+  return events
+    .filter(e => {
+      const start = parseDate(e.start_date);
+      const end   = parseDate(e.end_date || e.start_date);
+      return start <= d && d <= end;
+    })
+    .slice()
+    .sort((a, b) =>
+      a.start_date.localeCompare(b.start_date)
+      || a.event_name.localeCompare(b.event_name));
+}
+
+// Day popover — shown when the user clicks "+N more" on a busy day.
+// Lists every event for that day as a full-width pill matching the
+// calendar's colour mode. Clicks routed through onClickEvent.
+function DayPopover({ dateISO, anchorRect, events, pillColourMode, onClickEvent, onClose }) {
+  const popoverRef = useRef(null);
+
+  useEffect(() => {
+    const handleMouseDown = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) onClose();
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    // Defer so the trigger click doesn't immediately close us
+    const t = setTimeout(() => {
+      document.addEventListener('mousedown', handleMouseDown);
+      document.addEventListener('keydown', handleKey);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  // Position: open downward by default; flip up if it would overflow the
+  // viewport. Clamp horizontally inside the viewport.
+  const POPOVER_W = 280;
+  const POPOVER_MAXH = 320;
+  const MARGIN = 6;
+  const flipUp = anchorRect.bottom + POPOVER_MAXH + MARGIN > window.innerHeight;
+  const top = flipUp
+    ? Math.max(8, anchorRect.top - POPOVER_MAXH - MARGIN)
+    : anchorRect.bottom + MARGIN;
+  let left = anchorRect.left;
+  if (left + POPOVER_W > window.innerWidth - 8) left = window.innerWidth - POPOVER_W - 8;
+  if (left < 8) left = 8;
+
+  const heading = parseDate(dateISO).toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="rounded-lg shadow-lg bg-white flex flex-col"
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        width: POPOVER_W,
+        maxHeight: POPOVER_MAXH,
+        border: '1px solid #e5e7eb',
+        zIndex: 95,
+      }}
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 shrink-0">
+        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#1C1C1C' }}>
+          {heading}
+        </span>
+        <button
+          onClick={onClose}
+          className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-400"
+          aria-label="Close"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      <div className="overflow-y-auto py-2 px-2 space-y-1">
+        {events.length === 0 ? (
+          <p className="text-[11px] italic text-center py-3" style={{ color: '#9ca3af' }}>
+            No events on this day
+          </p>
+        ) : (
+          events.map(e => {
+            const style = getPillStyle(e, pillColourMode);
+            const renderBadge = style.showBadge;
+            return (
+              <button
+                key={e.id}
+                onClick={() => { onClickEvent && onClickEvent(e); onClose(); }}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold transition-opacity hover:opacity-85 cursor-pointer"
+                style={{
+                  backgroundColor: style.bg,
+                  color: style.fg,
+                  borderLeft: style.border ? `2px solid ${style.border}` : 'none',
+                  borderRadius: 4,
+                  textAlign: 'left',
+                }}
+                title={e.event_name}
+              >
+                <span className="flex-1 truncate">{e.event_name}</span>
+                {renderBadge && (
+                  <span
+                    className="shrink-0 inline-flex items-center justify-center text-[9px] font-bold rounded-sm"
+                    style={{
+                      backgroundColor: PRIORITY_COLOURS[e.priority],
+                      color: '#fff',
+                      width: 14,
+                      height: 14,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {e.priority}
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // Ghost preview rendered at the cursor while dragging.
 function DragGhost({ x, y, seg }) {
   const { event, style } = seg;
@@ -404,6 +535,13 @@ export default function ProgrammeCalendar({
   const [hoverDate, setHoverDate] = useState(null);
   const isDragging = !!drag?.started;
 
+  // ─── "+N more" day popover ──────────────────────────────────────────
+  // popover = { date: ISO, anchorRect: DOMRect } | null
+  const [popover, setPopover] = useState(null);
+  // Close the popover automatically when the calendar view changes —
+  // it is anchored to a specific cell which may no longer exist.
+  useEffect(() => { setPopover(null); }, [viewMode, viewDate]);
+
   return (
     <div ref={containerRef} className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
@@ -536,14 +674,24 @@ export default function ProgrammeCalendar({
                     </button>
                   )}
 
-                  {/* +N more indicator */}
+                  {/* +N more — click to open the day popover */}
                   {overflowByCol[col] > 0 && (
-                    <div
-                      className="absolute bottom-1 left-1.5 text-[9px] font-semibold"
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const cellEl = e.currentTarget.parentElement;
+                        setPopover({
+                          date: iso,
+                          anchorRect: cellEl.getBoundingClientRect(),
+                        });
+                      }}
+                      className="absolute bottom-1 left-1.5 text-[9px] font-semibold cursor-pointer hover:underline transition-colors"
                       style={{ color: '#6b7280' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#1C1C1C'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; }}
                     >
                       +{overflowByCol[col]} more
-                    </div>
+                    </button>
                   )}
                 </div>
               );
@@ -584,6 +732,18 @@ export default function ProgrammeCalendar({
       {/* Drag ghost — outside grid so it isn't clipped */}
       {drag?.started && (
         <DragGhost x={drag.x} y={drag.y} seg={drag.seg} />
+      )}
+
+      {/* Day popover (rendered via portal) */}
+      {popover && (
+        <DayPopover
+          dateISO={popover.date}
+          anchorRect={popover.anchorRect}
+          events={eventsOnDate(events, popover.date)}
+          pillColourMode={pillColourMode}
+          onClickEvent={onClickEvent}
+          onClose={() => setPopover(null)}
+        />
       )}
 
       {/* Empty-state hint */}
