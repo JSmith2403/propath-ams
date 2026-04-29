@@ -6,7 +6,7 @@ import {
   findOverlappingBlock,
   formatBlockRange,
   formatShortDate,
-  nextMondayISO,
+  defaultStartForAdd,
 } from '../../../utils/blockHelpers';
 
 const MIN_WEEKS = 1;
@@ -46,7 +46,10 @@ export default function BlockModal({
     : 4;
 
   const [name,        setName]        = useState(initialBlock?.block_name || '');
-  const [startDate,   setStartDate]   = useState(initialBlock?.start_date || nextMondayISO());
+  const [startDate,   setStartDate]   = useState(
+    initialBlock?.start_date
+      ?? defaultStartForAdd(existingBlocks, athleteId),
+  );
   const [weeks,       setWeeks]       = useState(initialWeeks);
   const [targetId,    setTargetId]    = useState(initialBlock?.target_event_id || '');
   const [notes,       setNotes]       = useState(initialBlock?.notes || '');

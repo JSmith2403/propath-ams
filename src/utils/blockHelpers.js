@@ -74,6 +74,29 @@ export function getBlockStatus(block, todayDate) {
 }
 
 /**
+ * Default start date for a NEW block on an athlete who may already have
+ * blocks: the day after the latest existing end_date, snapped to a
+ * Monday so the new block aligns to a calendar week. Falls back to the
+ * normal "next Monday" when the athlete has no blocks yet.
+ */
+export function defaultStartForAdd(existingBlocks, athleteId) {
+  const own = (existingBlocks || []).filter(b => b.athlete_id === athleteId);
+  if (own.length === 0) return nextMondayISO();
+  let latestEnd = own[0].end_date;
+  for (const b of own) {
+    if (b.end_date > latestEnd) latestEnd = b.end_date;
+  }
+  // Day after latest end
+  const d = parseDate(latestEnd);
+  d.setDate(d.getDate() + 1);
+  // Snap forward to the next Monday so the bar is calendar-week aligned
+  const dow = d.getDay(); // 0 Sun ... 6 Sat
+  const offset = (1 - dow + 7) % 7; // 0 if already Mon
+  d.setDate(d.getDate() + offset);
+  return toISO(d);
+}
+
+/**
  * Returns the existing block that overlaps the proposed range, or null
  * if none. Overlap = ranges [s1,e1] and [s2,e2] share any day.
  *
