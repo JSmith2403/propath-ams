@@ -41,6 +41,7 @@ export default function EventModal({
   onSave,
   onDelete,
   onClose,
+  saveError = null,
 }) {
   const [name,       setName]       = useState(initialEvent?.event_name || '');
   const [eventType,  setEventType]  = useState(initialEvent?.event_type || 'competition');
@@ -241,6 +242,15 @@ export default function EventModal({
               className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none resize-none"
             />
           </div>
+
+          {saveError && (
+            <p
+              className="text-[11px] rounded px-3 py-2"
+              style={{ backgroundColor: 'rgba(220,38,38,0.08)', color: '#dc2626' }}
+            >
+              {saveError}
+            </p>
+          )}
         </div>
 
         {/* Footer */}

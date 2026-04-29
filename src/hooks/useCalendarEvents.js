@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -24,6 +24,10 @@ export function useCalendarEvents(athleteIds = []) {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [tick,    setTick]    = useState(0);
+
+  // Ref mirror of events for snapshotting outside React batched updates.
+  const eventsRef = useRef([]);
+  useEffect(() => { eventsRef.current = events; }, [events]);
 
   // Stable key so we don't refetch on every render — array identity changes
   // each render but the contents may not, so we hash to a string.
@@ -57,12 +61,14 @@ export function useCalendarEvents(athleteIds = []) {
       .select()
       .single();
     if (e) {
-      console.error('[Calendar] addEvent failed:', e);
-      alert('Failed to add event: ' + (e.message || e));
-      return null;
+      console.error('[Calendar] addEvent failed:', {
+        payload: data,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
+      return { ok: false, error: e };
     }
     refresh();
-    return row;
+    return { ok: true, row };
   }, [refresh]);
 
   const updateEvent = useCallback(async (id, data) => {
@@ -100,23 +106,16 @@ export function useCalendarEvents(athleteIds = []) {
   // then fire the network call. On failure, revert the local change and
   // surface an error to the caller. Resolves to { ok, error? }.
 
+  // Snapshot from the ref BEFORE applying the optimistic patch so the
+  // revert path is robust against React 18 batched-update timing.
   const updateEventOptimistic = useCallback(async (id, patch) => {
-    // Snapshot the existing row from local state so we can revert on failure.
-    // Using a ref because React StrictMode may run the setState updater twice
-    // in dev — both runs see the same `prev`, so the captured snapshot is
-    // stable, but we don't rely on closure timing for the value.
-    const snapshotRef = { current: null };
-    setEvents(prev => {
-      const found = prev.find(e => e.id === id);
-      if (found) snapshotRef.current = found;
-      if (!found) return prev;
-      return prev.map(e => e.id === id ? { ...e, ...patch } : e);
-    });
-    const snapshot = snapshotRef.current;
+    const snapshot = eventsRef.current.find(e => e.id === id);
     if (!snapshot) {
-      console.warn('[Calendar] optimistic update: event not in local state, id =', id);
-      return { ok: false, error: new Error('event not found') };
+      console.warn('[Calendar] update: event not in local state, id =', id);
+      return { ok: false, error: new Error('Event not found in current view.') };
     }
+
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
 
     const { data, error: e } = await supabase
       .from('athlete_calendar_events')
@@ -124,42 +123,38 @@ export function useCalendarEvents(athleteIds = []) {
       .eq('id', id)
       .select();
 
-    // Authoritative success / failure signal: only treat as failure when
-    // supabase returns an explicit error object. An empty data array can
-    // occur for valid reasons (no return preference, RLS read-back quirks)
-    // even when the UPDATE itself succeeded — so we don't fail on that
-    // alone. Anything ambiguous logs a warning and returns success; a real
-    // failure is logged to console with the full context for triage.
     if (e) {
-      console.error('[Calendar] optimistic update failed, reverting:', {
-        id, patch, error: e, data,
+      console.error('[Calendar] update failed, reverting:', {
+        id, patch,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
       });
       setEvents(prev => prev.map(ev => ev.id === id ? snapshot : ev));
       return { ok: false, error: e };
     }
     if (!data || data.length === 0) {
-      console.warn('[Calendar] update returned no row but no error — assuming write succeeded:', { id, data });
+      console.warn('[Calendar] update returned no row but no error — assuming write succeeded:', { id });
     }
     return { ok: true, row: data?.[0] };
   }, []);
 
   const deleteEventOptimistic = useCallback(async (id) => {
-    let snapshot = null;
-    let snapshotIdx = -1;
-    setEvents(prev => {
-      snapshotIdx = prev.findIndex(e => e.id === id);
-      if (snapshotIdx < 0) return prev;
-      snapshot = prev[snapshotIdx];
-      return prev.filter(e => e.id !== id);
-    });
-    if (!snapshot) return { ok: false, error: new Error('event not found') };
+    const snapshotIdx = eventsRef.current.findIndex(e => e.id === id);
+    if (snapshotIdx < 0) {
+      return { ok: false, error: new Error('Event not found in current view.') };
+    }
+    const snapshot = eventsRef.current[snapshotIdx];
+
+    setEvents(prev => prev.filter(e => e.id !== id));
 
     const { error: e } = await supabase
       .from('athlete_calendar_events')
       .delete()
       .eq('id', id);
     if (e) {
-      console.error('[Calendar] optimistic delete failed, reverting:', e);
+      console.error('[Calendar] delete failed, reverting:', {
+        id,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
       setEvents(prev => {
         const next = prev.slice();
         const insertAt = Math.min(snapshotIdx, next.length);

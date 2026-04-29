@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -13,6 +13,13 @@ export function useTrainingBlocks(athleteIds = []) {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [tick,    setTick]    = useState(0);
+
+  // Mirror of `blocks` for snapshotting outside React's batched setState.
+  // Reading a snapshot from this ref before applying the optimistic patch
+  // is more reliable than capturing inside a setState updater (whose
+  // run-time is not synchronous in React 18 + StrictMode).
+  const blocksRef = useRef([]);
+  useEffect(() => { blocksRef.current = blocks; }, [blocks]);
 
   const key = (athleteIds || []).slice().sort().join(',');
 
@@ -37,10 +44,12 @@ export function useTrainingBlocks(athleteIds = []) {
     return () => { cancelled = true; };
   }, [key, tick]);
 
-  // ─── Add ────────────────────────────────────────────────────────────────
+  // ─── Add (pessimistic — needs DB-assigned id) ──────────────────────────
+  // Returns { ok, row?, error? } so callers can keep the modal open and
+  // surface an inline error on failure. No alert(), no toast — let the
+  // caller decide.
   const addBlock = useCallback(async (data) => {
-    // Compute display_order = max + 1 for this athlete
-    const sameAthlete = blocks.filter(b => b.athlete_id === data.athlete_id);
+    const sameAthlete = blocksRef.current.filter(b => b.athlete_id === data.athlete_id);
     const maxOrder = sameAthlete.reduce((m, b) => Math.max(m, b.display_order || 0), 0);
     const payload = { ...data, display_order: maxOrder + 1 };
 
@@ -50,29 +59,31 @@ export function useTrainingBlocks(athleteIds = []) {
       .select()
       .single();
     if (e) {
-      console.error('[Blocks] addBlock failed:', e);
-      alert('Failed to add block: ' + (e.message || e));
-      return null;
+      console.error('[Blocks] addBlock failed:', {
+        payload,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
+      return { ok: false, error: e };
     }
     refresh();
-    return row;
-  }, [blocks, refresh]);
+    return { ok: true, row };
+  }, [refresh]);
 
   // ─── Optimistic update ─────────────────────────────────────────────────
+  // Snapshot is read from the state mirror BEFORE we issue the optimistic
+  // patch, so the revert path always has the original row regardless of
+  // React's batched-update timing.
   const updateBlockOptimistic = useCallback(async (id, patch) => {
-    const snapshotRef = { current: null };
-    setBlocks(prev => {
-      const found = prev.find(b => b.id === id);
-      if (found) snapshotRef.current = found;
-      if (!found) return prev;
-      return prev.map(b => b.id === id ? { ...b, ...patch } : b);
-    });
-    const snapshot = snapshotRef.current;
+    const snapshot = blocksRef.current.find(b => b.id === id);
     if (!snapshot) {
-      console.warn('[Blocks] optimistic update: block not in local state, id =', id);
-      return { ok: false, error: new Error('block not found') };
+      console.warn('[Blocks] update: block not in local state, id =', id);
+      return { ok: false, error: new Error('Block not found in current view.') };
     }
 
+    // Apply optimistic patch
+    setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+
+    // Network call
     const { data, error: e } = await supabase
       .from('training_blocks')
       .update(patch)
@@ -80,34 +91,41 @@ export function useTrainingBlocks(athleteIds = []) {
       .select();
 
     if (e) {
-      console.error('[Blocks] optimistic update failed, reverting:', { id, patch, error: e, data });
+      console.error('[Blocks] update failed, reverting:', {
+        id, patch,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
+      // Revert
       setBlocks(prev => prev.map(b => b.id === id ? snapshot : b));
       return { ok: false, error: e };
     }
     if (!data || data.length === 0) {
-      console.warn('[Blocks] update returned no row but no error — assuming write succeeded:', { id, data });
+      console.warn('[Blocks] update returned no row but no error — assuming write succeeded:', { id });
     }
     return { ok: true, row: data?.[0] };
   }, []);
 
   // ─── Optimistic delete ─────────────────────────────────────────────────
   const deleteBlockOptimistic = useCallback(async (id) => {
-    let snapshot = null;
-    let snapshotIdx = -1;
-    setBlocks(prev => {
-      snapshotIdx = prev.findIndex(b => b.id === id);
-      if (snapshotIdx < 0) return prev;
-      snapshot = prev[snapshotIdx];
-      return prev.filter(b => b.id !== id);
-    });
-    if (!snapshot) return { ok: false, error: new Error('block not found') };
+    const snapshotIdx = blocksRef.current.findIndex(b => b.id === id);
+    if (snapshotIdx < 0) {
+      return { ok: false, error: new Error('Block not found in current view.') };
+    }
+    const snapshot = blocksRef.current[snapshotIdx];
+
+    // Apply optimistic delete
+    setBlocks(prev => prev.filter(b => b.id !== id));
 
     const { error: e } = await supabase
       .from('training_blocks')
       .delete()
       .eq('id', id);
     if (e) {
-      console.error('[Blocks] optimistic delete failed, reverting:', e);
+      console.error('[Blocks] delete failed, reverting:', {
+        id,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
+      // Revert: re-insert at original index
       setBlocks(prev => {
         const next = prev.slice();
         const insertAt = Math.min(snapshotIdx, next.length);

@@ -16,6 +16,12 @@ import BlockTimelineBar from './blocks/BlockTimelineBar';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 import { buildBlockColourMap } from '../../utils/blockColours';
 
+function formatError(err, fallback) {
+  if (!err) return fallback;
+  const detail = err.message || (typeof err === 'string' ? err : '');
+  return detail ? `${fallback} ${detail}` : fallback;
+}
+
 /**
  * ProgrammeMasterView (Surface 2) — top-level "Programme" page.
  *
@@ -86,16 +92,18 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Event modal state
-  const [modal, setModal] = useState(null);
-  const openAdd       = () => canEdit && setModal({ mode: 'add',  event: null });
-  const openAddOnDate = (iso) => canEdit && setModal({ mode: 'add', event: { start_date: iso } });
-  const openEdit      = (event) => canEdit && setModal({ mode: 'edit', event });
-  const close         = () => setModal(null);
+  const [modal,          setModal]          = useState(null);
+  const [eventSaveError, setEventSaveError] = useState(null);
+  const openAdd       = () => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add',  event: null }); };
+  const openAddOnDate = (iso) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add', event: { start_date: iso } }); };
+  const openEdit      = (event) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'edit', event }); };
+  const close         = () => { setModal(null); setEventSaveError(null); };
 
   // Block modal state — Surface 2 only opens in edit mode (no Add list here)
-  const [blockModal, setBlockModal] = useState(null);
-  const openBlockEdit = (block) => canEdit && setBlockModal({ mode: 'edit', block });
-  const closeBlock    = () => setBlockModal(null);
+  const [blockModal,     setBlockModal]     = useState(null);
+  const [blockSaveError, setBlockSaveError] = useState(null);
+  const openBlockEdit = (block) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'edit', block }); };
+  const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
 
   // Hovered block (timeline → calendar tint propagation)
   const [hoveredBlock, setHoveredBlock] = useState(null);
@@ -130,37 +138,42 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
 
   // ── Save / Delete / Move handlers (optimistic via useCalendarEvents) ──
   const handleSave = async (payload) => {
+    setEventSaveError(null);
     if (modal?.mode === 'edit' && modal.event?.id) {
       const id = modal.event.id;
-      close();
       const res = await updateEventOptimistic(id, payload);
-      if (!res.ok) showToast("Couldn't save changes — please try again", 'error');
+      if (res.ok) close();
+      else setEventSaveError(formatError(res.error, "Couldn't save changes."));
     } else {
-      await addEvent(payload);
-      close();
+      const res = await addEvent(payload);
+      if (res?.ok) close();
+      else setEventSaveError(formatError(res?.error, "Couldn't add event."));
     }
   };
 
   const handleDelete = async (id) => {
-    close();
+    setEventSaveError(null);
     const res = await deleteEventOptimistic(id);
-    if (!res.ok) showToast("Couldn't delete event — please try again", 'error');
+    if (res.ok) close();
+    else setEventSaveError(formatError(res.error, "Couldn't delete event."));
   };
 
   // Block save / delete (edit only on Surface 2)
   const handleBlockSave = async (payload) => {
+    setBlockSaveError(null);
     if (blockModal?.mode === 'edit' && blockModal.block?.id) {
       const id = blockModal.block.id;
-      closeBlock();
       const res = await updateBlockOptimistic(id, payload);
-      if (!res.ok) showToast("Couldn't save block — please try again", 'error');
+      if (res.ok) closeBlock();
+      else setBlockSaveError(formatError(res.error, "Couldn't save block."));
     }
   };
 
   const handleBlockDelete = async (block) => {
-    closeBlock();
+    setBlockSaveError(null);
     const res = await deleteBlockOptimistic(block.id);
-    if (!res.ok) showToast("Couldn't delete block — please try again", 'error');
+    if (res.ok) closeBlock();
+    else setBlockSaveError(formatError(res.error, "Couldn't delete block."));
   };
 
   // Per Brief 3 #5: edit mode shows ALL competition events for the block's
@@ -326,6 +339,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           onSave={handleSave}
           onDelete={modal.mode === 'edit' ? handleDelete : null}
           onClose={close}
+          saveError={eventSaveError}
         />
       )}
 
@@ -340,6 +354,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           onSave={handleBlockSave}
           onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
           onClose={closeBlock}
+          saveError={blockSaveError}
         />
       )}
 

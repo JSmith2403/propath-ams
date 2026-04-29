@@ -38,6 +38,7 @@ export default function BlockModal({
   onSave,
   onDelete,
   onClose,
+  saveError = null,
 }) {
   const isEdit = mode === 'edit' && initialBlock;
 
@@ -238,6 +239,17 @@ export default function BlockModal({
               className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none resize-none"
             />
           </div>
+
+          {/* Inline save error — surfaces server-side rejections so the
+              user can retry or amend without losing what they typed. */}
+          {saveError && (
+            <p
+              className="text-[11px] rounded px-3 py-2"
+              style={{ backgroundColor: 'rgba(220,38,38,0.08)', color: '#dc2626' }}
+            >
+              {saveError}
+            </p>
+          )}
         </div>
 
         {/* Footer */}
