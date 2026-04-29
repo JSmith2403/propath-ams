@@ -1,29 +1,25 @@
-import { Wrench } from 'lucide-react';
+import SessionBuilder from './build/SessionBuilder';
 
+/**
+ * BuildTab — Programme module → Build sub-tab.
+ *
+ * Checkpoint 2 scope: session template builder only. Block template
+ * mode (multi-session container) lands in Checkpoint 5 once the
+ * session builder is fully functional.
+ */
 export default function BuildTab() {
   return (
-    <div
-      className="rounded-xl px-8 py-16 text-center"
-      style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
-    >
-      <div
-        className="mx-auto flex items-center justify-center mb-4"
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: '50%',
-          backgroundColor: 'rgba(67,126,141,0.10)',
-          color: '#437E8D',
-        }}
-      >
-        <Wrench size={26} strokeWidth={1.75} />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+          Build a session template
+        </h3>
+        <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+          Save-as-template lands in Checkpoint 5
+        </span>
       </div>
-      <h3 className="text-sm font-bold mb-1" style={{ color: '#1C1C1C' }}>
-        Programme builder coming soon
-      </h3>
-      <p className="text-xs max-w-md mx-auto" style={{ color: '#6b7280' }}>
-        This is where new templates and one-off blocks will be created.
-      </p>
+
+      <SessionBuilder />
     </div>
   );
 }
