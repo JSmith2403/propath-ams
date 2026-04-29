@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import BlockListItem from './BlockListItem';
 
 /**
@@ -17,7 +17,10 @@ export default function BlockList({
   onEdit,
   onDelete,
   onClickLinkedEvent,
+  defaultCollapsed = true,
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
   const eventsById = useMemo(() => {
     const m = new Map();
     events.forEach(e => m.set(e.id, e));
@@ -32,25 +35,39 @@ export default function BlockList({
 
   return (
     <section className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: '#1C1C1C' }}>
-          Training Blocks
-        </h3>
-        {canEdit && (
-          <button
-            onClick={onAdd}
+      {/* Collapsible header */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center justify-between px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+        style={{ borderBottomColor: collapsed ? 'transparent' : '#f3f4f6' }}
+      >
+        <div className="flex items-center gap-2">
+          {collapsed ? (
+            <ChevronRight size={14} style={{ color: '#6b7280' }} />
+          ) : (
+            <ChevronDown size={14} style={{ color: '#6b7280' }} />
+          )}
+          <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: '#1C1C1C' }}>
+            Manage Blocks
+          </h3>
+          <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+            {blocks.length === 0 ? 'no blocks' : `${blocks.length} ${blocks.length === 1 ? 'block' : 'blocks'}`}
+          </span>
+        </div>
+        {canEdit && !collapsed && (
+          <span
+            onClick={(e) => { e.stopPropagation(); onAdd && onAdd(); }}
+            role="button"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90"
             style={{ backgroundColor: '#A58D69' }}
           >
             <Plus size={13} />
             Add Block
-          </button>
+          </span>
         )}
-      </div>
+      </button>
 
-      {/* Body */}
-      {loading ? (
+      {collapsed ? null : loading ? (
         <div className="flex items-center justify-center py-10">
           <div
             className="w-6 h-6 border-2 rounded-full animate-spin"

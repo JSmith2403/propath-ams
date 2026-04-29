@@ -12,6 +12,8 @@ import ProgrammeCalendar, {
 } from './ProgrammeCalendar';
 import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
+import BlockTimelineBar from './blocks/BlockTimelineBar';
+import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 
 /**
  * ProgrammeMasterView (Surface 2) — top-level "Programme" page.
@@ -93,6 +95,25 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const [blockModal, setBlockModal] = useState(null);
   const openBlockEdit = (block) => canEdit && setBlockModal({ mode: 'edit', block });
   const closeBlock    = () => setBlockModal(null);
+
+  // Hovered block (timeline → calendar tint propagation)
+  const [hoveredBlock, setHoveredBlock] = useState(null);
+  const highlightRange = hoveredBlock
+    ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
+    : null;
+
+  // Per-athlete timeline rows — sorted by name, only includes selected
+  // athletes that actually have programmable activation.
+  const timelineRows = useMemo(() => {
+    return allAthletes
+      .filter(a => activeIds.has(a.id) && selectedIds.has(a.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(a => ({
+        athlete: a,
+        blocks: blocks.filter(b => b.athlete_id === a.id),
+        colour: colourForAthlete(a.id),
+      }));
+  }, [allAthletes, activeIds, selectedIds, blocks]);
 
   // Toast state
   const [toast, setToast] = useState(null);
@@ -236,7 +257,33 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
             onToggleCollapse={() => setSidebarCollapsed(c => !c)}
           />
 
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 space-y-4">
+            {/* Per-athlete timeline rows */}
+            {timelineRows.length > 0 && (
+              <section className="space-y-1.5">
+                <h3
+                  className="text-[10px] font-bold uppercase tracking-widest"
+                  style={{ color: '#9ca3af' }}
+                >
+                  Block Timeline
+                </h3>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {timelineRows.map(row => (
+                    <BlockTimelineBar
+                      key={row.athlete.id}
+                      blocks={row.blocks}
+                      canEdit={canEdit}
+                      onAdd={null /* Surface 2: no add */}
+                      onClickBlock={openBlockEdit}
+                      onHoverBlock={setHoveredBlock}
+                      rowLabel={row.athlete.name}
+                      rowBackground={tintForColour(row.colour, 0.10)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {eventsLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div
@@ -257,8 +304,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
                 events={events}
                 onClickEvent={canEdit ? openEdit : null}
                 pillColourMode="athlete"
-                blocks={blocks}
-                onClickBlock={canEdit ? openBlockEdit : null}
+                highlightRange={highlightRange}
               />
             )}
           </div>

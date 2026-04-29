@@ -10,8 +10,9 @@ import ProgrammeCalendar, {
   _formatToastDate as formatToastDate,
 } from './ProgrammeCalendar';
 import EventModal from './EventModal';
-import BlockList   from './blocks/BlockList';
-import BlockModal  from './blocks/BlockModal';
+import BlockList        from './blocks/BlockList';
+import BlockModal       from './blocks/BlockModal';
+import BlockTimelineBar from './blocks/BlockTimelineBar';
 
 /**
  * ProgrammeView (Surface 1) — Programme sub-tab inside the athlete profile.
@@ -76,6 +77,12 @@ export default function ProgrammeView({
   const openBlockAdd  = () => canEdit && setBlockModal({ mode: 'add', block: null });
   const openBlockEdit = (block) => canEdit && setBlockModal({ mode: 'edit', block });
   const closeBlock    = () => setBlockModal(null);
+
+  // Hovered block (timeline → calendar tint propagation)
+  const [hoveredBlock, setHoveredBlock] = useState(null);
+  const highlightRange = hoveredBlock
+    ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
+    : null;
 
   // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
   const [toast, setToast] = useState(null); // { msg, kind }
@@ -232,6 +239,16 @@ export default function ProgrammeView({
     <div className="space-y-6">
       {ToggleCard}
 
+      {/* Block timeline above the calendar */}
+      <BlockTimelineBar
+        blocks={blocks}
+        canEdit={canEdit}
+        onAdd={openBlockAdd}
+        onClickBlock={openBlockEdit}
+        onHoverBlock={setHoveredBlock}
+        showHeading
+      />
+
       {eventsLoading ? (
         <div className="flex items-center justify-center py-20">
           <div
@@ -251,12 +268,11 @@ export default function ProgrammeView({
           onMoveEvent={handleMoveEvent}
           events={events}
           onClickEvent={canEdit ? openEdit : null}
-          blocks={blocks}
-          onClickBlock={canEdit ? openBlockEdit : null}
+          highlightRange={highlightRange}
         />
       )}
 
-      {/* Training Blocks list */}
+      {/* Manage Blocks — collapsible secondary list */}
       <BlockList
         blocks={blocks}
         events={events}
