@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Pencil, Plus, X } from 'lucide-react';
 import { parseDate, addDaysISO } from '../../../utils/blockHelpers';
 import { colourForBlockIndex } from '../../../utils/blockColours';
 import { tintForColour } from '../../../utils/programmingColours';
@@ -134,6 +134,7 @@ export default function BlockTimelineBar({
   canEdit = true,
   onAdd,
   onClickBlock,
+  onEditBlockDetails,   // pencil-hover affordance — secondary action (Brief 5a)
   onHoverRange,
   onAddWeek,
   onRemoveLastWeek,
@@ -244,26 +245,46 @@ export default function BlockTimelineBar({
                     bottom: 0,
                   }}
                 >
-                  {/* Block bar — top */}
-                  <button
-                    onClick={() => canEdit && onClickBlock && onClickBlock(block)}
+                  {/* Block bar — top. Click opens the session builder
+                      for this athlete's snapshot; pencil hover-button
+                      opens the secondary block-details modal (name,
+                      dates, target event). */}
+                  <div
+                    className="group/bar absolute left-0 right-0"
+                    style={{ top: 0, height: BAR_HEIGHT }}
                     onMouseEnter={() => onHoverBar(true)}
                     onMouseLeave={() => onHoverBar(false)}
-                    className="absolute left-0 right-0 flex items-center px-2.5 text-[11px] font-semibold text-white overflow-hidden transition-shadow hover:shadow-md"
-                    style={{
-                      top: 0,
-                      height: BAR_HEIGHT,
-                      backgroundColor: colour,
-                      textAlign: 'left',
-                      cursor: canEdit ? 'pointer' : 'default',
-                      borderRadius: 4,
-                    }}
-                    title={`${block.block_name} · ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`}
                   >
-                    <span className="truncate">
-                      {block.block_name} · {weeks}w
-                    </span>
-                  </button>
+                    <button
+                      onClick={() => canEdit && onClickBlock && onClickBlock(block)}
+                      className="absolute inset-0 flex items-center px-2.5 text-[11px] font-semibold text-white overflow-hidden transition-shadow hover:shadow-md"
+                      style={{
+                        backgroundColor: colour,
+                        textAlign: 'left',
+                        cursor: canEdit ? 'pointer' : 'default',
+                        borderRadius: 4,
+                      }}
+                      title={`${block.block_name} · ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`}
+                    >
+                      <span className="truncate">
+                        {block.block_name} · {weeks}w
+                      </span>
+                    </button>
+                    {canEdit && onEditBlockDetails && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditBlockDetails(block); }}
+                        className="absolute top-1/2 -translate-y-1/2 right-1.5 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                        style={{
+                          width: 22, height: 22, borderRadius: 4,
+                          backgroundColor: 'rgba(255,255,255,0.20)',
+                          color: '#fff',
+                        }}
+                        title="Edit block details (name, dates, target event)"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                    )}
+                  </div>
 
                   {/* Week strip — bottom */}
                   <div

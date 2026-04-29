@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FileText, Layers, Plus } from 'lucide-react';
 import BlockBuilderModal from './builder/BlockBuilderModal';
+import { saveBlockTemplate } from '../../../utils/programmeTemplates';
 
 function tempId(prefix) { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
 
@@ -27,24 +28,43 @@ function makeDraft({ defaultSessionCount = 1 } = {}) {
  * difference is the default session count (1 for a session template,
  * 3 for a block template). Coach can adjust freely inside the modal.
  *
- * Save-to-DB lands in Checkpoint 5 — modal close currently logs the
- * draft payload to the console for verification.
+ * Done button persists via saveBlockTemplate; on success the modal
+ * closes and a success banner pulses for a moment so coach knows it
+ * landed. onTemplateSaved is forwarded to the parent so the Templates
+ * sub-tab can refresh its list when the user navigates there.
  */
-export default function BuildTab() {
+export default function BuildTab({ onTemplateSaved }) {
   const [draft, setDraft] = useState(null);
+  const [justSavedAt, setJustSavedAt] = useState(0);
 
   const openSessionTemplate = () => setDraft(makeDraft({ defaultSessionCount: 1 }));
   const openBlockTemplate   = () => setDraft(makeDraft({ defaultSessionCount: 3 }));
-  const handleClose = (payload) => {
-    if (payload) {
-      // eslint-disable-next-line no-console
-      console.log('[Build] draft done:', payload);
+
+  const handleSave = async (payload) => {
+    const res = await saveBlockTemplate(payload);
+    if (res.ok) {
+      setJustSavedAt(Date.now());
+      if (onTemplateSaved) onTemplateSaved();
     }
-    setDraft(null);
+    return res;
   };
+
+  const showBanner = justSavedAt && Date.now() - justSavedAt < 5000;
 
   return (
     <div className="space-y-4">
+      {showBanner && (
+        <div
+          className="rounded-lg px-4 py-2 text-xs font-semibold flex items-center justify-between"
+          style={{ backgroundColor: 'rgba(67,126,141,0.10)', color: '#085777' }}
+        >
+          <span>Template saved — find it in the Templates tab.</span>
+          <button onClick={() => setJustSavedAt(0)} className="text-[10px] uppercase tracking-wider opacity-70 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
           onClick={openSessionTemplate}
@@ -100,7 +120,11 @@ export default function BuildTab() {
       </div>
 
       {draft && (
-        <BlockBuilderModal initialDraft={draft} onClose={handleClose} />
+        <BlockBuilderModal
+          initialDraft={draft}
+          onSave={handleSave}
+          onClose={() => setDraft(null)}
+        />
       )}
     </div>
   );

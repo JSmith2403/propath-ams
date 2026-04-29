@@ -58,6 +58,11 @@ function SubTabLoader() {
  */
 export default function ProgrammeModule() {
   const [subTab, setSubTab] = useState('templates');
+  // tick increments whenever a template is created or deleted, so the
+  // Templates and Assign sub-tabs re-fetch the list when the user
+  // navigates back to them.
+  const [tick, setTick] = useState(0);
+  const bumpTick = () => setTick(n => n + 1);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -74,9 +79,9 @@ export default function ProgrammeModule() {
         <SubTabBar active={subTab} onChange={setSubTab} />
 
         <Suspense fallback={<SubTabLoader />}>
-          {subTab === 'templates' && <TemplatesTab />}
-          {subTab === 'build'     && <BuildTab     />}
-          {subTab === 'assign'    && <AssignTab    />}
+          {subTab === 'templates' && <TemplatesTab tick={tick} onChange={bumpTick} />}
+          {subTab === 'build'     && <BuildTab     onTemplateSaved={bumpTick} />}
+          {subTab === 'assign'    && <AssignTab    tick={tick} />}
         </Suspense>
       </div>
     </div>

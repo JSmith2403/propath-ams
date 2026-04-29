@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, Users, User } from 'lucide-react';
 
 const EVENT_TYPES = [
   { value: 'competition',    label: 'Competition'    },
@@ -22,16 +22,26 @@ function todayISO() {
 /**
  * EventModal — Add / Edit / Delete an athlete_calendar_events row.
  *
+ * Brief 5a additions:
+ *  - Team event toggle at the top. When team mode, the athlete dropdown
+ *    is hidden, athlete_id is saved as NULL, is_team_event = true, and
+ *    priority is hidden (team events don't carry A/B/C).
+ *  - readOnly prop disables every input and hides the action buttons —
+ *    used when surfacing a team event preview from a per-athlete
+ *    calendar where editing isn't allowed.
+ *  - allowTeamEvents prop hides the toggle on surfaces that shouldn't
+ *    create team events (per-athlete profile calendar).
+ *
  * Props:
  *   mode             'add' | 'edit'
  *   initialEvent     row object when editing, otherwise null
- *   defaultAthleteId string — pre-selects the athlete (Surface 1 single-athlete)
- *   athleteOptions   array of { id, name } for the athlete dropdown.
- *                    If length === 1 the dropdown renders read-only label
- *                    (Surface 1). If length > 1, full dropdown (Surface 2).
+ *   defaultAthleteId pre-selects athlete (Surface 1 single-athlete)
+ *   athleteOptions   array of { id, name } for the athlete dropdown
  *   onSave           async (data) => void   data is the row payload
  *   onDelete         async (id) => void     edit mode only
  *   onClose          () => void
+ *   readOnly         boolean — disables everything (preview)
+ *   allowTeamEvents  boolean — show the team-event toggle (Surface 2 only)
  */
 export default function EventModal({
   mode,
@@ -42,7 +52,11 @@ export default function EventModal({
   onDelete,
   onClose,
   saveError = null,
+  readOnly = false,
+  allowTeamEvents = false,
 }) {
+  const initialIsTeam = !!initialEvent?.is_team_event;
+  const [isTeamEvent, setIsTeamEvent] = useState(initialIsTeam);
   const [name,       setName]       = useState(initialEvent?.event_name || '');
   const [eventType,  setEventType]  = useState(initialEvent?.event_type || 'competition');
   const [priority,   setPriority]   = useState(initialEvent?.priority || '');
@@ -53,29 +67,35 @@ export default function EventModal({
   const [submitting, setSubmitting] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
-  // If event type changes away from competition, clear priority
+  // Type-priority interaction
   useEffect(() => {
     if (eventType !== 'competition' && priority) setPriority('');
   }, [eventType, priority]);
 
+  // Team-event ↔ priority interaction — team events never carry priority
+  useEffect(() => {
+    if (isTeamEvent && priority) setPriority('');
+  }, [isTeamEvent, priority]);
+
   // Validation
-  const validName = name.trim().length > 0;
-  const validRange = !endDate || endDate >= startDate;
-  const validAthlete = !!athleteId;
-  const canSubmit = validName && validRange && validAthlete && !submitting;
+  const validName    = name.trim().length > 0;
+  const validRange   = !endDate || endDate >= startDate;
+  const validAthlete = isTeamEvent || !!athleteId;
+  const canSubmit    = validName && validRange && validAthlete && !submitting && !readOnly;
 
   const handleSave = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
       const payload = {
-        athlete_id: athleteId,
+        athlete_id: isTeamEvent ? null : athleteId,
         event_name: name.trim(),
         event_type: eventType,
-        priority: eventType === 'competition' ? (priority || null) : null,
+        priority: (!isTeamEvent && eventType === 'competition') ? (priority || null) : null,
         start_date: startDate,
         end_date: endDate || null,
         notes: notes.trim() || null,
+        is_team_event: !!isTeamEvent,
       };
       await onSave(payload);
     } finally {
@@ -94,7 +114,19 @@ export default function EventModal({
   };
 
   const showAthleteDropdown = athleteOptions.length > 1;
-  const singleAthleteName = athleteOptions[0]?.name || '';
+  const singleAthleteName   = athleteOptions[0]?.name || '';
+
+  // For Brief 5a: when editing a team event from a non-team-allowing
+  // surface (per-athlete profile), keep the toggle visible read-only so
+  // the user can see what kind of event they're looking at, but they
+  // can't switch it.
+  const toggleVisible = allowTeamEvents || initialIsTeam;
+  const toggleDisabled = readOnly || !allowTeamEvents;
+
+  const inputCls = (extra = '') =>
+    `w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none ${extra} ${
+      readOnly ? 'bg-gray-50 cursor-not-allowed' : ''
+    }`.trim();
 
   return (
     <div
@@ -109,7 +141,11 @@ export default function EventModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-bold text-gray-900 text-sm">
-            {mode === 'edit' ? 'Edit Event' : 'Add Event'}
+            {readOnly
+              ? 'Team Event'
+              : mode === 'edit'
+                ? (isTeamEvent ? 'Edit Team Event' : 'Edit Event')
+                : (isTeamEvent ? 'Add Team Event' : 'Add Event')}
           </h3>
           <button
             onClick={onClose}
@@ -121,6 +157,43 @@ export default function EventModal({
 
         {/* Body */}
         <div className="px-5 py-4 space-y-4">
+          {/* Athlete / Team toggle */}
+          {toggleVisible && (
+            <div
+              className="rounded-lg p-1 grid grid-cols-2 gap-1"
+              style={{ backgroundColor: '#f3f4f6' }}
+            >
+              <button
+                type="button"
+                onClick={() => !toggleDisabled && setIsTeamEvent(false)}
+                disabled={toggleDisabled}
+                className="flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded transition-colors disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: !isTeamEvent ? '#fff' : 'transparent',
+                  color:           !isTeamEvent ? '#1C1C1C' : '#6b7280',
+                  boxShadow:       !isTeamEvent ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                <User size={13} />
+                Athlete event
+              </button>
+              <button
+                type="button"
+                onClick={() => !toggleDisabled && setIsTeamEvent(true)}
+                disabled={toggleDisabled}
+                className="flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded transition-colors disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: isTeamEvent ? '#fff' : 'transparent',
+                  color:           isTeamEvent ? '#A58D69' : '#6b7280',
+                  boxShadow:       isTeamEvent ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                <Users size={13} />
+                Team event
+              </button>
+            </div>
+          )}
+
           {/* Event name */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b7280' }}>
@@ -130,8 +203,9 @@ export default function EventModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. National Championships"
-              className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none"
+              disabled={readOnly}
+              placeholder={isTeamEvent ? 'e.g. Team Photoshoot' : 'e.g. National Championships'}
+              className={inputCls()}
               style={{ borderColor: '#e5e7eb' }}
             />
           </div>
@@ -145,7 +219,8 @@ export default function EventModal({
               <select
                 value={eventType}
                 onChange={(e) => setEventType(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none bg-white"
+                disabled={readOnly}
+                className={inputCls('bg-white')}
               >
                 {EVENT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -153,7 +228,7 @@ export default function EventModal({
               </select>
             </div>
 
-            {eventType === 'competition' && (
+            {!isTeamEvent && eventType === 'competition' && (
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b7280' }}>
                   Priority
@@ -161,7 +236,8 @@ export default function EventModal({
                 <select
                   value={priority || ''}
                   onChange={(e) => setPriority(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none bg-white"
+                  disabled={readOnly}
+                  className={inputCls('bg-white')}
                 >
                   {PRIORITIES.map(p => (
                     <option key={p.value} value={p.value}>{p.label}</option>
@@ -181,7 +257,8 @@ export default function EventModal({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none"
+                disabled={readOnly}
+                className={inputCls()}
               />
             </div>
             <div>
@@ -192,8 +269,9 @@ export default function EventModal({
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                disabled={readOnly}
                 min={startDate}
-                className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none"
+                className={inputCls()}
               />
             </div>
           </div>
@@ -203,31 +281,34 @@ export default function EventModal({
             </p>
           )}
 
-          {/* Athlete */}
-          <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b7280' }}>
-              Athlete <span style={{ color: '#dc2626' }}>*</span>
-            </label>
-            {showAthleteDropdown ? (
-              <select
-                value={athleteId}
-                onChange={(e) => setAthleteId(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none bg-white"
-              >
-                <option value="">— Select athlete —</option>
-                {athleteOptions.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            ) : (
-              <div
-                className="px-3 py-2 text-sm rounded"
-                style={{ backgroundColor: '#f9fafb', color: '#1C1C1C', border: '1px solid #e5e7eb' }}
-              >
-                {singleAthleteName || athleteId}
-              </div>
-            )}
-          </div>
+          {/* Athlete — hidden when team-event */}
+          {!isTeamEvent && (
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b7280' }}>
+                Athlete <span style={{ color: '#dc2626' }}>*</span>
+              </label>
+              {showAthleteDropdown ? (
+                <select
+                  value={athleteId}
+                  onChange={(e) => setAthleteId(e.target.value)}
+                  disabled={readOnly}
+                  className={inputCls('bg-white')}
+                >
+                  <option value="">— Select athlete —</option>
+                  {athleteOptions.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div
+                  className="px-3 py-2 text-sm rounded"
+                  style={{ backgroundColor: '#f9fafb', color: '#1C1C1C', border: '1px solid #e5e7eb' }}
+                >
+                  {singleAthleteName || athleteId}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notes */}
           <div>
@@ -237,11 +318,21 @@ export default function EventModal({
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              disabled={readOnly}
               rows={3}
               placeholder="Optional details, location, or context"
-              className="w-full px-3 py-2 text-sm rounded border border-gray-200 focus:outline-none resize-none"
+              className={inputCls('resize-none')}
             />
           </div>
+
+          {readOnly && (
+            <p
+              className="text-[11px] rounded px-3 py-2"
+              style={{ backgroundColor: 'rgba(165,141,105,0.10)', color: '#A58D69' }}
+            >
+              Team events can only be edited from the Shared Calendar.
+            </p>
+          )}
 
           {saveError && (
             <p
@@ -256,7 +347,7 @@ export default function EventModal({
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
           <div>
-            {mode === 'edit' && onDelete && !confirmDel && (
+            {!readOnly && mode === 'edit' && onDelete && !confirmDel && (
               <button
                 onClick={() => setConfirmDel(true)}
                 disabled={submitting}
@@ -267,7 +358,7 @@ export default function EventModal({
                 Delete
               </button>
             )}
-            {confirmDel && (
+            {confirmDel && !readOnly && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px]" style={{ color: '#dc2626' }}>
                   Delete '{name || initialEvent?.event_name}'?
@@ -296,16 +387,18 @@ export default function EventModal({
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
-              Cancel
+              {readOnly ? 'Close' : 'Cancel'}
             </button>
-            <button
-              onClick={handleSave}
-              disabled={!canSubmit}
-              className="px-5 py-2 text-sm font-semibold text-white rounded transition-opacity hover:opacity-90 disabled:opacity-40"
-              style={{ backgroundColor: '#A58D69' }}
-            >
-              {mode === 'edit' ? 'Save Changes' : 'Save Event'}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={handleSave}
+                disabled={!canSubmit}
+                className="px-5 py-2 text-sm font-semibold text-white rounded transition-opacity hover:opacity-90 disabled:opacity-40"
+                style={{ backgroundColor: '#A58D69' }}
+              >
+                {mode === 'edit' ? 'Save Changes' : 'Save Event'}
+              </button>
+            )}
           </div>
         </div>
       </div>

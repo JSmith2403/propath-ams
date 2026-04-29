@@ -217,7 +217,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         )}
 
         {view === 'shared-calendar' && !isExternal && (
-          <ProgrammeMasterView allAthletes={visibleAthletes} role={role} />
+          <ProgrammeMasterView allAthletes={visibleAthletes} role={role} onSelectAthlete={handleSelectAthlete} />
         )}
 
         {view === 'users' && isAdmin && (

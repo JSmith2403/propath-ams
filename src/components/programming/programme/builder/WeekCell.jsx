@@ -9,49 +9,109 @@ const PLACEHOLDER = {
   band_colour:   'red',
 };
 
+const TARGET_LABEL = {
+  kg:            'Load',
+  percent_1rm:   'Load',
+  velocity_zone: 'Vel.',
+  rir:           'RIR',
+  rpe:           'RPE',
+  time:          'Time',
+  reps_only:     '',
+  band_colour:   'Band',
+};
+
 /**
- * WeekCell — single-week prescription block (sets x reps + target).
- * Stacked vertically inside a fixed-width column so all weeks line up.
+ * WeekCell — single-week prescription rendered HORIZONTALLY:
+ *
+ *    Sets │ Reps │ Load
+ *      3  │  8   │ 75%
+ *
+ * Visual model:
+ *  - Real grid lines (left + bottom borders) so columns and rows form
+ *    an unmistakable matrix.
+ *  - Even-numbered weeks (Wk2, Wk4, Wk6…) get a near-imperceptible
+ *    background tint for spreadsheet-style column rhythm.
+ *  - Inherited cells (matching Wk1) drop to 65% opacity — readable,
+ *    but visually subordinate to deliberately-edited values.
+ *  - Hover/focus brings any cell to full opacity + light hover tint.
  */
-export default function WeekCell({ prescription, prescriptionType, onChange, width = 100 }) {
+export default function WeekCell({
+  prescription,
+  prescriptionType,
+  inherited = false,
+  weekNumber = 1,
+  onChange,
+  width = 160,
+}) {
   const wp = prescription || { sets: null, reps: '', target_value: '', rest_seconds: null };
   const ptype = prescriptionType || 'reps_only';
+  const showTarget = ptype !== 'reps_only';
+  const targetLabel = TARGET_LABEL[ptype] || 'Load';
+  const isEvenWeek = weekNumber % 2 === 0;
+
+  const divider = <span className="text-[12px] select-none" style={{ color: '#e5e7eb' }}>│</span>;
 
   return (
     <div
-      className="shrink-0 px-1.5 py-1 flex flex-col gap-1"
-      style={{ width }}
+      className="group/cell shrink-0 flex flex-col justify-center px-2 py-2.5 transition-all hover:bg-[#F3F6F8] focus-within:bg-[#F3F6F8]"
+      style={{
+        width,
+        borderLeft: '1px solid #e5e7eb',
+        borderBottom: '1px solid #f3f4f6',
+        backgroundColor: isEvenWeek ? '#FCFCFD' : '#fff',
+        opacity: inherited ? 0.65 : 1,
+      }}
+      onMouseEnter={(e) => { if (inherited) e.currentTarget.style.opacity = 1; }}
+      onMouseLeave={(e) => { if (inherited) e.currentTarget.style.opacity = 0.65; }}
+      onFocus={(e) => { if (inherited) e.currentTarget.style.opacity = 1; }}
     >
-      <div className="flex items-center gap-1 justify-center">
+      {/* Mini headers */}
+      <div className="flex items-center justify-around text-[9px] font-semibold uppercase tracking-wider leading-none" style={{ color: '#b8b8b8' }}>
+        <span className="w-9 text-center">Sets</span>
+        {divider}
+        <span className="w-9 text-center">Reps</span>
+        {showTarget && (
+          <>
+            {divider}
+            <span className="w-12 text-center">{targetLabel}</span>
+          </>
+        )}
+      </div>
+
+      {/* Values */}
+      <div className="flex items-center justify-around mt-1.5 leading-none">
         <input
-          type="number"
-          min={1}
+          inputMode="numeric"
           value={wp.sets ?? ''}
           onChange={(e) => onChange({ sets: e.target.value ? Number(e.target.value) : null })}
-          className="w-8 px-1 py-0.5 text-[10px] text-center rounded border border-gray-200 focus:outline-none focus:border-gray-300"
+          className="w-9 text-center tabular-nums text-[15px] font-semibold bg-transparent border-0 focus:outline-none placeholder:text-gray-300"
+          style={{ color: '#1C1C1C' }}
           placeholder="—"
           title="Sets"
         />
-        <span className="text-[10px]" style={{ color: '#9ca3af' }}>×</span>
+        {divider}
         <input
-          type="text"
           value={wp.reps ?? ''}
           onChange={(e) => onChange({ reps: e.target.value })}
-          className="w-10 px-1 py-0.5 text-[10px] text-center rounded border border-gray-200 focus:outline-none focus:border-gray-300"
+          className="w-9 text-center tabular-nums text-[15px] font-semibold bg-transparent border-0 focus:outline-none placeholder:text-gray-300"
+          style={{ color: '#1C1C1C' }}
           placeholder="—"
           title="Reps"
         />
+        {showTarget && (
+          <>
+            {divider}
+            <input
+              value={wp.target_value ?? ''}
+              onChange={(e) => onChange({ target_value: e.target.value })}
+              placeholder={PLACEHOLDER[ptype] || '—'}
+              className="w-12 text-center tabular-nums text-[15px] font-semibold bg-transparent border-0 focus:outline-none placeholder:text-gray-300 placeholder:not-italic"
+              style={{ color: '#1C1C1C' }}
+              title="Target"
+            />
+          </>
+        )}
       </div>
-      {ptype !== 'reps_only' && (
-        <input
-          type="text"
-          value={wp.target_value ?? ''}
-          onChange={(e) => onChange({ target_value: e.target.value })}
-          className="w-full px-1 py-0.5 text-[10px] text-center rounded border border-gray-200 focus:outline-none focus:border-gray-300"
-          placeholder={PLACEHOLDER[ptype] || ''}
-          title="Target"
-        />
-      )}
     </div>
   );
 }
