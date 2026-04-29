@@ -13,6 +13,7 @@ import ProgrammeCalendar, {
 import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
+import ConfirmDialog    from './blocks/ConfirmDialog';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 import { buildBlockColourMap } from '../../utils/blockColours';
 
@@ -58,6 +59,8 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     blocks: allBlocks,
     updateBlockOptimistic,
     deleteBlockOptimistic,
+    addWeekToBlock,
+    removeLastWeekFromBlock,
   } = useTrainingBlocks(allActiveIdArr);
 
   // Sidebar selection — default: all programmable athletes selected on
@@ -105,11 +108,24 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const openBlockEdit = (block) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'edit', block }); };
   const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
 
-  // Hovered block (timeline → calendar tint propagation)
-  const [hoveredBlock, setHoveredBlock] = useState(null);
-  const highlightRange = hoveredBlock
-    ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
-    : null;
+  // Hover range from the timeline (block bar OR week pill)
+  const [highlightRange, setHighlightRange] = useState(null);
+
+  // Pending week-removal confirmation
+  const [removeWeekTarget, setRemoveWeekTarget] = useState(null);
+
+  const handleAddWeek = async (block) => {
+    const res = await addWeekToBlock(block.id);
+    if (!res.ok) showToast(`Couldn't add week. ${res.error?.message || ''}`.trim(), 'error');
+  };
+
+  const handleConfirmRemoveWeek = async () => {
+    const target = removeWeekTarget;
+    setRemoveWeekTarget(null);
+    if (!target) return;
+    const res = await removeLastWeekFromBlock(target.id);
+    if (!res.ok) showToast(`Couldn't remove week. ${res.error?.message || ''}`.trim(), 'error');
+  };
 
   // Block colour map across all visible blocks (grouped by athlete inside).
   const blockColourMap = useMemo(() => buildBlockColourMap(blocks), [blocks]);
@@ -292,7 +308,9 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
                       canEdit={canEdit}
                       onAdd={null /* Surface 2: no add */}
                       onClickBlock={openBlockEdit}
-                      onHoverBlock={setHoveredBlock}
+                      onHoverRange={setHighlightRange}
+                      onAddWeek={handleAddWeek}
+                      onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
                       rowLabel={row.athlete.name}
                       rowBackground={tintForColour(row.colour, 0.10)}
                     />
@@ -355,6 +373,23 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
           onClose={closeBlock}
           saveError={blockSaveError}
+        />
+      )}
+
+      {removeWeekTarget && (
+        <ConfirmDialog
+          title="Remove last week"
+          body={
+            <>
+              Remove the last week of <strong>{removeWeekTarget.block_name}</strong>?
+              {'\n\n'}This shortens the block from {removeWeekTarget.duration_weeks} weeks to {removeWeekTarget.duration_weeks - 1} weeks.
+              Subsequent blocks shift 7 days earlier.
+            </>
+          }
+          confirmLabel="Remove week"
+          danger
+          onConfirm={handleConfirmRemoveWeek}
+          onCancel={() => setRemoveWeekTarget(null)}
         />
       )}
 

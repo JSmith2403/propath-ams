@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { addDaysISO } from '../utils/blockHelpers';
+
+// Strip server-managed columns before sending a row back via upsert. The
+// touch_updated_at trigger resets updated_at on its own.
+function stripVolatile({ created_at, updated_at, ...rest }) { return rest; }
 
 /**
  * Fetches training_blocks for one or more athletes.
@@ -137,9 +142,73 @@ export function useTrainingBlocks(athleteIds = []) {
     return { ok: true };
   }, []);
 
+  // ─── Add / remove a week (shift cascade) ────────────────────────────────
+  // Adds 1 week to the target block AND shifts every later block for the
+  // same athlete by +/- 7 days. Sent as a single upsert so the DB applies
+  // all writes atomically — partial failure can't leave the timeline in
+  // a half-shifted state.
+
+  const shiftBlocksByDays = useCallback(async (blockId, deltaDays) => {
+    const target = blocksRef.current.find(b => b.id === blockId);
+    if (!target) {
+      return { ok: false, error: new Error('Block not found in current view.') };
+    }
+    if (deltaDays < 0 && target.duration_weeks <= 1) {
+      return { ok: false, error: new Error('Cannot delete the only week. Delete the block instead.') };
+    }
+
+    const sameAthleteLater = blocksRef.current.filter(b =>
+      b.athlete_id === target.athlete_id && b.start_date > target.start_date,
+    );
+    const allAffected = [target, ...sameAthleteLater];
+    const snapshotMap = new Map(allAffected.map(b => [b.id, b]));
+
+    // Compute the optimistic next-state rows
+    const updated = allAffected.map(b => {
+      if (b.id === target.id) {
+        return {
+          ...b,
+          duration_weeks: b.duration_weeks + (deltaDays / 7),
+          end_date: addDaysISO(b.end_date, deltaDays),
+        };
+      }
+      // Subsequent block — shift both ends
+      return {
+        ...b,
+        start_date: addDaysISO(b.start_date, deltaDays),
+        end_date:   addDaysISO(b.end_date,   deltaDays),
+      };
+    });
+
+    // Apply optimistic state
+    const updatedById = new Map(updated.map(u => [u.id, u]));
+    setBlocks(prev => prev.map(b => updatedById.get(b.id) || b));
+
+    // Single upsert request → atomic at the DB
+    const payload = updated.map(stripVolatile);
+    const { error: e } = await supabase
+      .from('training_blocks')
+      .upsert(payload, { onConflict: 'id' })
+      .select();
+
+    if (e) {
+      console.error('[Blocks] shiftBlocksByDays failed, reverting:', {
+        blockId, deltaDays,
+        message: e.message, code: e.code, details: e.details, hint: e.hint, fullError: e,
+      });
+      setBlocks(prev => prev.map(b => snapshotMap.get(b.id) || b));
+      return { ok: false, error: e };
+    }
+    return { ok: true };
+  }, []);
+
+  const addWeekToBlock        = useCallback((id) => shiftBlocksByDays(id, +7), [shiftBlocksByDays]);
+  const removeLastWeekFromBlock = useCallback((id) => shiftBlocksByDays(id, -7), [shiftBlocksByDays]);
+
   return {
     blocks, loading, error,
     addBlock, updateBlockOptimistic, deleteBlockOptimistic,
+    addWeekToBlock, removeLastWeekFromBlock,
     refresh,
   };
 }

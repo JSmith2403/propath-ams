@@ -21,6 +21,13 @@ export function toISO(d) {
   return `${y}-${m}-${day}`;
 }
 
+/** Returns a new ISO date `days` days from `iso`. */
+export function addDaysISO(iso, days) {
+  const d = parseDate(iso);
+  d.setDate(d.getDate() + days);
+  return toISO(d);
+}
+
 /**
  * Next Monday strictly after today. If today is Monday, returns the
  * Monday seven days from now (treats "next Monday" as the upcoming

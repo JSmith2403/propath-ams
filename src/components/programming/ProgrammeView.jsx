@@ -13,6 +13,7 @@ import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
+import ConfirmDialog    from './blocks/ConfirmDialog';
 import { buildBlockColourMap } from '../../utils/blockColours';
 
 // Combine a fallback message with the supabase error so the user gets
@@ -65,6 +66,8 @@ export default function ProgrammeView({
     addBlock,
     updateBlockOptimistic,
     deleteBlockOptimistic,
+    addWeekToBlock,
+    removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
 
   // ── Calendar nav state ──────────────────────────────────────────────────
@@ -89,11 +92,25 @@ export default function ProgrammeView({
   const openBlockEdit = (block) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'edit', block }); };
   const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
 
-  // Hovered block (timeline → calendar tint propagation)
-  const [hoveredBlock, setHoveredBlock] = useState(null);
-  const highlightRange = hoveredBlock
-    ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
-    : null;
+  // Hovered range from the timeline (block-bar hover OR week-pill hover)
+  // both pipe through here so the calendar paints the right tint.
+  const [highlightRange, setHighlightRange] = useState(null);
+
+  // Pending week-removal confirmation
+  const [removeWeekTarget, setRemoveWeekTarget] = useState(null);
+
+  const handleAddWeek = async (block) => {
+    const res = await addWeekToBlock(block.id);
+    if (!res.ok) showToast(`Couldn't add week. ${res.error?.message || ''}`.trim(), 'error');
+  };
+
+  const handleConfirmRemoveWeek = async () => {
+    const target = removeWeekTarget;
+    setRemoveWeekTarget(null);
+    if (!target) return;
+    const res = await removeLastWeekFromBlock(target.id);
+    if (!res.ok) showToast(`Couldn't remove week. ${res.error?.message || ''}`.trim(), 'error');
+  };
 
   // Block colour map — shared between the timeline bar and the calendar
   // bottom-marker so colours always agree.
@@ -266,7 +283,9 @@ export default function ProgrammeView({
         canEdit={canEdit}
         onAdd={openBlockAdd}
         onClickBlock={openBlockEdit}
-        onHoverBlock={setHoveredBlock}
+        onHoverRange={setHighlightRange}
+        onAddWeek={handleAddWeek}
+        onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
         showHeading
       />
 
@@ -332,6 +351,23 @@ export default function ProgrammeView({
           onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
           onClose={closeBlock}
           saveError={blockSaveError}
+        />
+      )}
+
+      {removeWeekTarget && (
+        <ConfirmDialog
+          title="Remove last week"
+          body={
+            <>
+              Remove the last week of <strong>{removeWeekTarget.block_name}</strong>?
+              {'\n\n'}This shortens the block from {removeWeekTarget.duration_weeks} weeks to {removeWeekTarget.duration_weeks - 1} weeks.
+              Subsequent blocks shift 7 days earlier.
+            </>
+          }
+          confirmLabel="Remove week"
+          danger
+          onConfirm={handleConfirmRemoveWeek}
+          onCancel={() => setRemoveWeekTarget(null)}
         />
       )}
 

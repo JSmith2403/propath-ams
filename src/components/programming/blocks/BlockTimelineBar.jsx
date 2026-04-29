@@ -1,46 +1,148 @@
 import { useMemo } from 'react';
-import { Plus } from 'lucide-react';
-import { parseDate } from '../../../utils/blockHelpers';
+import { Plus, X } from 'lucide-react';
+import { parseDate, addDaysISO } from '../../../utils/blockHelpers';
 import { colourForBlockIndex } from '../../../utils/blockColours';
+import { tintForColour } from '../../../utils/programmingColours';
+
+const BAR_HEIGHT  = 32;
+const STRIP_GAP   = 4;
+const STRIP_HEIGHT = 32;
+const ROW_HEIGHT  = BAR_HEIGHT + STRIP_GAP + STRIP_HEIGHT;
+const PILL_GAP_PX = 2;
 
 function daysBetween(a, b) {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function shortDate(iso) {
+  return parseDate(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// ─── Week pill ───────────────────────────────────────────────────────────────
+function WeekPill({
+  weekNum,
+  weekStartISO,
+  weekEndISO,
+  colour,
+  isLast,
+  canEdit,
+  onHover,
+  onRemove,
+  removeDisabled,
+}) {
+  const tint  = tintForColour(colour, 0.30);
+  const enter = () => onHover && onHover({ start_date: weekStartISO, end_date: weekEndISO, colour });
+  const leave = () => onHover && onHover(null);
+
+  return (
+    <div
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+      className="group relative flex flex-col items-center justify-center text-center px-1 overflow-hidden cursor-default"
+      style={{
+        flex: 1,
+        backgroundColor: tint,
+        color: '#1C1C1C',
+        borderRadius: 4,
+        minWidth: 0,
+        height: STRIP_HEIGHT,
+      }}
+      title={`Week ${weekNum} · ${shortDate(weekStartISO)}`}
+    >
+      <span className="text-[10px] font-bold leading-tight truncate w-full">
+        Wk {weekNum}
+      </span>
+      <span className="text-[9px] leading-tight truncate w-full" style={{ opacity: 0.65 }}>
+        {shortDate(weekStartISO)}
+      </span>
+
+      {/* × on the LAST week pill, hover-revealed. Disabled if it's the
+          only week in the block (caller passes removeDisabled=true). */}
+      {isLast && canEdit && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (!removeDisabled && onRemove) onRemove(); }}
+          disabled={removeDisabled}
+          title={removeDisabled
+            ? 'Cannot delete the only week. Delete the entire block instead.'
+            : 'Remove this week'}
+          className="absolute top-0.5 right-0.5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: removeDisabled ? '#d1d5db' : '#1C1C1C',
+            color: '#fff',
+            cursor: removeDisabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <X size={9} strokeWidth={3} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Add-week pill ───────────────────────────────────────────────────────────
+function AddWeekPill({ canEdit, onClick }) {
+  if (!canEdit) return null;
+  return (
+    <button
+      onClick={onClick}
+      title="Add a week"
+      className="flex items-center justify-center text-[10px] transition-colors hover:bg-gray-100"
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: STRIP_HEIGHT,
+        border: '1px dashed #d1d5db',
+        borderRadius: 4,
+        color: '#6b7280',
+        background: 'transparent',
+      }}
+    >
+      <Plus size={12} />
+    </button>
+  );
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
+
 /**
- * BlockTimelineBar — proportional horizontal bar of training blocks.
+ * BlockTimelineBar — proportional horizontal bar of training blocks with a
+ * week strip beneath each one.
  *
- * Bars are sized by date range so gaps between sequential blocks render
- * as empty space. Each bar's colour is deterministic by display_order.
- *
- * Hover a bar → onHoverBlock(block) fires with the block + its colour
- * attached, so the calendar above can paint a faint range tint. Mouseout
- * fires onHoverBlock(null).
- *
- * Click a bar → onClickBlock(block) — typically opens the Edit modal.
+ * Hover the bar → onHoverRange fires with the full block range.
+ * Hover a week pill → onHoverRange fires with that week's 7-day range.
+ * Click the bar → onClickBlock (Edit modal).
+ * Click [+] in the strip → onAddWeek(block).
+ * Click × on the last week → onRemoveLastWeek(block) (caller shows confirm).
  *
  * Props:
- *   blocks           array of training_blocks rows for this row
- *   canEdit          gates click + add behaviours
- *   onAdd            optional add handler — Surface 2 omits this
- *   onClickBlock     edit-modal opener
- *   onHoverBlock     (block | null) — fires with `_colour` attached on
- *                    enter, null on leave
- *   rowLabel         optional left-side label (athlete name on Surface 2)
- *   rowBackground    optional row background tint (athlete colour on S2)
- *   showHeading      whether to render the small "BLOCK TIMELINE" caption
+ *   blocks            array
+ *   canEdit           boolean
+ *   onAdd             optional add-block trigger (timeline button); null hides
+ *   onClickBlock      block edit
+ *   onHoverRange      (range | null) — { start_date, end_date, colour }
+ *   onAddWeek         (block) => void
+ *   onRemoveLastWeek  (block) => void
+ *   rowLabel          optional left-side label (athlete name on Surface 2)
+ *   rowBackground     optional background for the row label area
+ *   showHeading       whether to render the small "BLOCK TIMELINE" caption
  */
 export default function BlockTimelineBar({
   blocks = [],
   canEdit = true,
   onAdd,
   onClickBlock,
-  onHoverBlock,
+  onHoverRange,
+  onAddWeek,
+  onRemoveLastWeek,
   rowLabel,
   rowBackground,
   showHeading = false,
 }) {
-  // Palette is assigned by display_order ascending (creation order).
+  // Palette assignment is by display_order ascending so the same block
+  // keeps the same colour across renders.
   const indexById = useMemo(() => {
     const ordered = blocks.slice().sort(
       (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
@@ -51,7 +153,6 @@ export default function BlockTimelineBar({
     return m;
   }, [blocks]);
 
-  // Layout uses chronological order so bars sit left-to-right by date.
   const layout = useMemo(() => {
     if (blocks.length === 0) return { items: [] };
     const sorted = blocks.slice().sort((a, b) => a.start_date.localeCompare(b.start_date));
@@ -108,10 +209,9 @@ export default function BlockTimelineBar({
         <div
           className="flex-1 relative rounded"
           style={{
-            height: 36,
+            height: ROW_HEIGHT,
             backgroundColor: '#f9fafb',
             border: '1px solid #e5e7eb',
-            overflow: 'hidden',
           }}
         >
           {layout.items.length === 0 ? (
@@ -124,34 +224,83 @@ export default function BlockTimelineBar({
                 : "No blocks for this athlete"}
             </div>
           ) : (
-            layout.items.map(item => (
-              <button
-                key={item.block.id}
-                onClick={() => canEdit && onClickBlock && onClickBlock(item.block)}
-                onMouseEnter={() => onHoverBlock && onHoverBlock({ ...item.block, _colour: item.colour })}
-                onMouseLeave={() => onHoverBlock && onHoverBlock(null)}
-                className="absolute top-0 bottom-0 flex items-center px-2.5 text-[11px] font-semibold text-white overflow-hidden transition-all"
-                style={{
-                  left:  `${item.leftPct}%`,
-                  width: `${item.widthPct}%`,
-                  backgroundColor: item.colour,
-                  textAlign: 'left',
-                  cursor: canEdit ? 'pointer' : 'default',
-                  borderRight: '1px solid rgba(255,255,255,0.25)',
-                }}
-                onMouseDown={(e) => {
-                  // Subtle press feedback
-                  e.currentTarget.style.transform = 'translateY(1px)';
-                }}
-                onMouseUp={(e) => { e.currentTarget.style.transform = ''; }}
-                onMouseLeaveCapture={(e) => { e.currentTarget.style.transform = ''; }}
-                title={`${item.block.block_name} · ${item.block.duration_weeks} ${item.block.duration_weeks === 1 ? 'week' : 'weeks'}`}
-              >
-                <span className="truncate">
-                  {item.block.block_name} · {item.block.duration_weeks}w
-                </span>
-              </button>
-            ))
+            layout.items.map(item => {
+              const { block, leftPct, widthPct, colour } = item;
+              const weeks = Math.max(1, Number(block.duration_weeks) || 1);
+              const isOnlyWeek = weeks === 1;
+              const onHoverBar = (val) =>
+                onHoverRange && onHoverRange(val
+                  ? { start_date: block.start_date, end_date: block.end_date, colour }
+                  : null);
+
+              return (
+                <div
+                  key={block.id}
+                  className="absolute"
+                  style={{
+                    left:  `${leftPct}%`,
+                    width: `${widthPct}%`,
+                    top: 0,
+                    bottom: 0,
+                  }}
+                >
+                  {/* Block bar — top */}
+                  <button
+                    onClick={() => canEdit && onClickBlock && onClickBlock(block)}
+                    onMouseEnter={() => onHoverBar(true)}
+                    onMouseLeave={() => onHoverBar(false)}
+                    className="absolute left-0 right-0 flex items-center px-2.5 text-[11px] font-semibold text-white overflow-hidden transition-shadow hover:shadow-md"
+                    style={{
+                      top: 0,
+                      height: BAR_HEIGHT,
+                      backgroundColor: colour,
+                      textAlign: 'left',
+                      cursor: canEdit ? 'pointer' : 'default',
+                      borderRadius: 4,
+                    }}
+                    title={`${block.block_name} · ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`}
+                  >
+                    <span className="truncate">
+                      {block.block_name} · {weeks}w
+                    </span>
+                  </button>
+
+                  {/* Week strip — bottom */}
+                  <div
+                    className="absolute left-0 right-0 flex"
+                    style={{
+                      top: BAR_HEIGHT + STRIP_GAP,
+                      height: STRIP_HEIGHT,
+                      gap: PILL_GAP_PX,
+                    }}
+                  >
+                    {Array.from({ length: weeks }, (_, i) => {
+                      const wkStart = addDaysISO(block.start_date, i * 7);
+                      const wkEnd   = addDaysISO(block.start_date, (i + 1) * 7 - 1);
+                      const isLast  = i === weeks - 1;
+                      return (
+                        <WeekPill
+                          key={`${block.id}-wk-${i}`}
+                          weekNum={i + 1}
+                          weekStartISO={wkStart}
+                          weekEndISO={wkEnd}
+                          colour={colour}
+                          isLast={isLast}
+                          canEdit={canEdit}
+                          onHover={onHoverRange}
+                          onRemove={() => onRemoveLastWeek && onRemoveLastWeek(block)}
+                          removeDisabled={isOnlyWeek}
+                        />
+                      );
+                    })}
+                    <AddWeekPill
+                      canEdit={canEdit}
+                      onClick={() => onAddWeek && onAddWeek(block)}
+                    />
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
 
