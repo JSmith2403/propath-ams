@@ -14,6 +14,7 @@ import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
+import { buildBlockColourMap } from '../../utils/blockColours';
 
 /**
  * ProgrammeMasterView (Surface 2) — top-level "Programme" page.
@@ -101,6 +102,9 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const highlightRange = hoveredBlock
     ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
     : null;
+
+  // Block colour map across all visible blocks (grouped by athlete inside).
+  const blockColourMap = useMemo(() => buildBlockColourMap(blocks), [blocks]);
 
   // Per-athlete timeline rows — sorted by name, only includes selected
   // athletes that actually have programmable activation.
@@ -305,6 +309,8 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
                 onClickEvent={canEdit ? openEdit : null}
                 pillColourMode="athlete"
                 highlightRange={highlightRange}
+                blocks={blocks}
+                blockColourMap={blockColourMap}
               />
             )}
           </div>

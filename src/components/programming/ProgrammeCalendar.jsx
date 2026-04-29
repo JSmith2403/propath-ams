@@ -441,6 +441,12 @@ export default function ProgrammeCalendar({
   // timeline above the calendar — set on hover, null otherwise).
   // Shape: { start_date, end_date, colour } | null
   highlightRange = null,
+  // Training blocks to render as a thin marker line at the bottom of
+  // each cell so the user can see block coverage at a glance without
+  // hovering. blockColourMap is { id → colour }; if omitted, no markers
+  // render.
+  blocks = [],
+  blockColourMap = null,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -642,6 +648,11 @@ export default function ProgrammeCalendar({
                 && iso >= highlightRange.start_date
                 && iso <= highlightRange.end_date;
 
+              // Blocks overlapping this cell — used for the bottom marker
+              const cellBlocks = blocks.filter(b =>
+                iso >= b.start_date && iso <= b.end_date
+              );
+
               const cellBg = inCurrentMonth ? 'white' : '#fafafa';
               const tint   = inHighlight && highlightRange.colour
                 ? tintForColour(highlightRange.colour, 0.15)
@@ -669,6 +680,26 @@ export default function ProgrammeCalendar({
                       className="absolute inset-0 pointer-events-none"
                       style={{ backgroundColor: tint, zIndex: 0 }}
                     />
+                  )}
+
+                  {/* Bottom marker — thin coloured line(s) per overlapping
+                      block. Multiple blocks (Surface 2) share the line
+                      width by splitting horizontally. */}
+                  {cellBlocks.length > 0 && blockColourMap && (
+                    <div
+                      className="absolute bottom-0 left-0 right-0 flex pointer-events-none"
+                      style={{ height: 3, zIndex: 1 }}
+                    >
+                      {cellBlocks.map(b => (
+                        <div
+                          key={b.id}
+                          style={{
+                            flex: 1,
+                            backgroundColor: blockColourMap.get(b.id) || '#9ca3af',
+                          }}
+                        />
+                      ))}
+                    </div>
                   )}
 
                   <div

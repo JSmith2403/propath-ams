@@ -13,6 +13,7 @@ import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
+import { buildBlockColourMap } from '../../utils/blockColours';
 
 /**
  * ProgrammeView (Surface 1) — Programme sub-tab inside the athlete profile.
@@ -83,6 +84,10 @@ export default function ProgrammeView({
   const highlightRange = hoveredBlock
     ? { start_date: hoveredBlock.start_date, end_date: hoveredBlock.end_date, colour: hoveredBlock._colour }
     : null;
+
+  // Block colour map — shared between the timeline bar and the calendar
+  // bottom-marker so colours always agree.
+  const blockColourMap = useMemo(() => buildBlockColourMap(blocks), [blocks]);
 
   // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
   const [toast, setToast] = useState(null); // { msg, kind }
@@ -269,6 +274,8 @@ export default function ProgrammeView({
           events={events}
           onClickEvent={canEdit ? openEdit : null}
           highlightRange={highlightRange}
+          blocks={blocks}
+          blockColourMap={blockColourMap}
         />
       )}
 

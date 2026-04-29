@@ -1,24 +1,7 @@
 import { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { parseDate } from '../../../utils/blockHelpers';
-
-// Eight-colour timeline palette (brand teal/gold/navy + five accessible
-// additions). Block colour assignment is deterministic by display_order
-// (creation order), cycling through the palette.
-export const TIMELINE_PALETTE = [
-  '#437E8D', // brand teal
-  '#A58D69', // brand gold
-  '#085777', // brand navy
-  '#E76F51', // coral
-  '#4A6741', // forest
-  '#5E548E', // indigo
-  '#277DA1', // steel blue
-  '#8E5A39', // bronze
-];
-
-export function colourForBlockIndex(i) {
-  return TIMELINE_PALETTE[i % TIMELINE_PALETTE.length];
-}
+import { colourForBlockIndex } from '../../../utils/blockColours';
 
 function daysBetween(a, b) {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
