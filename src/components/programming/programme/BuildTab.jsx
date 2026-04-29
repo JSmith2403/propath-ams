@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FileText, Layers, Plus } from 'lucide-react';
-import BlockBuilderModal from './build/BlockBuilderModal';
+import BlockBuilderModal from './builder/BlockBuilderModal';
 
 function tempId(prefix) { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
 
