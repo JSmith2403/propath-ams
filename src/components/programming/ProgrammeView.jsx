@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
+import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import ProgrammeCalendar, {
   _parseDate as parseDate,
   _addDays   as addDays,
@@ -9,6 +10,8 @@ import ProgrammeCalendar, {
   _formatToastDate as formatToastDate,
 } from './ProgrammeCalendar';
 import EventModal from './EventModal';
+import BlockList   from './blocks/BlockList';
+import BlockModal  from './blocks/BlockModal';
 
 /**
  * ProgrammeView (Surface 1) — Programme sub-tab inside the athlete profile.
@@ -43,6 +46,17 @@ export default function ProgrammeView({
     deleteEventOptimistic,
   } = useCalendarEvents(athleteIds);
 
+  // Training blocks for this athlete (Surface 1 only fetches its own
+  // athlete's blocks). Same dependency on `isActive` as events so the
+  // hook idles while programming is off.
+  const {
+    blocks,
+    loading: blocksLoading,
+    addBlock,
+    updateBlockOptimistic,
+    deleteBlockOptimistic,
+  } = useTrainingBlocks(athleteIds);
+
   // ── Calendar nav state ──────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState('month');
   const [viewDate, setViewDate] = useState(() => new Date());
@@ -57,6 +71,12 @@ export default function ProgrammeView({
   const openEdit      = (event) => canEdit && setModal({ mode: 'edit', event });
   const close         = () => setModal(null);
 
+  // ── Block modal state ────────────────────────────────────────────────────
+  const [blockModal, setBlockModal] = useState(null); // { mode: 'add'|'edit', block }
+  const openBlockAdd  = () => canEdit && setBlockModal({ mode: 'add', block: null });
+  const openBlockEdit = (block) => canEdit && setBlockModal({ mode: 'edit', block });
+  const closeBlock    = () => setBlockModal(null);
+
   // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
   const [toast, setToast] = useState(null); // { msg, kind }
   const toastTimer = useRef(null);
@@ -69,6 +89,37 @@ export default function ProgrammeView({
   // ── Drag reschedule handler — optimistic, preserves duration ────────────
   // The pill repositions instantly; the network update fires silently.
   // On failure we revert and show an error toast.
+  // ── Block save / delete ─────────────────────────────────────────────────
+  const handleBlockSave = async (payload) => {
+    if (blockModal?.mode === 'edit' && blockModal.block?.id) {
+      const id = blockModal.block.id;
+      closeBlock();
+      const res = await updateBlockOptimistic(id, payload);
+      if (!res.ok) showToast("Couldn't save block — please try again", 'error');
+    } else {
+      await addBlock(payload);
+      closeBlock();
+    }
+  };
+
+  const handleBlockDelete = async (block) => {
+    closeBlock();
+    const res = await deleteBlockOptimistic(block.id);
+    if (!res.ok) showToast("Couldn't delete block — please try again", 'error');
+  };
+
+  // Build target-event options for the block modal. Per Brief 3 #5:
+  // - new block: competitions only, on/after the proposed start
+  // - edit mode: all competitions for this athlete (past included)
+  const blockModalEventOptions = useMemo(() => {
+    if (!blockModal) return [];
+    const competitions = events.filter(e => e.event_type === 'competition');
+    if (blockModal.mode === 'edit') return competitions;
+    const startCutoff = blockModal.block?.start_date;
+    if (!startCutoff) return competitions;
+    return competitions.filter(e => e.start_date >= startCutoff);
+  }, [blockModal, events]);
+
   const handleMoveEvent = async (event, newStartISO) => {
     if (!canEdit) return;
     const oldStart = parseDate(event.start_date);
@@ -203,6 +254,18 @@ export default function ProgrammeView({
         />
       )}
 
+      {/* Training Blocks list */}
+      <BlockList
+        blocks={blocks}
+        events={events}
+        loading={blocksLoading}
+        canEdit={canEdit}
+        onAdd={openBlockAdd}
+        onEdit={openBlockEdit}
+        onDelete={handleBlockDelete}
+        onClickLinkedEvent={openEdit}
+      />
+
       {modal && (
         <EventModal
           mode={modal.mode}
@@ -212,6 +275,20 @@ export default function ProgrammeView({
           onSave={handleSave}
           onDelete={modal.mode === 'edit' ? handleDelete : null}
           onClose={close}
+        />
+      )}
+
+      {blockModal && (
+        <BlockModal
+          mode={blockModal.mode}
+          initialBlock={blockModal.block}
+          athleteId={athlete.id}
+          athleteName={athlete.name}
+          existingBlocks={blocks}
+          targetEventOptions={blockModalEventOptions}
+          onSave={handleBlockSave}
+          onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
+          onClose={closeBlock}
         />
       )}
 
