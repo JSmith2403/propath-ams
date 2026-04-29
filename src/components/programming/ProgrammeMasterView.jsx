@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Cake, X } from 'lucide-react';
 import { useActiveProgrammingAthletes } from '../../hooks/useActiveProgrammingAthletes';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
+import { useCalendarFilters, eventPassesFilters } from '../../hooks/useCalendarFilters';
+import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
+import { computeBirthdayEvents, ageOnDate } from '../../utils/birthdayEvents';
 import AthleteSidebar from './AthleteSidebar';
+import CalendarFilterPanel from './CalendarFilterPanel';
 import ProgrammeCalendar, {
   _parseDate as parseDate,
   _addDays   as addDays,
@@ -36,8 +41,13 @@ function formatError(err, fallback) {
  * primary editing surface — but add / edit / delete / reschedule all
  * work here too via the shared modal and the optimistic hook.
  */
-export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }) {
+export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', onSelectAthlete }) {
   const canEdit = role === 'admin' || role === 'co_admin';
+  // Brief 5a: only admins can create / edit / delete team events.
+  const canEditTeamEvents = role === 'admin';
+
+  // Brief 5a Part D — Calendar filters (localStorage-backed).
+  const { filters, setFilter } = useCalendarFilters();
 
   // Programmable athlete set
   const { activeIds, loading: idsLoading } = useActiveProgrammingAthletes();
@@ -52,7 +62,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     addEvent,
     updateEventOptimistic,
     deleteEventOptimistic,
-  } = useCalendarEvents(allActiveIdArr);
+  } = useCalendarEvents(allActiveIdArr, { includeTeamEvents: true });
 
   // Training blocks for the same set; filtered visually by sidebar selection.
   const {
@@ -75,11 +85,26 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
     }
   }, [activeIds]);
 
-  // Filter events to selected athletes
-  const events = useMemo(
-    () => allEvents.filter(e => selectedIds.has(e.athlete_id)),
-    [allEvents, selectedIds],
-  );
+  // Filter events to selected athletes. Team events always show on the
+  // Shared Calendar regardless of athlete-filter selection — they're not
+  // attributable to any single athlete. Then apply the user's filter
+  // toggles (Part D). Birthdays are computed below and injected after
+  // filtering since they have their own visibility toggle.
+  const filteredEvents = useMemo(() => {
+    return allEvents
+      .filter(e => e.is_team_event || selectedIds.has(e.athlete_id))
+      .filter(e => eventPassesFilters(e, filters));
+  }, [allEvents, selectedIds, filters]);
+
+  // Brief 5d/5e — planned sessions across all selected athletes,
+  // gated by the "Planned training sessions" toggle (default off on
+  // Shared Calendar to keep the grid clean).
+  const { planned: plannedRows } = usePlannedSessions(allActiveIdArr);
+  const plannedEvents = useMemo(() => {
+    if (!filters.planned) return [];
+    return plannedSessionsAsEvents(plannedRows)
+      .filter(p => selectedIds.has(p.athlete_id));
+  }, [plannedRows, filters.planned, selectedIds]);
 
   // Filter blocks to selected athletes (matches the events pattern)
   const blocks = useMemo(
@@ -91,6 +116,22 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const [viewMode, setViewMode] = useState('month');
   const [viewDate, setViewDate] = useState(() => new Date());
 
+  // Brief 5a Part D — birthday events. Computed at render time from
+  // athletes.dob; never persisted. ±2 years around the visible date so
+  // the user can navigate without re-computation, throttled by the
+  // filters.birthdays toggle. Planned sessions appended last.
+  const events = useMemo(() => {
+    const out = [...filteredEvents];
+    if (filters.birthdays) {
+      const centre = viewDate.getFullYear();
+      const birthdays = computeBirthdayEvents(allAthletes, activeIds, centre - 2, centre + 2);
+      const visible = birthdays.filter(b => selectedIds.has(b.athlete_id));
+      out.push(...visible);
+    }
+    out.push(...plannedEvents);
+    return out;
+  }, [filteredEvents, viewDate, allAthletes, activeIds, selectedIds, filters.birthdays, plannedEvents]);
+
   // Sidebar collapsed state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -99,8 +140,25 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
   const [eventSaveError, setEventSaveError] = useState(null);
   const openAdd       = () => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add',  event: null }); };
   const openAddOnDate = (iso) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add', event: { start_date: iso } }); };
-  const openEdit      = (event) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'edit', event }); };
+  const openEdit      = (event) => {
+    // Birthday "events" are synthetic — open the popover, never the editor.
+    if (event?.is_birthday) { setBirthdayPopover(event); return; }
+    // Planned sessions on Shared Calendar — bounce to that athlete's
+    // profile so the coach can drill into the block from there.
+    if (event?.is_planned) {
+      if (onSelectAthlete && event.athlete_id) onSelectAthlete(event.athlete_id);
+      return;
+    }
+    if (!canEdit && !event?.is_team_event) return;
+    setEventSaveError(null);
+    // co_admin sees team events read-only; admin can edit.
+    const readOnly = event?.is_team_event && !canEditTeamEvents;
+    setModal({ mode: 'edit', event, readOnly });
+  };
   const close         = () => { setModal(null); setEventSaveError(null); };
+
+  // Birthday popover state (Part D)
+  const [birthdayPopover, setBirthdayPopover] = useState(null);
 
   // Block modal state — Surface 2 only opens in edit mode (no Add list here)
   const [blockModal,     setBlockModal]     = useState(null);
@@ -132,6 +190,9 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
 
   // Per-athlete timeline rows — sorted by name, only includes selected
   // athletes that actually have programmable activation.
+  // Only render a timeline row for athletes who actually have at least
+  // one block — empty rows cluttered the Shared Calendar view, and the
+  // sidebar already lists every selected athlete.
   const timelineRows = useMemo(() => {
     return allAthletes
       .filter(a => activeIds.has(a.id) && selectedIds.has(a.id))
@@ -140,7 +201,8 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
         athlete: a,
         blocks: blocks.filter(b => b.athlete_id === a.id),
         colour: colourForAthlete(a.id),
-      }));
+      }))
+      .filter(row => row.blocks.length > 0);
   }, [allAthletes, activeIds, selectedIds, blocks]);
 
   // Toast state
@@ -214,6 +276,13 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
 
   const handleMoveEvent = async (event, newStartISO) => {
     if (!canEdit) return;
+    // Birthdays are synthetic — can't be rescheduled.
+    if (event.is_birthday) return;
+    // Co_admin can move athlete events but not team events.
+    if (event.is_team_event && !canEditTeamEvents) {
+      showToast('Only admins can reschedule team events.', 'error');
+      return;
+    }
     const oldStart  = parseDate(event.start_date);
     const oldEnd    = event.end_date ? parseDate(event.end_date) : null;
     const newStart  = parseDate(newStartISO);
@@ -280,15 +349,24 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
         <Header />
 
         <div className="flex gap-4 items-start">
-          <AthleteSidebar
-            athletes={allAthletes}
-            activeIds={activeIds}
-            currentAthleteId={null}
-            selectedIds={selectedIds}
-            onChangeSelected={setSelectedIds}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(c => !c)}
-          />
+          {/* Left column — calendar filter panel + athlete sidebar.
+              Mobile stacks them vertically via the sidebar's own
+              responsive behaviour; desktop keeps both at the same
+              left-column width. */}
+          <div className="flex flex-col gap-3" style={{ width: sidebarCollapsed ? 'auto' : 220 }}>
+            {!sidebarCollapsed && (
+              <CalendarFilterPanel filters={filters} onChange={setFilter} />
+            )}
+            <AthleteSidebar
+              athletes={allAthletes}
+              activeIds={activeIds}
+              currentAthleteId={null}
+              selectedIds={selectedIds}
+              onChangeSelected={setSelectedIds}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+            />
+          </div>
 
           <div className="flex-1 min-w-0 space-y-4">
             {/* Per-athlete timeline rows */}
@@ -337,7 +415,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
                 onAddEventOnDate={openAddOnDate}
                 onMoveEvent={handleMoveEvent}
                 events={events}
-                onClickEvent={canEdit ? openEdit : null}
+                onClickEvent={openEdit}
                 pillColourMode="athlete"
                 highlightRange={highlightRange}
                 blocks={blocks}
@@ -358,6 +436,8 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           onDelete={modal.mode === 'edit' ? handleDelete : null}
           onClose={close}
           saveError={eventSaveError}
+          readOnly={!!modal.readOnly}
+          allowTeamEvents={canEditTeamEvents}
         />
       )}
 
@@ -393,6 +473,18 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
         />
       )}
 
+      {birthdayPopover && (
+        <BirthdayPreview
+          event={birthdayPopover}
+          onOpenProfile={onSelectAthlete ? () => {
+            const id = birthdayPopover._athleteId;
+            setBirthdayPopover(null);
+            onSelectAthlete(id);
+          } : null}
+          onClose={() => setBirthdayPopover(null)}
+        />
+      )}
+
       {toast && (
         <div
           className="fixed bottom-6 right-6 px-4 py-2.5 rounded-lg text-xs font-semibold text-white shadow-lg z-[90]"
@@ -401,6 +493,60 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin' }
           {toast.msg}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── BirthdayPreview ────────────────────────────────────────────────────
+// Tiny modal-card for a birthday pill click. Shows athlete name, the
+// age they will turn on this date (or just turned), and an optional
+// "Open profile" affordance if the parent supplied a navigation
+// callback. Read-only by design.
+function BirthdayPreview({ event, onOpenProfile, onClose }) {
+  const age = ageOnDate(event._dob, event.start_date);
+  const turning = age != null ? age + 1 : null; // age the athlete turns ON the birthday
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Cake size={16} style={{ color: '#A58D69' }} />
+            <h3 className="text-sm font-bold" style={{ color: '#1C1C1C' }}>Birthday</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="px-4 py-4">
+          <p className="text-base font-semibold" style={{ color: '#1C1C1C' }}>
+            {event._athleteName}
+          </p>
+          {turning != null && (
+            <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
+              Turning {turning} on {new Date(event.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}
+            </p>
+          )}
+        </div>
+        {onOpenProfile && (
+          <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
+            <button
+              onClick={onOpenProfile}
+              className="px-3 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#A58D69' }}
+            >
+              Open profile
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { Cake, ChevronLeft, ChevronRight, Dumbbell, Plus, X } from 'lucide-react';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -32,12 +32,56 @@ const PRIORITY_COLOURS = {
 // Neutral pill colour for non-competition / no-priority events on Surface 1.
 const NEUTRAL_PILL_BG = '#64748b'; // slate-500
 
+// Brief 5a — team-event accent. Muted gold, opacity adjusted per surface.
+const TEAM_EVENT_COLOUR = '#A58D69';
+
 /**
  * Resolve the visual style for a pill given the colour mode.
  *  mode === 'priority'  (Surface 1, per-athlete)
- *  mode === 'athlete'   (Surface 2, cross-athlete) — future
+ *  mode === 'athlete'   (Surface 2, cross-athlete)
+ *
+ * Team events override the mode-specific styling: muted gold background
+ * across both surfaces, with stronger fade and shorter pill on the
+ * per-athlete view (athleteContext = true).
  */
-function getPillStyle(event, mode) {
+function getPillStyle(event, mode, athleteContext = false) {
+  if (event.is_planned) {
+    // Brief 5d/5e — planned training session pill: outlined teal,
+    // white background, teal text. Distinct from solid event pills.
+    return {
+      bg: '#ffffff',
+      fg: '#437E8D',
+      border: '#437E8D',
+      showBadge: false,
+      isTeam: false,
+      isBirthday: false,
+      isPlanned: true,
+    };
+  }
+  if (event.is_birthday) {
+    // Always-on muted gold across surfaces. Birthdays don't render on
+    // per-athlete calendars but the style is unified anyway.
+    return {
+      bg: 'rgba(165,141,105,0.60)',
+      fg: '#ffffff',
+      border: null,
+      showBadge: false,
+      isTeam: false,
+      isBirthday: true,
+    };
+  }
+  if (event.is_team_event) {
+    // Surface 2 → 70% opacity gold, full pill height.
+    // Surface 1 → 50% opacity gold, faded so it stays secondary.
+    const alpha = athleteContext ? 0.50 : 0.70;
+    return {
+      bg: `rgba(165,141,105,${alpha})`,
+      fg: '#ffffff',
+      border: null,
+      showBadge: false,
+      isTeam: true,
+    };
+  }
   if (mode === 'athlete') {
     const colour = colourForAthlete(event.athlete_id);
     return {
@@ -48,6 +92,7 @@ function getPillStyle(event, mode) {
         event.event_type === 'competition'
         && event.priority
         && !!PRIORITY_COLOURS[event.priority],
+      isTeam: false,
     };
   }
   // 'priority' — Surface 1
@@ -57,6 +102,7 @@ function getPillStyle(event, mode) {
       fg: '#ffffff',
       border: null,
       showBadge: false,
+      isTeam: false,
     };
   }
   return {
@@ -64,6 +110,7 @@ function getPillStyle(event, mode) {
     fg: '#ffffff',
     border: null,
     showBadge: false,
+    isTeam: false,
   };
 }
 
@@ -145,7 +192,7 @@ function formatToastDate(iso) {
 
 // ─── Per-week segment layout with lane assignment ───────────────────────────
 
-function buildWeekSegments(events, weekStart, pillColourMode) {
+function buildWeekSegments(events, weekStart, pillColourMode, athleteContext) {
   const weekEnd = addDays(weekStart, 6);
   const raw = [];
 
@@ -161,7 +208,7 @@ function buildWeekSegments(events, weekStart, pillColourMode) {
 
     raw.push({
       event: e,
-      style: getPillStyle(e, pillColourMode),
+      style: getPillStyle(e, pillColourMode, athleteContext),
       startCol,
       endCol,
       leftRounded:  start >= weekStart,
@@ -199,26 +246,48 @@ function buildWeekSegments(events, weekStart, pillColourMode) {
 // No event-type icons — just the name and (for competitions) a priority badge.
 // The badge uses a priority-driven colour, not the athlete colour.
 
-function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
+function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext }) {
   const { event, style, leftRounded, rightRounded } = seg;
   const radius = 4;
-  // Badge is only rendered on Surface 2 (athlete colour mode). On Surface 1
-  // the priority is communicated by the whole pill colour.
   const renderBadge = leftRounded && style.showBadge;
+  const isTeam     = !!style.isTeam;
+  const isBirthday = !!style.isBirthday;
+  const isPlanned  = !!style.isPlanned;
+
+  // Reduced pill height on the per-athlete calendar for team events
+  // (subordinates to athlete-attached pills). Birthdays never appear
+  // on per-athlete calendars so they always render full height.
+  const effectiveHeight = (isTeam && athleteContext) ? Math.round(height * 0.75) : height;
+
+  // Birthdays are read-only and team events on a per-athlete calendar
+  // are also read-only. Planned sessions get a click handler that
+  // opens the session builder for that block — so we route through
+  // the preview path too rather than the drag pipeline.
+  const dragDisabled = isBirthday || isPlanned || (isTeam && athleteContext);
+  const cursor = dragDisabled ? 'pointer' : 'grab';
+
+  const interactionHandlers = dragDisabled
+    ? { onClick: () => onPreviewClick && onPreviewClick(event) }
+    : { onPointerDown };
 
   return (
     <div
       role="button"
-      onPointerDown={onPointerDown}
-      className="absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold cursor-grab select-none"
+      {...interactionHandlers}
+      className="absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold select-none"
       style={{
         left: `calc(${(seg.startCol / 7) * 100}% + 2px)`,
         width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 4px)`,
         top: 0,
-        height,
+        height: effectiveHeight,
         backgroundColor: style.bg,
         color: style.fg,
-        borderLeft: leftRounded && style.border ? `2px solid ${style.border}` : 'none',
+        // Planned sessions render with a full outline (all sides);
+        // other events keep a left-side accent only.
+        border: isPlanned && style.border
+          ? `1px solid ${style.border}`
+          : 'none',
+        borderLeft: !isPlanned && leftRounded && style.border ? `2px solid ${style.border}` : (isPlanned && style.border ? `1px solid ${style.border}` : undefined),
         borderTopLeftRadius:    leftRounded  ? radius : 0,
         borderBottomLeftRadius: leftRounded  ? radius : 0,
         borderTopRightRadius:   rightRounded ? radius : 0,
@@ -228,9 +297,24 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown }) {
         opacity: hidden ? 0 : 1,
         pointerEvents: hidden ? 'none' : 'auto',
         transition: 'opacity 0.08s ease',
+        cursor,
       }}
-      title={event.event_name}
+      title={event.event_name + (isTeam ? ' (team event)' : isPlanned ? ' (planned session)' : '')}
     >
+      {isPlanned && leftRounded && (
+        <Dumbbell size={10} className="shrink-0" style={{ color: '#437E8D' }} />
+      )}
+      {isBirthday && leftRounded && (
+        <Cake size={11} className="shrink-0" style={{ color: '#fff' }} />
+      )}
+      {isTeam && leftRounded && (
+        <span
+          className="shrink-0 text-[8px] font-bold uppercase tracking-widest px-1 rounded-sm"
+          style={{ backgroundColor: 'rgba(255,255,255,0.25)', color: '#fff' }}
+        >
+          Team
+        </span>
+      )}
       <span className="flex-1 truncate">{event.event_name}</span>
       {renderBadge && (
         <span
@@ -268,7 +352,7 @@ function eventsOnDate(events, dateISO) {
 // Day popover — shown when the user clicks "+N more" on a busy day.
 // Lists every event for that day as a full-width pill matching the
 // calendar's colour mode. Clicks routed through onClickEvent.
-function DayPopover({ dateISO, anchorRect, events, pillColourMode, onClickEvent, onClose }) {
+function DayPopover({ dateISO, anchorRect, events, pillColourMode, athleteContext, onClickEvent, onClose }) {
   const popoverRef = useRef(null);
 
   useEffect(() => {
@@ -339,7 +423,7 @@ function DayPopover({ dateISO, anchorRect, events, pillColourMode, onClickEvent,
           </p>
         ) : (
           events.map(e => {
-            const style = getPillStyle(e, pillColourMode);
+            const style = getPillStyle(e, pillColourMode, athleteContext);
             const renderBadge = style.showBadge;
             return (
               <button
@@ -437,6 +521,10 @@ export default function ProgrammeCalendar({
   onClickEvent,
   // 'priority' (Surface 1, per-athlete) | 'athlete' (Surface 2, future)
   pillColourMode = 'priority',
+  // Brief 5a — when true, this calendar lives inside an athlete profile
+  // and any team events render with extra fade + shorter pill height,
+  // and click bypasses the editor (read-only preview).
+  athleteContext = false,
   // Optional date range to highlight on the grid (used by the block
   // timeline above the calendar — set on hover, null otherwise).
   // Shape: { start_date, end_date, colour } | null
@@ -622,7 +710,7 @@ export default function ProgrammeCalendar({
 
       {/* ── Week rows ─────────────────────────────────────────────────── */}
       {weekStarts.map((wkStart, wIdx) => {
-        const segments = buildWeekSegments(events, wkStart, pillColourMode);
+        const segments = buildWeekSegments(events, wkStart, pillColourMode, athleteContext);
         const visible  = segments.filter(s => s.lane < maxLanes);
         const overflowByCol = {};
         segments.filter(s => s.lane >= maxLanes).forEach(s => {
@@ -772,6 +860,8 @@ export default function ProgrammeCalendar({
                       seg={seg}
                       hidden={isThisDragged}
                       onPointerDown={(e) => startDrag(e, seg)}
+                      onPreviewClick={(ev) => onClickEvent && onClickEvent(ev)}
+                      athleteContext={athleteContext}
                     />
                   </div>
                 );
@@ -793,6 +883,7 @@ export default function ProgrammeCalendar({
           anchorRect={popover.anchorRect}
           events={eventsOnDate(events, popover.date)}
           pillColourMode={pillColourMode}
+          athleteContext={athleteContext}
           onClickEvent={onClickEvent}
           onClose={() => setPopover(null)}
         />

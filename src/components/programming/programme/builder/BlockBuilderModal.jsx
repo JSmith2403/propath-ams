@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, Plus } from 'lucide-react';
-import SessionTabStrip from './SessionTabStrip';
-import SessionSection from './SessionSection';
+import { X, Minus, MoreVertical, Plus, Sparkles } from 'lucide-react';
+import SessionBlock from './SessionBlock';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import ConfirmDialog from '../../blocks/ConfirmDialog';
-import { colourForSection } from '../../../../utils/sectionColours';
+import { useBlockTemplates } from '../../../../hooks/useBlockTemplates';
+import { loadBlockTemplate } from '../../../../utils/programmeTemplates';
+import ExercisePicker from './ExercisePicker';
 
-const MIN_WEEKS = 1;
-const MAX_WEEKS = 12;
+const MIN_WEEKS    = 1;
+const MAX_WEEKS    = 12;
 const MIN_SESSIONS = 1;
 const MAX_SESSIONS = 7;
 
@@ -37,37 +38,59 @@ function defaultDraft() {
   };
 }
 
-// Pad / truncate the week_prescriptions array to match `weeks`.
 function reshapeWeeks(prescriptions, weeks) {
   const next = (prescriptions || []).slice(0, weeks);
   for (let i = next.length; i < weeks; i++) {
     next.push({ week_number: i + 1, sets: 3, reps: '8', target_value: '', rest_seconds: null });
   }
-  // Re-number defensively
   return next.map((p, i) => ({ ...p, week_number: i + 1 }));
 }
 
 /**
- * BlockBuilderModal — block-scoped builder.
- *
- * Header: block name + duration_weeks + sessions count + description.
- * Tab strip: one tab per session, renamable, removable.
- * Active session content: section list, each section has exercise rows
- * with the horizontal week grid.
- *
- * Sticky-left columns (drag, accent, name+note, prescription type)
- * stay visible while the week grid scrolls horizontally.
- *
- * Save-to-DB is Checkpoint 5; for now state is purely in-memory and
- * onClose receives the final draft.
+ * BlockBuilderModal — block-scoped builder. Sessions render as a
+ * vertical stack (no tabs). Each session has its own week-column
+ * header and is collapsible. The whole body shares one horizontal
+ * scroll context so sticky-left columns line up across sessions.
  */
 export default function BlockBuilderModal({
   initialDraft,
-  parentLocked = false, // athlete-attached mode → block name + weeks read-only
+  parentLocked = false,
+  onSave,        // optional: (draft) => Promise<{ok, error?}>
   onClose,
+  // Athlete-mode extensions (Brief 5a)
+  athleteMode = false,
+  onEditDetails,        // () => void — opens block-details modal
+  onSaveAsTemplate,     // (draft) => Promise<{ok, error?}> — save current draft as a new template
+  onDeleteBlock,        // () => void — confirm + delete block
+  contextSubtitle,      // optional text under the block name (e.g. athlete name)
 }) {
   const [draft, setDraft] = useState(() => initialDraft || defaultDraft());
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [confirmApply, setConfirmApply] = useState(null); // { templateId, templateName }
+
+  // Brief 5d — exercise picker side-panel target. null when picker is
+  // closed; { sessionIdx, sectionId, sessionLabel } when open.
+  const [pickerTarget, setPickerTarget] = useState(null);
+  const openPickerForSection = (sessionIdx, sectionId) => {
+    const sess = draft.sessions[sessionIdx];
+    setPickerTarget({
+      sessionIdx,
+      sectionId,
+      sessionLabel: sess?.name || `Session ${sessionIdx + 1}`,
+    });
+  };
+  const closePicker = () => setPickerTarget(null);
+  const handlePickerAdd = (libRow) => {
+    if (!pickerTarget) return;
+    addExerciseToSection(pickerTarget.sessionIdx, pickerTarget.sectionId, libRow);
+  };
+  const handlePickerAddNote = () => {
+    if (!pickerTarget) return;
+    addNoteToSection(pickerTarget.sessionIdx, pickerTarget.sectionId);
+  };
   const initialSnapshot = useRef(JSON.stringify(draft));
   const isDirty = useMemo(
     () => JSON.stringify(draft) !== initialSnapshot.current,
@@ -75,7 +98,7 @@ export default function BlockBuilderModal({
   );
 
   const weeks = draft.block.duration_weeks;
-  const session = draft.sessions[activeIdx] || draft.sessions[0];
+  const totalWidth = ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH;
 
   // ── Block-level setters ─────────────────────────────────────────────────
   const setBlockName = (name) =>
@@ -92,16 +115,18 @@ export default function BlockBuilderModal({
         ...s,
         sections: s.sections.map(sec => ({
           ...sec,
-          exercises: sec.exercises.map(ex => ({
-            ...ex,
-            week_prescriptions: reshapeWeeks(ex.week_prescriptions, w),
-          })),
+          // Only exercise-kind steps carry week_prescriptions. Note
+          // steps pass through unchanged.
+          exercises: sec.exercises.map(step => (
+            step.kind === 'note'
+              ? step
+              : { ...step, week_prescriptions: reshapeWeeks(step.week_prescriptions, w) }
+          )),
         })),
       })),
     }));
   };
 
-  // ── Session count via numeric input ─────────────────────────────────────
   const setSessionCount = (n) => {
     const target = Math.max(MIN_SESSIONS, Math.min(MAX_SESSIONS, n));
     setDraft(d => {
@@ -113,47 +138,40 @@ export default function BlockBuilderModal({
       }
       return { ...d, sessions: d.sessions.slice(0, target) };
     });
-    if (activeIdx >= target) setActiveIdx(target - 1);
   };
 
   const addSession = () => {
     setDraft(d => ({ ...d, sessions: [...d.sessions, defaultSession(d.sessions.length)] }));
-    setActiveIdx(draft.sessions.length); // will be the new tab's index
-  };
-
-  const renameSession = (idx, name) => {
-    setDraft(d => ({
-      ...d,
-      sessions: d.sessions.map((s, i) => (i === idx ? { ...s, name } : s)),
-    }));
   };
 
   const removeSession = (idx) => {
     setDraft(d => ({ ...d, sessions: d.sessions.filter((_, i) => i !== idx) }));
-    if (activeIdx >= idx) setActiveIdx(Math.max(0, activeIdx - 1));
   };
 
-  // ── Section / exercise mutators on the ACTIVE session ───────────────────
-  const mutateActiveSession = (fn) => {
+  // ── Session-scoped mutators (by index) ─────────────────────────────────
+  const mutateSession = (idx, fn) => {
     setDraft(d => ({
       ...d,
-      sessions: d.sessions.map((s, i) => (i === activeIdx ? fn(s) : s)),
+      sessions: d.sessions.map((s, i) => (i === idx ? fn(s) : s)),
     }));
   };
 
-  const renameSection = (sectionId, name) => mutateActiveSession(s => ({
+  const renameSession = (idx, name) => mutateSession(idx, s => ({ ...s, name }));
+  const updateSessionNotes = (idx, notes) => mutateSession(idx, s => ({ ...s, notes }));
+
+  const renameSectionInSession = (idx, sectionId, name) => mutateSession(idx, s => ({
     ...s,
     sections: s.sections.map(sec => (sec.tempId === sectionId ? { ...sec, name } : sec)),
   }));
 
-  const deleteSection = (sectionId) => mutateActiveSession(s => ({
+  const deleteSectionInSession = (idx, sectionId) => mutateSession(idx, s => ({
     ...s,
     sections: s.sections
       .filter(sec => sec.tempId !== sectionId)
       .map((sec, i) => ({ ...sec, display_order: i })),
   }));
 
-  const addSection = () => mutateActiveSession(s => ({
+  const addSectionToSession = (idx) => mutateSession(idx, s => ({
     ...s,
     sections: [
       ...s.sections,
@@ -167,7 +185,7 @@ export default function BlockBuilderModal({
     ],
   }));
 
-  const addExerciseToSection = (sectionId, lib) => mutateActiveSession(s => ({
+  const addExerciseToSection = (idx, sectionId, lib) => mutateSession(idx, s => ({
     ...s,
     sections: s.sections.map(sec => {
       if (sec.tempId !== sectionId) return sec;
@@ -192,7 +210,23 @@ export default function BlockBuilderModal({
     }),
   }));
 
-  const updateExercise = (sectionId, exerciseId, patch) => mutateActiveSession(s => ({
+  // Note steps share the section.exercises[] array with exercises;
+  // each item carries a kind discriminator (note items have kind:'note').
+  const addNoteToSection = (idx, sectionId) => mutateSession(idx, s => ({
+    ...s,
+    sections: s.sections.map(sec => {
+      if (sec.tempId !== sectionId) return sec;
+      return {
+        ...sec,
+        exercises: [
+          ...sec.exercises,
+          { kind: 'note', tempId: tempId('note'), content: '' },
+        ],
+      };
+    }),
+  }));
+
+  const updateExercise = (idx, sectionId, exerciseId, patch) => mutateSession(idx, s => ({
     ...s,
     sections: s.sections.map(sec => {
       if (sec.tempId !== sectionId) return sec;
@@ -203,7 +237,45 @@ export default function BlockBuilderModal({
     }),
   }));
 
-  const removeExercise = (sectionId, exerciseId) => mutateActiveSession(s => ({
+  const toggleSuperset = (idx, sectionId, exerciseId, nextExerciseId) => mutateSession(idx, s => ({
+    ...s,
+    sections: s.sections.map(sec => {
+      if (sec.tempId !== sectionId) return sec;
+      const a = sec.exercises.find(e => e.tempId === exerciseId);
+      const b = sec.exercises.find(e => e.tempId === nextExerciseId);
+      if (!a || !b) return sec;
+      const linked = a.superset_group_id && a.superset_group_id === b.superset_group_id;
+      if (linked) {
+        // Unlink: clear group on both. (If others were in the chain via
+        // a, they remain together; in this minimal pass the chain is
+        // just adjacent pairs anyway.)
+        return {
+          ...sec,
+          exercises: sec.exercises.map(e => {
+            if (e.tempId === exerciseId || e.tempId === nextExerciseId) {
+              return { ...e, superset_group_id: null };
+            }
+            return e;
+          }),
+        };
+      }
+      // Link: assign a shared id. Reuse a's existing id if any, otherwise b's, else generate.
+      const groupId = a.superset_group_id || b.superset_group_id || (crypto.randomUUID
+        ? crypto.randomUUID()
+        : `ss-${Math.random().toString(36).slice(2, 12)}`);
+      return {
+        ...sec,
+        exercises: sec.exercises.map(e => {
+          if (e.tempId === exerciseId || e.tempId === nextExerciseId) {
+            return { ...e, superset_group_id: groupId };
+          }
+          return e;
+        }),
+      };
+    }),
+  }));
+
+  const removeExercise = (idx, sectionId, exerciseId) => mutateSession(idx, s => ({
     ...s,
     sections: s.sections.map(sec => {
       if (sec.tempId !== sectionId) return sec;
@@ -211,14 +283,14 @@ export default function BlockBuilderModal({
     }),
   }));
 
-  // ── DnD ─────────────────────────────────────────────────────────────────
+  // ── DnD (within the same session only) ──────────────────────────────────
   const dragRef = useRef(null);
   const [dropTargetExerciseId, setDropTargetExerciseId] = useState(null);
   const [dropTargetSectionId,  setDropTargetSectionId]  = useState(null);
 
-  const moveExercise = ({ fromSectionId, fromExerciseId, toSectionId, beforeExerciseId }) => {
+  const moveExercise = (sessionIdx, { fromSectionId, fromExerciseId, toSectionId, beforeExerciseId }) => {
     if (!fromSectionId || !fromExerciseId || !toSectionId) return;
-    mutateActiveSession(s => {
+    mutateSession(sessionIdx, s => {
       const fromSec = s.sections.find(sec => sec.tempId === fromSectionId);
       if (!fromSec) return s;
       const moving = fromSec.exercises.find(ex => ex.tempId === fromExerciseId);
@@ -237,8 +309,8 @@ export default function BlockBuilderModal({
           if (sec.tempId !== toSectionId) return sec;
           const list = sec.exercises.slice();
           if (beforeExerciseId) {
-            const idx = list.findIndex(ex => ex.tempId === beforeExerciseId);
-            if (idx >= 0) list.splice(idx, 0, moving);
+            const i = list.findIndex(ex => ex.tempId === beforeExerciseId);
+            if (i >= 0) list.splice(i, 0, moving);
             else list.push(moving);
           } else {
             list.push(moving);
@@ -249,16 +321,23 @@ export default function BlockBuilderModal({
     });
   };
 
-  const handleExerciseDragStart = (sectionId) => (e, exerciseId) => {
+  const handleExerciseDragStart = (sessionIdx, sectionId) => (e, exerciseId) => {
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', `${sectionId}|${exerciseId}`);
-    dragRef.current = { fromSectionId: sectionId, fromExerciseId: exerciseId };
+    e.dataTransfer.setData('text/plain', `${sessionIdx}|${sectionId}|${exerciseId}`);
+    dragRef.current = { sessionIdx, fromSectionId: sectionId, fromExerciseId: exerciseId };
   };
 
-  const handleExerciseDrop = (sectionId) => (e, exerciseId) => {
+  const handleExerciseDrop = (sessionIdx, sectionId) => (e, exerciseId) => {
     e.preventDefault();
     const data = dragRef.current || parseDrag(e);
-    moveExercise({
+    if (data.sessionIdx !== sessionIdx) {
+      // Cross-session drag not yet supported
+      dragRef.current = null;
+      setDropTargetExerciseId(null);
+      setDropTargetSectionId(null);
+      return;
+    }
+    moveExercise(sessionIdx, {
       fromSectionId: data.fromSectionId,
       fromExerciseId: data.fromExerciseId,
       toSectionId: sectionId,
@@ -269,10 +348,16 @@ export default function BlockBuilderModal({
     setDropTargetSectionId(null);
   };
 
-  const handleSectionDrop = (sectionId) => (e) => {
+  const handleSectionDrop = (sessionIdx, sectionId) => (e) => {
     e.preventDefault();
     const data = dragRef.current || parseDrag(e);
-    moveExercise({
+    if (data.sessionIdx !== sessionIdx) {
+      dragRef.current = null;
+      setDropTargetExerciseId(null);
+      setDropTargetSectionId(null);
+      return;
+    }
+    moveExercise(sessionIdx, {
       fromSectionId: data.fromSectionId,
       fromExerciseId: data.fromExerciseId,
       toSectionId: sectionId,
@@ -285,8 +370,12 @@ export default function BlockBuilderModal({
 
   function parseDrag(e) {
     const raw = e.dataTransfer.getData('text/plain') || '';
-    const [fromSectionId, fromExerciseId] = raw.split('|');
-    return { fromSectionId, fromExerciseId };
+    const parts = raw.split('|');
+    if (parts.length === 3) {
+      const [sessionIdx, fromSectionId, fromExerciseId] = parts;
+      return { sessionIdx: Number(sessionIdx), fromSectionId, fromExerciseId };
+    }
+    return { sessionIdx: -1, fromSectionId: null, fromExerciseId: null };
   }
 
   // ── Esc / Discard ───────────────────────────────────────────────────────
@@ -302,7 +391,61 @@ export default function BlockBuilderModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [isDirty, onClose]);
 
-  const handleDone = () => onClose(draft);
+  const handleDone = async () => {
+    if (!onSave) { onClose(draft); return; }
+    setSaving(true);
+    setSaveError(null);
+    const res = await onSave(draft);
+    setSaving(false);
+    if (res?.ok) {
+      onClose(null);
+    } else {
+      setSaveError(res?.error?.message || 'Save failed.');
+    }
+  };
+
+  // ── Apply Template (athlete mode) ───────────────────────────────────────
+  // Loads the picked template's tree, then replaces the current draft's
+  // sessions in-memory. Block-level metadata (name, duration, dates)
+  // stays — duration is fixed by the existing training_block.
+  const applyTemplateToDraft = async (templateId) => {
+    setSaving(true);
+    setSaveError(null);
+    const res = await loadBlockTemplate(templateId);
+    setSaving(false);
+    if (!res.ok) {
+      setSaveError(res.error?.message || 'Couldn\'t load template.');
+      return;
+    }
+    // If template duration doesn't match the block's duration, reshape
+    // its week_prescriptions to fit the block's existing weeks.
+    const blockWeeks = draft.block.duration_weeks;
+    const reshapedSessions = (res.draft.sessions || []).map((sess, i) => ({
+      ...sess,
+      tempId: tempId('sess'),
+      sections: (sess.sections || []).map((sec) => ({
+        ...sec,
+        tempId: tempId('sec'),
+        exercises: (sec.exercises || []).map((ex) => ({
+          ...ex,
+          tempId: tempId('ex'),
+          week_prescriptions: reshapeWeeks(ex.week_prescriptions, blockWeeks),
+        })),
+      })),
+    }));
+    setDraft(d => ({ ...d, sessions: reshapedSessions }));
+    setShowTemplatePicker(false);
+    setConfirmApply(null);
+  };
+
+  const requestApplyTemplate = (template) => {
+    const hasContent = draft.sessions.some(s => s.sections?.some(sec => (sec.exercises || []).length > 0));
+    if (hasContent) {
+      setConfirmApply({ templateId: template.id, templateName: template.name });
+    } else {
+      applyTemplateToDraft(template.id);
+    }
+  };
   const handleDiscard = () => {
     if (isDirty) setConfirmDiscard(true);
     else onClose(null);
@@ -319,7 +462,7 @@ export default function BlockBuilderModal({
       >
         <Minus size={11} />
       </button>
-      <span className="w-8 text-center font-bold" style={{ color: '#1C1C1C' }}>{value}</span>
+      <span className="w-8 text-center font-bold tabular-nums" style={{ color: '#1C1C1C' }}>{value}</span>
       <button
         onClick={onPlus}
         disabled={parentLocked && label === 'Duration'}
@@ -340,20 +483,44 @@ export default function BlockBuilderModal({
         style={{ width: '95vw', height: '90vh', maxWidth: 1500 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header — block name + dur + sessions */}
+        {/* Header — block name + duration + sessions */}
         <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-100 shrink-0">
           <div className="flex-1 min-w-0">
-            <input
-              value={draft.block.name}
-              onChange={(e) => setBlockName(e.target.value)}
-              disabled={parentLocked}
-              className="text-lg font-bold w-full focus:outline-none disabled:bg-transparent disabled:text-[#1C1C1C]"
-              style={{ color: '#1C1C1C' }}
-              placeholder="Untitled block"
-            />
+            {athleteMode ? (
+              <>
+                <div className="text-lg font-bold truncate" style={{ color: '#1C1C1C' }}>
+                  {draft.block.name || 'Untitled block'}
+                </div>
+                {contextSubtitle && (
+                  <div className="text-[11px] mt-0.5" style={{ color: '#9ca3af' }}>
+                    {contextSubtitle}
+                  </div>
+                )}
+              </>
+            ) : (
+              <input
+                value={draft.block.name}
+                onChange={(e) => setBlockName(e.target.value)}
+                disabled={parentLocked}
+                className="text-lg font-bold w-full focus:outline-none disabled:bg-transparent disabled:text-[#1C1C1C]"
+                style={{ color: '#1C1C1C' }}
+                placeholder="Untitled block"
+              />
+            )}
             <div className="flex items-center gap-4 mt-2">
               {headerControl('Duration', `${weeks}w`, () => setBlockWeeks(weeks - 1), () => setBlockWeeks(weeks + 1))}
               {headerControl('Sessions', draft.sessions.length, () => setSessionCount(draft.sessions.length - 1), () => setSessionCount(draft.sessions.length + 1))}
+              {athleteMode && (
+                <button
+                  onClick={() => setShowTemplatePicker(true)}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors hover:opacity-90"
+                  style={{ color: '#085777', backgroundColor: 'rgba(8,87,119,0.08)' }}
+                  title="Replace this block's sessions with a saved template"
+                >
+                  <Sparkles size={11} />
+                  Apply template
+                </button>
+              )}
             </div>
             <textarea
               value={draft.block.description}
@@ -361,132 +528,103 @@ export default function BlockBuilderModal({
               rows={1}
               className="w-full mt-2 text-xs focus:outline-none resize-none placeholder:italic"
               style={{ color: '#4b5563' }}
-              placeholder="Block description (optional) — focus, intent, target outcome…"
+              placeholder={athleteMode ? 'Block notes (optional)' : 'Block description (optional) — focus, intent, target outcome…'}
             />
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-[11px]" style={{ color: isDirty ? '#A58D69' : '#9ca3af' }}>
-              {isDirty ? 'Unsaved changes' : 'No changes'}
-            </span>
+            {saveError ? (
+              <span className="text-[11px]" style={{ color: '#dc2626' }} title={saveError}>
+                {saveError.length > 40 ? `${saveError.slice(0, 40)}…` : saveError}
+              </span>
+            ) : (
+              <span className="text-[11px]" style={{ color: isDirty ? '#A58D69' : '#9ca3af' }}>
+                {saving ? 'Saving…' : isDirty ? 'Unsaved changes' : 'No changes'}
+              </span>
+            )}
+
+            {athleteMode && (
+              <BlockMoreMenu
+                open={moreOpen}
+                onToggle={() => setMoreOpen(o => !o)}
+                onClose={() => setMoreOpen(false)}
+                onEditDetails={onEditDetails}
+                onSaveAsTemplate={onSaveAsTemplate ? () => onSaveAsTemplate(draft) : null}
+                onDeleteBlock={onDeleteBlock}
+              />
+            )}
+
             <button
               onClick={handleDiscard}
-              className="p-2 rounded hover:bg-gray-100 text-gray-400 transition-colors"
+              disabled={saving}
+              className="p-2 rounded hover:bg-gray-100 text-gray-400 transition-colors disabled:opacity-40"
               title="Close (Esc)"
             >
               <X size={16} />
             </button>
             <button
               onClick={handleDone}
-              className="px-4 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90"
+              disabled={saving}
+              className="px-4 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#A58D69' }}
             >
-              Done
+              {saving ? 'Saving…' : (athleteMode ? 'Save changes' : 'Save template')}
             </button>
           </div>
         </div>
 
-        {/* Session tab strip */}
-        <SessionTabStrip
-          sessions={draft.sessions}
-          activeIdx={activeIdx}
-          onActivate={setActiveIdx}
-          onRename={renameSession}
-          onAdd={addSession}
-          onRemove={removeSession}
-          canAdd={draft.sessions.length < MAX_SESSIONS}
-        />
-
-        {/* Active session — scrollable horizontally for the week grid */}
+        {/* Body — vertical stack of sessions, single shared horizontal scroll */}
         <div className="flex-1 overflow-auto">
-          {/* Per-session notes (sticky-left, full width row) */}
-          <div
-            className="sticky left-0 z-10 px-6 pt-4 pb-2 bg-white"
-            style={{ minWidth: ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH }}
-          >
-            <textarea
-              value={session.notes || ''}
-              onChange={(e) => setDraft(d => ({
-                ...d,
-                sessions: d.sessions.map((s, i) => (i === activeIdx ? { ...s, notes: e.target.value } : s)),
-              }))}
-              rows={1}
-              className="w-full text-xs focus:outline-none resize-none placeholder:italic"
-              style={{ color: '#4b5563' }}
-              placeholder="Session-level notes — coach cues, focus, anything…"
+          {draft.sessions.map((sess, idx) => (
+            <SessionBlock
+              key={sess.tempId}
+              session={sess}
+              index={idx}
+              totalSessions={draft.sessions.length}
+              weeks={weeks}
+              onRenameSession={(name) => renameSession(idx, name)}
+              onUpdateNotes={(notes) => updateSessionNotes(idx, notes)}
+              onRemoveSession={() => removeSession(idx)}
+              onAddSection={() => addSectionToSession(idx)}
+              onRenameSection={(secId, name) => renameSectionInSession(idx, secId, name)}
+              onDeleteSection={(secId) => deleteSectionInSession(idx, secId)}
+              onRequestAddExercise={(secId) => openPickerForSection(idx, secId)}
+              onUpdateExercise={(secId, exId, patch) => updateExercise(idx, secId, exId, patch)}
+              onRemoveExercise={(secId, exId) => removeExercise(idx, secId, exId)}
+              onToggleSuperset={(secId, exId, nextExId) => toggleSuperset(idx, secId, exId, nextExId)}
+              onExerciseDragStart={(secId) => handleExerciseDragStart(idx, secId)}
+              onExerciseDrop={(secId) => handleExerciseDrop(idx, secId)}
+              onExerciseDragEnter={(exId) => setDropTargetExerciseId(exId)}
+              onExerciseDragLeave={(exId) =>
+                setDropTargetExerciseId(prev => (prev === exId ? null : prev))}
+              dropTargetExerciseId={dropTargetExerciseId}
+              onSectionDrop={(secId) => handleSectionDrop(idx, secId)}
+              isSectionDropTarget={(secId, exCount) =>
+                dropTargetSectionId === secId && exCount === 0}
+              onSectionDragEnter={(secId) => setDropTargetSectionId(secId)}
+              onSectionDragLeave={(secId) =>
+                setDropTargetSectionId(prev => (prev === secId ? null : prev))}
             />
-          </div>
+          ))}
 
-          {/* Week column header */}
+          {/* + Add session (sticky-left, bottom) */}
           <div
-            className="flex items-stretch border-b border-gray-100"
-            style={{ minWidth: ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH }}
+            className="sticky left-0 z-10 bg-white pl-6 py-8"
+            style={{ width: ROW_STICKY_WIDTH + 60, minWidth: ROW_STICKY_WIDTH + 60 }}
           >
-            <div
-              className="sticky left-0 z-10 bg-white flex items-center px-6 py-2 text-[10px] font-bold uppercase tracking-widest"
-              style={{ width: ROW_STICKY_WIDTH, minWidth: ROW_STICKY_WIDTH, color: '#9ca3af', borderRight: '1px solid #f3f4f6' }}
+            <button
+              onClick={addSession}
+              disabled={draft.sessions.length >= MAX_SESSIONS}
+              className="flex items-center gap-1.5 px-4 py-2 text-[12px] font-semibold rounded transition-colors hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ color: '#A58D69', border: '1px dashed #A58D69' }}
             >
-              Exercise
-            </div>
-            <div className="flex">
-              {Array.from({ length: weeks }, (_, i) => (
-                <div
-                  key={i + 1}
-                  className="flex items-center justify-center text-[10px] font-bold uppercase tracking-widest"
-                  style={{ width: WEEK_COL_WIDTH, color: '#9ca3af' }}
-                >
-                  Wk {i + 1}
-                </div>
-              ))}
-            </div>
+              <Plus size={13} />
+              Add session
+            </button>
           </div>
 
-          {/* Section list */}
-          <div
-            className="px-6 py-3"
-            style={{ minWidth: ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH }}
-          >
-            {session.sections.map((sec, i) => (
-              <SessionSection
-                key={sec.tempId}
-                section={sec}
-                accentColour={colourForSection(sec, session.sections)}
-                weeks={weeks}
-                isFirst={i === 0}
-                onRenameSection={(name) => renameSection(sec.tempId, name)}
-                onDeleteSection={() => deleteSection(sec.tempId)}
-                onAddExercise={(lib) => addExerciseToSection(sec.tempId, lib)}
-                onUpdateExercise={(exId, patch) => updateExercise(sec.tempId, exId, patch)}
-                onRemoveExercise={(exId) => removeExercise(sec.tempId, exId)}
-                onExerciseDragStart={handleExerciseDragStart(sec.tempId)}
-                onExerciseDrop={handleExerciseDrop(sec.tempId)}
-                onExerciseDragEnter={(exId) => setDropTargetExerciseId(exId)}
-                onExerciseDragLeave={(exId) =>
-                  setDropTargetExerciseId(prev => (prev === exId ? null : prev))}
-                dropTargetExerciseId={dropTargetExerciseId}
-                onSectionDrop={handleSectionDrop(sec.tempId)}
-                isSectionDropTarget={dropTargetSectionId === sec.tempId && sec.exercises.length === 0}
-                onSectionDragEnter={() => setDropTargetSectionId(sec.tempId)}
-                onSectionDragLeave={() =>
-                  setDropTargetSectionId(prev => (prev === sec.tempId ? null : prev))}
-              />
-            ))}
-
-            {/* + Add section (sticky-left) */}
-            <div
-              className="sticky left-0 z-10 bg-white mt-6"
-              style={{ width: ROW_STICKY_WIDTH }}
-            >
-              <button
-                onClick={addSection}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded transition-colors hover:bg-gray-100"
-                style={{ color: '#437E8D', border: '1px dashed #437E8D' }}
-              >
-                <Plus size={13} />
-                Add section
-              </button>
-            </div>
-          </div>
+          {/* Width spacer to ensure horizontal scroll matches the table */}
+          <div style={{ width: totalWidth, height: 0 }} />
         </div>
 
         {/* Footer */}
@@ -495,7 +633,9 @@ export default function BlockBuilderModal({
             Discard changes
           </button>
           <p className="text-[11px]" style={{ color: '#9ca3af' }}>
-            Save-as-template lands in Checkpoint 5 — all changes are in-memory for now.
+            {athleteMode
+              ? 'Changes save to this athlete\'s block only. Templates are independent.'
+              : 'Saved templates appear in the Templates tab and can be assigned to athletes from Assign.'}
           </p>
         </div>
       </div>
@@ -510,6 +650,164 @@ export default function BlockBuilderModal({
           onCancel={() => setConfirmDiscard(false)}
         />
       )}
+
+      {showTemplatePicker && (
+        <TemplatePickerDialog
+          onPick={requestApplyTemplate}
+          onClose={() => setShowTemplatePicker(false)}
+        />
+      )}
+
+      {pickerTarget && (
+        <ExercisePicker
+          sessionLabel={pickerTarget.sessionLabel}
+          onAdd={handlePickerAdd}
+          onAddNote={handlePickerAddNote}
+          onClose={closePicker}
+        />
+      )}
+
+      {confirmApply && (
+        <ConfirmDialog
+          title="Replace this block's sessions?"
+          body={`This block already has sessions. Applying "${confirmApply.templateName}" will replace them. Existing per-week prescriptions will be lost.`}
+          confirmLabel="Replace"
+          danger
+          onConfirm={() => applyTemplateToDraft(confirmApply.templateId)}
+          onCancel={() => setConfirmApply(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── BlockMoreMenu ───────────────────────────────────────────────────────
+// Three-dot menu shown in the modal header in athlete mode. Lists the
+// secondary actions: edit block details, save as new template, delete
+// block. Closes on outside click or item selection.
+function BlockMoreMenu({ open, onToggle, onClose, onEditDetails, onSaveAsTemplate, onDeleteBlock }) {
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleDown = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('mousedown', handleDown);
+    return () => document.removeEventListener('mousedown', handleDown);
+  }, [open, onClose]);
+
+  const wrap = (fn) => () => { onClose(); if (fn) fn(); };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        onClick={onToggle}
+        className="p-2 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+        title="More options"
+      >
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 z-50"
+          style={{ border: '1px solid #e5e7eb', minWidth: 200 }}
+        >
+          {onEditDetails && (
+            <button
+              onClick={wrap(onEditDetails)}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors"
+              style={{ color: '#1C1C1C' }}
+            >
+              Edit block details
+            </button>
+          )}
+          {onSaveAsTemplate && (
+            <button
+              onClick={wrap(onSaveAsTemplate)}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors"
+              style={{ color: '#1C1C1C' }}
+            >
+              Save as new block template
+            </button>
+          )}
+          {onDeleteBlock && (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onClick={wrap(onDeleteBlock)}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors"
+                style={{ color: '#dc2626' }}
+              >
+                Delete block
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TemplatePickerDialog ────────────────────────────────────────────────
+// Lightweight modal-over-modal listing available block templates. Click
+// a template to request apply (parent shows a confirmation if the block
+// already has content). Closes on backdrop click or Esc.
+function TemplatePickerDialog({ onPick, onClose }) {
+  const { templates, loading, error } = useBlockTemplates();
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[70vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-sm font-bold" style={{ color: '#1C1C1C' }}>Pick a template</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          {loading && (
+            <div className="text-xs text-center py-8" style={{ color: '#9ca3af' }}>Loading…</div>
+          )}
+          {error && (
+            <div className="text-xs px-4 py-3" style={{ color: '#dc2626' }}>
+              Couldn't load templates: {error.message}
+            </div>
+          )}
+          {!loading && !error && templates.length === 0 && (
+            <div className="text-xs text-center py-8" style={{ color: '#9ca3af' }}>
+              No templates yet — build one in the Programme module first.
+            </div>
+          )}
+          {templates.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onPick(t)}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors flex items-center justify-between gap-3 border-b border-gray-50 last:border-b-0"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate" style={{ color: '#1C1C1C' }}>{t.name}</div>
+                <div className="text-[11px]" style={{ color: '#9ca3af' }}>
+                  {t.session_count} {t.session_count === 1 ? 'session' : 'sessions'} · {t.default_duration_weeks}-week
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

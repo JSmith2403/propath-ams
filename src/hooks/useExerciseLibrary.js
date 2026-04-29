@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
- * Loads the master exercise library (active rows only) for the search
- * dropdown in the session builder. Static data — fetch once per mount.
+ * Loads the master exercise library (active rows only) for the
+ * exercise picker. Static-ish data — fetched once per mount with a
+ * refresh callback used by the custom-create flow to pick up newly
+ * inserted rows.
  */
 export function useExerciseLibrary() {
   const [exercises, setExercises] = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [tick,      setTick]      = useState(0);
+
+  const refresh = useCallback(() => setTick(n => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -15,16 +20,18 @@ export function useExerciseLibrary() {
       setLoading(true);
       const { data, error } = await supabase
         .from('exercise_library')
-        .select('id, name, category, default_prescription_type, movement_patterns, bilateral_unilateral, notes')
+        .select('id, name, category, movement_patterns, bilateral_unilateral, equipment, complexity, posterior_anterior, primary_muscle, supporting_muscles, muscle_bias, joint_count_level, dynamic_isometric, movement_plane, notes')
         .eq('is_active', true)
         .order('name', { ascending: true });
       if (cancelled) return;
       if (error) console.error('[ExerciseLibrary] fetch failed:', error);
-      setExercises(data || []);
+      // Brief 5c — default_prescription_type column dropped. Default
+      // to kg everywhere; coach picks per-exercise via the pill.
+      setExercises((data || []).map(row => ({ ...row, default_prescription_type: 'kg' })));
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [tick]);
 
-  return { exercises, loading };
+  return { exercises, loading, refresh };
 }

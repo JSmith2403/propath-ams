@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
+import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
 import ProgrammeCalendar, {
   _parseDate as parseDate,
   _addDays   as addDays,
@@ -14,7 +15,13 @@ import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
+import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
+import {
+  loadAthleteBlock,
+  saveAthleteBlock,
+  saveBlockTemplate,
+} from '../../utils/programmeTemplates';
 
 // Combine a fallback message with the supabase error so the user gets
 // real diagnostic info inline in the modal.
@@ -55,7 +62,7 @@ export default function ProgrammeView({
     updateEvent,
     updateEventOptimistic,
     deleteEventOptimistic,
-  } = useCalendarEvents(athleteIds);
+  } = useCalendarEvents(athleteIds, { includeTeamEvents: true });
 
   // Training blocks for this athlete (Surface 1 only fetches its own
   // athlete's blocks). Same dependency on `isActive` as events so the
@@ -70,6 +77,12 @@ export default function ProgrammeView({
     removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
 
+  // Brief 5d/5e — planned training sessions, surfaced as outlined teal
+  // pills on the calendar. Always shown on the per-athlete view (no
+  // filter panel here; coach explicitly opted into this athlete).
+  const { planned: plannedRows } = usePlannedSessions(athleteIds);
+  const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
+
   // ── Calendar nav state ──────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState('month');
   const [viewDate, setViewDate] = useState(() => new Date());
@@ -81,7 +94,24 @@ export default function ProgrammeView({
 
   const openAdd       = () => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add',  event: null }); };
   const openAddOnDate = (iso) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add', event: { start_date: iso } }); };
-  const openEdit      = (event) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'edit', event }); };
+  const openEdit      = (event) => {
+    setEventSaveError(null);
+    // Brief 5d/5e — planned session pill: open the session builder
+    // for that block instead of the event editor.
+    if (event?.is_planned) {
+      const target = blocks.find(b => b.id === event._block_id);
+      if (target) openBlockBuilder(target);
+      return;
+    }
+    // Brief 5a — team events on a per-athlete calendar are always
+    // read-only here. Edits happen on the Shared Calendar surface.
+    if (event?.is_team_event) {
+      setModal({ mode: 'edit', event, readOnly: true });
+      return;
+    }
+    if (!canEdit) return;
+    setModal({ mode: 'edit', event });
+  };
   const close         = () => { setModal(null); setEventSaveError(null); };
 
   // ── Block modal state ────────────────────────────────────────────────────
@@ -91,6 +121,66 @@ export default function ProgrammeView({
   const openBlockAdd  = () => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'add', block: null }); };
   const openBlockEdit = (block) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'edit', block }); };
   const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
+
+  // ── Athlete block builder state (Brief 5a) ──────────────────────────────
+  // builderState = null | { loading: true, blockId } | { draft, blockId }
+  const [builderState,   setBuilderState]   = useState(null);
+  const [builderError,   setBuilderError]   = useState(null);
+  const [confirmDelete,  setConfirmDelete]  = useState(null); // block from builder
+
+  const openBlockBuilder = async (block) => {
+    setBuilderError(null);
+    setBuilderState({ loading: true, blockId: block.id });
+    const res = await loadAthleteBlock(block.id);
+    if (res.ok) {
+      setBuilderState({ loading: false, blockId: block.id, draft: res.draft });
+    } else {
+      setBuilderState(null);
+      showToast(`Couldn't open block. ${res.error?.message || ''}`.trim(), 'error');
+    }
+  };
+  const closeBuilder = () => setBuilderState(null);
+
+  const handleBuilderSave = async (draft) => {
+    if (!builderState?.blockId) return { ok: false, error: new Error('Missing block id') };
+    const res = await saveAthleteBlock(builderState.blockId, draft);
+    if (res.ok) showToast('Block saved');
+    return res;
+  };
+
+  const handleSaveAsTemplate = async (draft) => {
+    const name = window.prompt('Save as new template — name?', draft.block.name || '');
+    if (!name || !name.trim()) return { ok: false, error: new Error('Cancelled') };
+    const res = await saveBlockTemplate({ ...draft, block: { ...draft.block, name: name.trim() } });
+    if (res.ok) showToast('Saved as template');
+    else        showToast(`Couldn't save template. ${res.error?.message || ''}`.trim(), 'error');
+    return res;
+  };
+
+  const handleBuilderEditDetails = () => {
+    if (!builderState?.blockId) return;
+    const block = blocks.find(b => b.id === builderState.blockId);
+    if (block) openBlockEdit(block);
+  };
+
+  const handleBuilderDeleteRequest = () => {
+    if (!builderState?.blockId) return;
+    const block = blocks.find(b => b.id === builderState.blockId);
+    if (block) setConfirmDelete(block);
+  };
+
+  const handleBuilderDeleteConfirm = async () => {
+    const target = confirmDelete;
+    setConfirmDelete(null);
+    if (!target) return;
+    const res = await deleteBlockOptimistic(target.id);
+    if (res.ok) {
+      closeBuilder();
+      showToast('Block deleted');
+    } else {
+      showToast(`Couldn't delete block. ${res.error?.message || ''}`.trim(), 'error');
+    }
+  };
 
   // Hovered range from the timeline (block-bar hover OR week-pill hover)
   // both pipe through here so the calendar paints the right tint.
@@ -164,6 +254,11 @@ export default function ProgrammeView({
 
   const handleMoveEvent = async (event, newStartISO) => {
     if (!canEdit) return;
+    // Team events can't be rescheduled from a per-athlete calendar.
+    if (event.is_team_event) {
+      showToast('Team events are managed from the Shared Calendar.', 'error');
+      return;
+    }
     const oldStart = parseDate(event.start_date);
     const oldEnd   = event.end_date ? parseDate(event.end_date) : null;
     const newStart = parseDate(newStartISO);
@@ -277,12 +372,15 @@ export default function ProgrammeView({
     <div className="space-y-6">
       {ToggleCard}
 
-      {/* Block timeline above the calendar */}
+      {/* Block timeline above the calendar.
+          Click block → session builder for that athlete's snapshot.
+          Pencil hover-icon on block → block-details modal (name/dates). */}
       <BlockTimelineBar
         blocks={blocks}
         canEdit={canEdit}
         onAdd={openBlockAdd}
-        onClickBlock={openBlockEdit}
+        onClickBlock={openBlockBuilder}
+        onEditBlockDetails={openBlockEdit}
         onHoverRange={setHighlightRange}
         onAddWeek={handleAddWeek}
         onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
@@ -303,11 +401,12 @@ export default function ProgrammeView({
           viewDate={viewDate}
           onChangeDate={setViewDate}
           canEdit={canEdit}
+          athleteContext
           onAddEvent={openAdd}
           onAddEventOnDate={openAddOnDate}
           onMoveEvent={handleMoveEvent}
-          events={events}
-          onClickEvent={canEdit ? openEdit : null}
+          events={[...events, ...plannedEvents]}
+          onClickEvent={openEdit}
           highlightRange={highlightRange}
           blocks={blocks}
           blockColourMap={blockColourMap}
@@ -333,9 +432,11 @@ export default function ProgrammeView({
           defaultAthleteId={athlete.id}
           athleteOptions={[{ id: athlete.id, name: athlete.name }]}
           onSave={handleSave}
-          onDelete={modal.mode === 'edit' ? handleDelete : null}
+          onDelete={modal.mode === 'edit' && !modal.readOnly ? handleDelete : null}
           onClose={close}
           saveError={eventSaveError}
+          readOnly={!!modal.readOnly}
+          allowTeamEvents={false}
         />
       )}
 
@@ -351,6 +452,46 @@ export default function ProgrammeView({
           onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
           onClose={closeBlock}
           saveError={blockSaveError}
+        />
+      )}
+
+      {builderState?.draft && (
+        <BlockBuilderModal
+          initialDraft={builderState.draft}
+          parentLocked
+          athleteMode
+          contextSubtitle={athlete.name}
+          onSave={handleBuilderSave}
+          onClose={closeBuilder}
+          onEditDetails={canEdit ? handleBuilderEditDetails : null}
+          onSaveAsTemplate={canEdit ? handleSaveAsTemplate : null}
+          onDeleteBlock={canEdit ? handleBuilderDeleteRequest : null}
+        />
+      )}
+      {builderState?.loading && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+        >
+          <div className="bg-white rounded-lg px-5 py-3 text-xs" style={{ color: '#6b7280' }}>
+            Loading block…
+          </div>
+        </div>
+      )}
+      {builderError && (
+        <div className="fixed bottom-6 right-6 px-4 py-2.5 rounded-lg text-xs font-semibold text-white shadow-lg z-[90]" style={{ backgroundColor: '#dc2626' }}>
+          {builderError}
+        </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete block?"
+          body={`"${confirmDelete.block_name}" and all of its sessions will be permanently removed for ${athlete.name}.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleBuilderDeleteConfirm}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
 
