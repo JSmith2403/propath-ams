@@ -124,3 +124,69 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+-- 8. session_sections (section model — coach-named blocks within a session)
+-- Polymorphic: belongs to a block_session OR a session_template, not both.
+CREATE TABLE IF NOT EXISTS session_sections (
+  id                  uuid       PRIMARY KEY DEFAULT gen_random_uuid(),
+  block_session_id    uuid       REFERENCES block_sessions(id)    ON DELETE CASCADE,
+  session_template_id uuid       REFERENCES session_templates(id) ON DELETE CASCADE,
+  name                text       NOT NULL,
+  display_order       int        NOT NULL,
+  is_warm_up          boolean    NOT NULL DEFAULT false,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  CHECK ((block_session_id IS NULL) <> (session_template_id IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_sections_block
+  ON session_sections(block_session_id)
+  WHERE block_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_session_sections_template
+  ON session_sections(session_template_id)
+  WHERE session_template_id IS NOT NULL;
+
+-- 9. section_id FK on session_exercises and template equivalent
+ALTER TABLE session_exercises
+  ADD COLUMN IF NOT EXISTS section_id uuid
+  REFERENCES session_sections(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_session_exercises_section
+  ON session_exercises(section_id)
+  WHERE section_id IS NOT NULL;
+
+ALTER TABLE session_template_exercises
+  ADD COLUMN IF NOT EXISTS section_id uuid
+  REFERENCES session_sections(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_session_tpl_ex_section
+  ON session_template_exercises(section_id)
+  WHERE section_id IS NOT NULL;
+
+-- 10. superset_group_id on session_exercises + template equivalent
+-- Plain uuid, no FK. Exercises sharing the same value are linked.
+ALTER TABLE session_exercises
+  ADD COLUMN IF NOT EXISTS superset_group_id uuid;
+
+CREATE INDEX IF NOT EXISTS idx_session_exercises_superset
+  ON session_exercises(superset_group_id)
+  WHERE superset_group_id IS NOT NULL;
+
+ALTER TABLE session_template_exercises
+  ADD COLUMN IF NOT EXISTS superset_group_id uuid;
+
+CREATE INDEX IF NOT EXISTS idx_session_tpl_ex_superset
+  ON session_template_exercises(superset_group_id)
+  WHERE superset_group_id IS NOT NULL;
+
+-- 11. updated_at touch trigger on session_sections
+DROP TRIGGER IF EXISTS trg_touch_updated_at ON session_sections;
+CREATE TRIGGER trg_touch_updated_at
+  BEFORE UPDATE ON session_sections
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- 12. RLS allow_all (TO public) on session_sections
+ALTER TABLE session_sections ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_all ON session_sections;
+CREATE POLICY allow_all ON session_sections
+  FOR ALL TO public USING (true) WITH CHECK (true);
