@@ -1,21 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getMetricColour, METRIC_KEYS, computeRollingStats, isTier1Flagged } from '../utils/wellnessFlags';
-import WellnessChart from './wellness/WellnessChart';
+import { getRagColour } from '../utils/wellnessRag';
+import { useWellness } from '../hooks/useWellness';
+import WellnessQuestionChart, { isChartable } from './wellness/WellnessQuestionChart';
 
-const METRIC_LABELS = {
-  sleep_duration:  'Sleep Hrs',
-  sleep_quality:   'Sleep Qual',
-  fatigue:         'Fatigue',
-  muscle_soreness: 'Soreness',
-  stress:          'Stress',
-};
+const COLOUR_MAP = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444' };
 
 function formatDate(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   });
+}
+
+function shortLabel(label) {
+  return label.replace(/\?$/, '').split(/\s+/).slice(0, 3).join(' ');
 }
 
 function StatCard({ label, value, sub }) {
@@ -28,41 +27,30 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-const COLOUR_MAP = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444' };
-
-function CellValue({ metric, value }) {
-  const colour = getMetricColour(metric, Number(value));
-  return (
-    <span style={{ color: COLOUR_MAP[colour], fontWeight: 600 }}>{value}</span>
-  );
+function CellValue({ question, value }) {
+  if (value == null || value === '') return <span className="text-gray-300">—</span>;
+  const colour = getRagColour(value, question);
+  const colourHex = colour ? COLOUR_MAP[colour] : '#374151';
+  return <span style={{ color: colourHex, fontWeight: 600 }}>{String(value)}</span>;
 }
 
+/**
+ * Sidebar "Wellness" page. Shows every athlete that has wellness
+ * activated, lets the coach pick one, and renders that athlete's
+ * submissions against their currently-selected library questions.
+ *
+ * All data comes from the new model (wellness_responses + library +
+ * athlete_wellness_questions). Legacy wellness_submissions table is
+ * no longer read.
+ */
 export default function WellnessOverview({ athletes, role }) {
   const [tokens, setTokens] = useState([]);
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
-  const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [tokensLoading, setTokensLoading] = useState(true);
 
   const canDelete = role === 'admin' || role === 'co_admin';
 
-  const handleDeleteSubmission = async (sub) => {
-    const dateLabel = formatDate(sub.submission_date);
-    if (!window.confirm(`Are you sure you want to delete this wellness entry for ${dateLabel}? This cannot be undone.`)) {
-      return;
-    }
-    const { error } = await supabase
-      .from('wellness_submissions')
-      .delete()
-      .eq('id', sub.id);
-    if (error) {
-      alert('Failed to delete submission: ' + (error.message || error));
-      return;
-    }
-    // Remove from local state so the row disappears immediately
-    setSubmissions(prev => prev.filter(s => s.id !== sub.id));
-  };
-
-  // Fetch all active wellness tokens
+  // Active wellness tokens — list of athletes who can submit
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -70,95 +58,93 @@ export default function WellnessOverview({ athletes, role }) {
         .select('athlete_id, is_active')
         .eq('is_active', true);
       setTokens(data || []);
-      setLoading(false);
+      setTokensLoading(false);
     })();
   }, []);
 
-  // Athletes that have active wellness
   const activeAthletes = useMemo(() => {
-    const activeIds = new Set((tokens).map(t => t.athlete_id));
-    return athletes.filter(a => activeIds.has(a.id));
+    const ids = new Set(tokens.map(t => t.athlete_id));
+    return athletes.filter(a => ids.has(a.id));
   }, [athletes, tokens]);
 
-  // Auto-select first athlete
   useEffect(() => {
     if (!selectedAthleteId && activeAthletes.length > 0) {
       setSelectedAthleteId(activeAthletes[0].id);
     }
   }, [activeAthletes, selectedAthleteId]);
 
-  // Fetch submissions for selected athlete
-  useEffect(() => {
-    if (!selectedAthleteId) { setSubmissions([]); return; }
-    (async () => {
-      const { data } = await supabase
-        .from('wellness_submissions')
-        .select('*')
-        .eq('athlete_id', selectedAthleteId)
-        .order('submission_date', { ascending: true });
-      setSubmissions(data || []);
-    })();
-  }, [selectedAthleteId]);
+  const { questions, featuredIds, submissions, loading, refresh } = useWellness(selectedAthleteId);
 
-  const selectedAthlete = athletes.find(a => a.id === selectedAthleteId);
+  const sortedSubs = useMemo(
+    () => [...submissions].sort((a, b) => b.submission_date.localeCompare(a.submission_date)),
+    [submissions]
+  );
 
-  // Stats
+  // Featured first, the rest folded under a "show more" toggle so the
+  // page stays scannable when an athlete has 15+ questions selected.
+  const { featuredCharts, otherCharts } = useMemo(() => {
+    const f = [], o = [];
+    for (const q of questions) {
+      if (!isChartable(q)) continue;
+      (featuredIds.has(q.id) ? f : o).push(q);
+    }
+    return { featuredCharts: f, otherCharts: o };
+  }, [questions, featuredIds]);
+
   const stats = useMemo(() => {
-    if (submissions.length === 0) return null;
-    const latest = submissions[submissions.length - 1];
-    const last28 = submissions.filter(s => {
-      const d = new Date(s.submission_date);
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 28);
-      return d >= cutoff;
-    });
-    const avg = (key) => {
-      if (last28.length === 0) return '-';
-      const sum = last28.reduce((a, s) => a + Number(s[key]), 0);
-      return (sum / last28.length).toFixed(1);
-    };
+    if (!sortedSubs.length) return null;
+    const latest = sortedSubs[0];
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 28);
+    const last28 = sortedSubs.filter(s => new Date(s.submission_date) >= cutoff);
     return {
       lastDate: formatDate(latest.submission_date),
-      avgSleep: avg('sleep_duration'),
-      avgFatigue: avg('fatigue'),
-      avgStress: avg('stress'),
+      total: sortedSubs.length,
+      last28Count: last28.length,
     };
-  }, [submissions]);
+  }, [sortedSubs]);
 
-  // Flagging for table rows
-  const rollingStats = useMemo(() => computeRollingStats(submissions), [submissions]);
-
-  const isRowFlagged = (sub) => {
-    for (const key of METRIC_KEYS) {
-      if (isTier1Flagged(key, Number(sub[key]))) return true;
+  // Row-level RAG: any cell red = row red; else any amber = amber.
+  function rowRag(sub) {
+    let worst = null;
+    for (const q of questions) {
+      const c = getRagColour(sub.responses?.[q.id], q);
+      if (c === 'red')   return 'red';
+      if (c === 'amber') worst = 'amber';
     }
-    return false;
+    return worst;
+  }
+
+  const handleDelete = async (sub) => {
+    if (!window.confirm(`Delete the ${formatDate(sub.submission_date)} entry? This cannot be undone.`)) return;
+    const { error } = await supabase.from('wellness_responses').delete().eq('id', sub.id);
+    if (error) { alert('Failed to delete: ' + error.message); return; }
+    refresh();
   };
 
-  const displaySubs = [...submissions].reverse();
-
-  if (loading) {
+  if (tokensLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div
-          className="w-8 h-8 rounded-full border-4 animate-spin"
-          style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: '#A58D69' }}
-        />
+        <div className="w-8 h-8 rounded-full border-4 animate-spin"
+          style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: '#A58D69' }} />
       </div>
     );
   }
+
+  const selectedAthlete = athletes.find(a => a.id === selectedAthleteId);
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="px-8 pt-8 pb-6">
         <h1 className="text-2xl font-bold text-gray-900">Wellness</h1>
-        <p className="text-sm text-gray-500 mt-1">Overview of athlete wellness submissions</p>
+        <p className="text-sm text-gray-500 mt-1">Daily check-in submissions from the athlete app.</p>
       </div>
 
       {activeAthletes.length === 0 ? (
         <div className="px-8 py-20 text-center">
           <p className="text-gray-400">No athletes have wellness tracking activated.</p>
-          <p className="text-sm text-gray-400 mt-1">Activate tracking from an athlete's Wellness tab.</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Activate the Athlete App on an athlete's Overview tab to enable wellness.
+          </p>
         </div>
       ) : (
         <div className="px-8 pb-8 space-y-6">
@@ -179,82 +165,120 @@ export default function WellnessOverview({ athletes, role }) {
             </select>
           </div>
 
-          {selectedAthlete && submissions.length === 0 && (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-7 h-7 rounded-full border-4 animate-spin"
+                style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: '#A58D69' }} />
+            </div>
+          ) : selectedAthlete && sortedSubs.length === 0 ? (
             <div className="py-16 text-center">
               <p className="text-gray-400">No submissions yet for this athlete.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Once they complete a daily check-in in the app it will appear here.
+              </p>
             </div>
-          )}
-
-          {selectedAthlete && submissions.length > 0 && (
+          ) : selectedAthlete && (
             <>
               {/* Summary cards */}
               {stats && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatCard label="Last submission" value={stats.lastDate} />
-                  <StatCard label="Avg sleep (28d)" value={`${stats.avgSleep} hrs`} />
-                  <StatCard label="Avg fatigue (28d)" value={stats.avgFatigue} sub="1 low - 7 high" />
-                  <StatCard label="Avg stress (28d)" value={stats.avgStress} sub="1 low - 7 high" />
+                  <StatCard label="Last submission"  value={stats.lastDate} />
+                  <StatCard label="Total submissions" value={stats.total} />
+                  <StatCard label="In last 28 days"   value={stats.last28Count} />
+                  <StatCard label="Questions sent"    value={questions.length} />
+                </div>
+              )}
+
+              {/* Trends */}
+              {(featuredCharts.length + otherCharts.length) > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Trends &amp; Rolling Averages
+                  </h3>
+                  {featuredCharts.map(q => (
+                    <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                  ))}
+                  {otherCharts.length > 0 && (
+                    <details className="mb-2">
+                      <summary className="text-xs font-semibold text-gray-500 cursor-pointer py-2 hover:text-gray-700">
+                        Show {otherCharts.length} more chart{otherCharts.length === 1 ? '' : 's'}
+                      </summary>
+                      <div className="mt-2">
+                        {otherCharts.map(q => (
+                          <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
               )}
 
               {/* Submission log */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Submission Log</h3>
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr style={{ backgroundColor: '#f9fafb' }}>
-                        <th className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                        {METRIC_KEYS.map(k => (
-                          <th key={k} className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wider">
-                            {METRIC_LABELS[k]}
-                          </th>
-                        ))}
-                        {canDelete && <th className="w-8" />}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displaySubs.map((sub) => {
-                        const flagged = isRowFlagged(sub);
-                        return (
-                          <tr
-                            key={sub.id}
-                            className="group border-t border-gray-100"
-                            style={flagged ? { backgroundColor: '#fef2f2' } : {}}
-                          >
-                            <td className="px-3 py-2 font-medium text-gray-700">
-                              {formatDate(sub.submission_date)}
-                            </td>
-                            {METRIC_KEYS.map(k => (
-                              <td key={k} className="px-3 py-2">
-                                <CellValue metric={k} value={sub[k]} />
-                              </td>
+                {questions.length === 0 ? (
+                  <div className="rounded-xl p-6 bg-white border border-gray-100">
+                    <p className="text-xs text-gray-400">
+                      This athlete has no active questions selected.
+                      Add some via their profile's Wellness tab.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl overflow-hidden border border-gray-100 bg-white">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ backgroundColor: '#f9fafb' }}>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wider sticky left-0"
+                              style={{ backgroundColor: '#f9fafb' }}>
+                              Date
+                            </th>
+                            {questions.map(q => (
+                              <th key={q.id}
+                                title={q.label}
+                                className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                                {shortLabel(q.label)}
+                              </th>
                             ))}
-                            {canDelete && (
-                              <td className="px-2 py-2 text-right">
-                                <button
-                                  onClick={() => handleDeleteSubmission(sub)}
-                                  title="Delete submission"
-                                  className="p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </td>
-                            )}
+                            {canDelete && <th className="w-8" />}
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Charts */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Trends</h3>
-                {METRIC_KEYS.map(key => (
-                  <WellnessChart key={key} submissions={submissions} metric={key} />
-                ))}
+                        </thead>
+                        <tbody>
+                          {sortedSubs.map(sub => {
+                            const rag = rowRag(sub);
+                            const rowBg = rag === 'red'   ? '#fef2f2'
+                                         : rag === 'amber' ? '#fffbeb'
+                                         : '#fff';
+                            return (
+                              <tr key={sub.id} className="group border-t border-gray-100"
+                                style={{ backgroundColor: rowBg }}>
+                                <td className="px-3 py-2 font-medium text-gray-700 sticky left-0"
+                                  style={{ backgroundColor: rowBg }}>
+                                  {formatDate(sub.submission_date)}
+                                </td>
+                                {questions.map(q => (
+                                  <td key={q.id} className="px-3 py-2">
+                                    <CellValue question={q} value={sub.responses?.[q.id]} />
+                                  </td>
+                                ))}
+                                {canDelete && (
+                                  <td className="px-2 py-2 text-right">
+                                    <button
+                                      onClick={() => handleDelete(sub)}
+                                      title="Delete submission"
+                                      className="p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

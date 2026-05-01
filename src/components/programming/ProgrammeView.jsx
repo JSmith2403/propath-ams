@@ -15,6 +15,7 @@ import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
+import AthleteWeekView  from './AthleteWeekView';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
 import {
@@ -123,17 +124,18 @@ export default function ProgrammeView({
   const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
 
   // ── Athlete block builder state (Brief 5a) ──────────────────────────────
-  // builderState = null | { loading: true, blockId } | { draft, blockId }
+  // builderState = null | { loading: true, blockId, focusSessionTempId? }
+  //              | { draft, blockId, focusSessionTempId? }
   const [builderState,   setBuilderState]   = useState(null);
   const [builderError,   setBuilderError]   = useState(null);
   const [confirmDelete,  setConfirmDelete]  = useState(null); // block from builder
 
-  const openBlockBuilder = async (block) => {
+  const openBlockBuilder = async (block, opts = {}) => {
     setBuilderError(null);
-    setBuilderState({ loading: true, blockId: block.id });
+    setBuilderState({ loading: true, blockId: block.id, focusSessionTempId: opts.focusSessionTempId });
     const res = await loadAthleteBlock(block.id);
     if (res.ok) {
-      setBuilderState({ loading: false, blockId: block.id, draft: res.draft });
+      setBuilderState({ loading: false, blockId: block.id, draft: res.draft, focusSessionTempId: opts.focusSessionTempId });
     } else {
       setBuilderState(null);
       showToast(`Couldn't open block. ${res.error?.message || ''}`.trim(), 'error');
@@ -394,6 +396,21 @@ export default function ProgrammeView({
             style={{ borderColor: '#e5e7eb', borderTopColor: '#A58D69' }}
           />
         </div>
+      ) : viewMode === 'week' ? (
+        <AthleteWeekView
+          athlete={athlete}
+          viewDate={viewDate}
+          onChangeDate={setViewDate}
+          onChangeView={setViewMode}
+          onClickPlanned={(planned) => {
+            const target = blocks.find(b => b.id === planned.block_id);
+            if (!target) return;
+            // Open the builder focused on this specific session — all
+            // other sessions in the block start collapsed so the coach
+            // lands on what they clicked.
+            openBlockBuilder(target, { focusSessionTempId: `sess-${planned.block_session_id}` });
+          }}
+        />
       ) : (
         <ProgrammeCalendar
           viewMode={viewMode}
@@ -461,6 +478,7 @@ export default function ProgrammeView({
           parentLocked
           athleteMode
           contextSubtitle={athlete.name}
+          focusSessionTempId={builderState.focusSessionTempId}
           onSave={handleBuilderSave}
           onClose={closeBuilder}
           onEditDetails={canEdit ? handleBuilderEditDetails : null}

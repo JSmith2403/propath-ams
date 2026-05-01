@@ -343,7 +343,7 @@ export default function AthleteProfile({
           />
         );
       case 'wellness':
-        return <WellnessTab athlete={localAthlete} />;
+        return <WellnessTab athlete={localAthlete} role={role} />;
       case 'report':
         return (
           <ReportTab

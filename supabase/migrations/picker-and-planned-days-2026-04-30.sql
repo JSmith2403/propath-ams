@@ -62,6 +62,21 @@ CREATE INDEX IF NOT EXISTS idx_step_notes_section
   ON session_step_notes(section_id)
   WHERE section_id IS NOT NULL;
 
+-- 3. exercise_week_prescriptions.override_exercise_id
+-- Brief 5d/5e follow-up — supports mid-block exercise swaps. When a
+-- coach changes Barbell Back Squat to SL Leg Press from week 3
+-- onwards (e.g. due to athlete injury), the original session_exercise
+-- row is preserved (so weeks 1-2 keep their history) and only the
+-- per-week prescription rows for week >= 3 get override_exercise_id
+-- set to the replacement.
+ALTER TABLE exercise_week_prescriptions
+  ADD COLUMN IF NOT EXISTS override_exercise_id uuid
+  REFERENCES exercise_library(id) ON DELETE RESTRICT;
+
+CREATE INDEX IF NOT EXISTS idx_week_prescriptions_override
+  ON exercise_week_prescriptions(override_exercise_id)
+  WHERE override_exercise_id IS NOT NULL;
+
 -- ─── 2. planned_sessions ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS planned_sessions (
   id               uuid       PRIMARY KEY DEFAULT gen_random_uuid(),

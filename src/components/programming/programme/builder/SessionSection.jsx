@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link2, Link2Off, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Link2, Pencil, Plus, Trash2 } from 'lucide-react';
 import SessionExerciseRow, { ROW_STICKY_WIDTH } from './SessionExerciseRow';
 import NoteRow from './NoteRow';
 
@@ -151,15 +151,6 @@ export default function SessionSection({
             const startsGroup  = step.superset_group_id && (!prevIsExercise || prev.superset_group_id !== step.superset_group_id) && linkedToNext;
             return (
               <div key={step.tempId}>
-                {startsGroup && (
-                  <div
-                    className="sticky left-0 z-10 bg-white flex items-center gap-1.5 pl-3 py-1 mt-1"
-                    style={{ width: ROW_STICKY_WIDTH, minWidth: ROW_STICKY_WIDTH, color: accentColour }}
-                  >
-                    <Link2 size={11} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Superset</span>
-                  </div>
-                )}
                 <SessionExerciseRow
                   exercise={step}
                   accentColour={accentColour}
@@ -212,33 +203,45 @@ export default function SessionSection({
  * not linked, it stays faint and only fully reveals on hover of the
  * gap between rows.
  */
-function SupersetLinkButton({ linked, accentColour, onClick }) {
+function SupersetLinkButton({ linked, onClick }) {
+  // Zero-height connector with the chain circle absolutely positioned
+  // so it OVERLAPS the boundary between row above and row below —
+  // half the circle bleeds into each row, visually joining them.
+  // Rows themselves stay tight together (no gap).
+  const buttonClass = linked
+    ? 'bg-gold-500 border-gold-500 text-white'
+    : 'bg-white border-gray-300 text-gray-500 hover:border-gold-500 hover:text-gold-500';
+
   return (
     <div
-      className="sticky left-0 z-10 group/link flex items-center"
-      style={{ width: ROW_STICKY_WIDTH, minWidth: ROW_STICKY_WIDTH, height: 14 }}
+      className="sticky left-0 relative pointer-events-none"
+      style={{
+        width: ROW_STICKY_WIDTH,
+        minWidth: ROW_STICKY_WIDTH,
+        height: 0,
+        // Higher than the rows' sticky z-10 so the chain stays on top
+        // when the next row paints into the same stacking context.
+        zIndex: 30,
+      }}
     >
-      <div className="pl-[18px] flex items-center" style={{ width: 30 }}>
-        {linked ? (
-          <div
-            className="w-[3px] self-stretch"
-            style={{ height: 14, backgroundColor: accentColour, borderRadius: 2 }}
-          />
-        ) : null}
-      </div>
       <button
         onClick={onClick}
-        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider transition-all ${
-          linked ? 'opacity-100' : 'opacity-60 hover:opacity-100'
-        }`}
+        className={`absolute rounded-full flex items-center justify-center transition-colors duration-150 ease-soft shadow-xs pointer-events-auto ${buttonClass}`}
         style={{
-          color: linked ? '#fff' : accentColour,
-          backgroundColor: linked ? accentColour : 'rgba(67,126,141,0.10)',
+          left: '50%',
+          // Half the button's height (22 / 2 = 11) so it centres
+          // exactly on the row boundary — half above, half below.
+          top: -11,
+          transform: 'translateX(-50%)',
+          width: 22, height: 22,
+          borderWidth: 1.5,
+          borderStyle: 'solid',
+          zIndex: 30,
         }}
         title={linked ? 'Unlink superset' : 'Link as superset with next exercise'}
+        aria-label={linked ? 'Unlink superset' : 'Link as superset with next exercise'}
       >
-        {linked ? <Link2 size={10} /> : <Link2Off size={10} />}
-        {linked ? 'Linked' : 'Link'}
+        <Link2 size={10} strokeWidth={2} />
       </button>
     </div>
   );

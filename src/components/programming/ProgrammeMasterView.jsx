@@ -369,33 +369,10 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
           </div>
 
           <div className="flex-1 min-w-0 space-y-4">
-            {/* Per-athlete timeline rows */}
-            {timelineRows.length > 0 && (
-              <section className="space-y-1.5">
-                <h3
-                  className="text-[10px] font-bold uppercase tracking-widest"
-                  style={{ color: '#9ca3af' }}
-                >
-                  Block Timeline
-                </h3>
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {timelineRows.map(row => (
-                    <BlockTimelineBar
-                      key={row.athlete.id}
-                      blocks={row.blocks}
-                      canEdit={canEdit}
-                      onAdd={null /* Surface 2: no add */}
-                      onClickBlock={openBlockEdit}
-                      onHoverRange={setHighlightRange}
-                      onAddWeek={handleAddWeek}
-                      onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
-                      rowLabel={row.athlete.name}
-                      rowBackground={tintForColour(row.colour, 0.10)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+            {/* Per-athlete block timeline removed from Shared Calendar
+                — coach uses the individual athlete's profile to manage
+                blocks. Stays on the per-athlete (ProgrammeView)
+                surface above the month/week calendar. */}
 
             {eventsLoading ? (
               <div className="flex items-center justify-center py-20">

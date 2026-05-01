@@ -1,37 +1,15 @@
 import { lazy, Suspense, useState } from 'react';
+import { TabBar } from '../ui';
 
 const TemplatesTab = lazy(() => import('./programme/TemplatesTab'));
 const BuildTab     = lazy(() => import('./programme/BuildTab'));
 const AssignTab    = lazy(() => import('./programme/AssignTab'));
 
 const SUBTABS = [
-  { id: 'templates', label: 'Templates' },
   { id: 'build',     label: 'Build'     },
+  { id: 'templates', label: 'Templates' },
   { id: 'assign',    label: 'Assign'    },
 ];
-
-// Sub-tab bar — matches Physical Development sub-tab styling.
-function SubTabBar({ active, onChange }) {
-  return (
-    <div className="border-b border-gray-200 mb-6 no-print">
-      <div className="flex">
-        {SUBTABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
-            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
-            style={{
-              color: active === t.id ? '#A58D69' : '#6b7280',
-              borderBottom: active === t.id ? '2px solid #A58D69' : '2px solid transparent',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SubTabLoader() {
   return (
@@ -57,7 +35,7 @@ function SubTabLoader() {
  * open during the session.
  */
 export default function ProgrammeModule() {
-  const [subTab, setSubTab] = useState('templates');
+  const [subTab, setSubTab] = useState('build');
   // tick increments whenever a template is created or deleted, so the
   // Templates and Assign sub-tabs re-fetch the list when the user
   // navigates back to them.
@@ -76,7 +54,7 @@ export default function ProgrammeModule() {
           </p>
         </div>
 
-        <SubTabBar active={subTab} onChange={setSubTab} />
+        <TabBar tabs={SUBTABS} active={subTab} onChange={setSubTab} className="mb-6 no-print" />
 
         <Suspense fallback={<SubTabLoader />}>
           {subTab === 'templates' && <TemplatesTab tick={tick} onChange={bumpTick} />}

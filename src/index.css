@@ -3,13 +3,33 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    /* Smoother optical sizing of Inter at body sizes */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    font-size: 14px;
+    line-height: 20px;
+    color: #1C1C1C;
     background-color: #f4f5f7;
   }
 
   * {
     box-sizing: border-box;
+  }
+
+  /* Consistent default focus ring across all interactive elements.
+     Components can override but by default this gives every button,
+     link and input the same gold-tinted halo. */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(165, 141, 105, 0.30);
+    border-radius: 4px;
   }
 }
 

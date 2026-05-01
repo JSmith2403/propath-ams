@@ -5,10 +5,10 @@ import { useBlockTemplates } from '../../../hooks/useBlockTemplates';
 import { applyBlockTemplate } from '../../../utils/programmeTemplates';
 
 /**
- * Lightweight athlete fetch — Assign only needs id, name, cohort, and
- * the programming_active flag. The heavy useAthletes hook pulls
- * real-time subscriptions and a large reference-data import we don't
- * need here.
+ * Lightweight athlete fetch — Assign needs id, name, cohort, and a
+ * sense of whether programming is currently on (purely for the inline
+ * "off" badge, NOT for filtering — assigning a template auto-activates
+ * programming for that athlete).
  */
 function useAthleteOptions() {
   const [athletes, setAthletes] = useState([]);
@@ -19,12 +19,16 @@ function useAthleteOptions() {
       const [{ data: athleteRows, error: aErr },
              { data: settingsRows, error: sErr }] = await Promise.all([
         supabase.from('athletes').select('id, data').order('id', { ascending: true }),
-        supabase.from('programming_settings').select('athlete_id, is_active').eq('is_active', true),
+        // The programming_settings column is `programming_active`, not
+        // `is_active` — earlier query was wrong, hid every athlete.
+        supabase.from('programming_settings').select('athlete_id, programming_active'),
       ]);
       if (cancelled) return;
       if (aErr) console.error('[Assign] athletes fetch failed', aErr);
       if (sErr) console.error('[Assign] programming_settings fetch failed', sErr);
-      const activeIds = new Set((settingsRows || []).map(r => r.athlete_id));
+      const activeIds = new Set(
+        (settingsRows || []).filter(r => r.programming_active).map(r => r.athlete_id),
+      );
       const list = (athleteRows || []).map(row => {
         const tier   = row.data?.tier || '';
         const cohort = row.data?.cohort
@@ -86,11 +90,12 @@ export default function AssignTab({ tick }) {
   const [busy,       setBusy]       = useState(false);
   const [result,     setResult]     = useState(null);
 
+  // Show every athlete regardless of programming-active state.
+  // Assigning a template auto-activates programming for that athlete
+  // so the per-athlete calendar starts surfacing the planned sessions
+  // immediately.
   const sortedAthletes = useMemo(() =>
-    (athletes || [])
-      .filter(a => a.active)
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    (athletes || []).slice().sort((a, b) => a.name.localeCompare(b.name)),
     [athletes],
   );
 
@@ -148,8 +153,21 @@ export default function AssignTab({ tick }) {
         startDate,
         intendedDays,
       });
-      if (res.ok) ok++;
-      else { fail++; errors.push(res.error?.message || 'unknown'); }
+      if (res.ok) {
+        ok++;
+        // Auto-activate programming for this athlete so the planned
+        // sessions immediately render on their calendar. Upsert via
+        // the unique (athlete_id) constraint — safe to run repeatedly.
+        const { error: settingsErr } = await supabase
+          .from('programming_settings')
+          .upsert({ athlete_id: aid, programming_active: true }, { onConflict: 'athlete_id' });
+        if (settingsErr) {
+          console.warn('[Assign] programming_settings upsert failed for', aid, settingsErr);
+        }
+      } else {
+        fail++;
+        errors.push(res.error?.message || 'unknown');
+      }
     }
     setBusy(false);
     if (fail === 0) {
@@ -241,7 +259,7 @@ export default function AssignTab({ tick }) {
       <Step number="2" title="Select athletes" complete={athleteIds.size > 0}>
         {sortedAthletes.length === 0 ? (
           <p className="text-xs" style={{ color: '#9ca3af' }}>
-            No athletes have programming active. Activate programming on an athlete's profile (Physical Development → Programme) first.
+            No athletes in the roster yet.
           </p>
         ) : (
           <div className="space-y-3">
@@ -275,13 +293,25 @@ export default function AssignTab({ tick }) {
                       <button
                         key={a.id}
                         onClick={() => setAthleteIds(prev => toggleSet(prev, a.id))}
-                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors"
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors inline-flex items-center gap-1"
                         style={{
                           backgroundColor: checked ? '#437E8D' : '#f3f4f6',
                           color:           checked ? '#fff'    : '#1C1C1C',
                         }}
+                        title={a.active ? '' : 'Programming will be activated when you apply this template.'}
                       >
                         {a.name}
+                        {!a.active && (
+                          <span
+                            className="text-[8px] uppercase tracking-wider px-1 py-0.5 rounded-sm"
+                            style={{
+                              backgroundColor: checked ? 'rgba(255,255,255,0.20)' : '#fff',
+                              color:           checked ? '#fff' : '#9ca3af',
+                            }}
+                          >
+                            off
+                          </span>
+                        )}
                       </button>
                     );
                   })}

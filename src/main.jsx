@@ -5,6 +5,7 @@ import App from './App.jsx'
 import './index.css'
 
 const WellnessFormPage = lazy(() => import('./components/wellness/WellnessFormPage.jsx'))
+const AthleteAppPage   = lazy(() => import('./components/athlete-app/AthleteAppPage.jsx'))
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -15,6 +16,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           element={
             <Suspense fallback={null}>
               <WellnessFormPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/athlete/:token"
+          element={
+            <Suspense fallback={null}>
+              <AthleteAppPage />
             </Suspense>
           }
         />

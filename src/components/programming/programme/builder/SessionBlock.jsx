@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2, Copy } from 'lucide-react';
 import SessionSection from './SessionSection';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import { colourForSection } from '../../../../utils/sectionColours';
@@ -7,34 +7,33 @@ import { colourForSection } from '../../../../utils/sectionColours';
 /**
  * SessionBlock — one full session in the vertical stack.
  *
- * Shows:
- *  - Sticky-left collapsible header (Session N · count · weeks)
- *  - Sticky-left session-level notes
- *  - Week column header row
- *  - All sections (with their exercise rows + add-exercise)
- *  - Sticky-left "+ Add section" button
+ * Visually a card: white surface, subtle border + shadow, generous
+ * vertical padding. The card spans the full content width (sticky-left
+ * 360px + N × week_col_width) and lives inside the modal's tinted
+ * scroll area so the cards "lift" off the background.
  *
- * Sessions are separated by a thick top border + generous spacing
- * (handled by the parent BlockBuilderModal).
+ * Sticky-left header carries the session name, exercise count, and
+ * the row of action buttons (collapse · duplicate · delete).
  */
 export default function SessionBlock({
   session,
   index,
   totalSessions,
   weeks,
-  // session-level
+  isRecent = false,           // Phase 2: triggers a brief gold highlight
   onRenameSession,
   onUpdateNotes,
   onRemoveSession,
+  onDuplicateSession,         // Phase 2: new action
   // section-level
   onAddSection,
   onRenameSection,
   onDeleteSection,
   // exercise-level
-  onRequestAddExercise, // (sectionId) => void — opens side-panel picker
+  onRequestAddExercise,
   onUpdateExercise,
   onRemoveExercise,
-  onToggleSuperset, // (sectionId, exId, nextExId) → from parent
+  onToggleSuperset,
   // dnd
   onExerciseDragStart,
   onExerciseDrop,
@@ -45,12 +44,16 @@ export default function SessionBlock({
   isSectionDropTarget,
   onSectionDragEnter,
   onSectionDragLeave,
+  defaultCollapsed = false,
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [renaming,  setRenaming]  = useState(false);
   const [draftName, setDraftName] = useState(session.name);
 
-  const exerciseCount = session.sections.reduce((n, s) => n + s.exercises.length, 0);
+  const exerciseCount = session.sections.reduce(
+    (n, s) => n + s.exercises.filter(e => e.kind !== 'note').length,
+    0
+  );
   const minWidth = ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH;
 
   const commitRename = () => {
@@ -61,94 +64,132 @@ export default function SessionBlock({
 
   return (
     <div
-      className="group/session"
+      className={`group/session ${isRecent ? 'animate-fade-in-up' : ''}`}
       style={{
         minWidth,
-        borderTop: index === 0 ? 'none' : '1px solid #e5e7eb',
-        paddingTop: index === 0 ? 24 : 48,
-        paddingBottom: collapsed ? 24 : 32,
+        // Card chrome
+        backgroundColor: '#fff',
+        border: '1px solid #e5e7eb',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(15,15,15,0.05)',
+        // Spacing between cards
+        margin: '20px 24px',
+        marginTop: index === 0 ? 24 : 20,
+        marginBottom: index === totalSessions - 1 ? 0 : 20,
+        overflow: 'hidden',
+        // Brief gold halo on newly added/duplicated sessions
+        animation: isRecent ? 'sessionHighlight 1500ms ease-out' : undefined,
       }}
     >
-      {/* Session header (sticky-left) */}
+      {/* ── Session header ────────────────────────────────────────────────
+          Outer bar paints the full session-card width (matches the row
+          minWidth) so the header reads as a full-width strip even on
+          long sessions / many weeks. The interactive content (chevron,
+          title, counter, actions) lives inside a sticky-left container
+          that stays visible as the coach scrolls horizontally. */}
       <div
-        className="sticky left-0 z-20 bg-white flex items-center gap-3 pl-4 pr-6 py-1"
-        style={{ width: ROW_STICKY_WIDTH + 60, minWidth: ROW_STICKY_WIDTH + 60 }}
+        className="relative"
+        style={{
+          minWidth,
+          backgroundColor: '#fafafa',
+          borderBottom: collapsed ? 'none' : '1px solid #f3f4f6',
+        }}
       >
-        <button
-          onClick={() => setCollapsed(c => !c)}
-          className="p-1 rounded hover:bg-gray-100 text-gray-400 shrink-0"
-          title={collapsed ? 'Expand' : 'Collapse'}
+        <div
+          className="sticky left-0 z-20 flex items-center gap-3 pl-4 pr-4 py-3.5"
+          style={{
+            // Wide enough for long session names. Anything longer
+            // truncates with the title's flex-1.
+            width: ROW_STICKY_WIDTH + 360,
+            minWidth: ROW_STICKY_WIDTH + 360,
+            backgroundColor: '#fafafa',
+          }}
         >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-        </button>
-        {renaming ? (
-          <input
-            autoFocus
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              else if (e.key === 'Escape') { setDraftName(session.name); setRenaming(false); }
-            }}
-            className="text-[18px] font-bold bg-transparent border-0 focus:outline-none"
-            style={{ color: '#1C1C1C' }}
-          />
-        ) : (
           <button
-            onClick={() => setRenaming(true)}
-            className="group/sname flex items-center gap-2"
-            title="Rename session"
+            onClick={() => setCollapsed(c => !c)}
+            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 shrink-0 transition-colors"
+            title={collapsed ? 'Expand' : 'Collapse'}
           >
-            <span className="text-[18px] font-bold" style={{ color: '#1C1C1C' }}>
-              {session.name}
+            {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+          </button>
+
+          {renaming ? (
+            <input
+              autoFocus
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                else if (e.key === 'Escape') { setDraftName(session.name); setRenaming(false); }
+              }}
+              className="text-h3 bg-transparent border-0 focus:outline-none flex-1 min-w-0"
+              style={{ color: '#1C1C1C' }}
+            />
+          ) : (
+            <button
+              onClick={() => setRenaming(true)}
+              className="group/sname flex items-center gap-2 flex-1 min-w-0 text-left"
+              title="Rename session"
+            >
+              <span className="text-h3 truncate" style={{ color: '#1C1C1C' }}>
+                {session.name}
+              </span>
+              <Pencil size={12} className="opacity-0 group-hover/sname:opacity-50 transition-opacity shrink-0" style={{ color: '#6b7280' }} />
+            </button>
+          )}
+
+          {/* Right cluster — counter + always-visible actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-meta" style={{ color: '#9ca3af' }}>
+              {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'}
             </span>
-            <Pencil size={12} className="opacity-0 group-hover/sname:opacity-50 transition-opacity" style={{ color: '#6b7280' }} />
-          </button>
-        )}
-        <span className="text-[12px] shrink-0" style={{ color: '#9ca3af' }}>
-          · {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'}
-        </span>
-
-        <div className="flex-1" />
-
-        {totalSessions > 1 && (
-          <button
-            onClick={onRemoveSession}
-            className="opacity-0 group-hover/session:opacity-60 hover:opacity-100 p-1 rounded hover:bg-gray-100 transition-all shrink-0"
-            style={{ color: '#9ca3af' }}
-            title="Remove session"
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
+            {onDuplicateSession && (
+              <button
+                onClick={onDuplicateSession}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                title="Duplicate session"
+              >
+                <Copy size={14} />
+              </button>
+            )}
+            {totalSessions > 1 && (
+              <button
+                onClick={onRemoveSession}
+                className="p-1.5 rounded-md hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors"
+                title="Remove session"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {!collapsed && (
         <>
           {/* Session-level notes (sticky-left) */}
           <div
-            className="sticky left-0 z-10 bg-white pl-12 pr-6 mt-1"
-            style={{ width: ROW_STICKY_WIDTH + 60, minWidth: ROW_STICKY_WIDTH + 60 }}
+            className="sticky left-0 z-10 bg-white pl-12 pr-6 pt-3 pb-2"
+            style={{ width: ROW_STICKY_WIDTH + 360, minWidth: ROW_STICKY_WIDTH + 360 }}
           >
             <textarea
               value={session.notes || ''}
               onChange={(e) => onUpdateNotes(e.target.value)}
               rows={1}
-              className="w-full text-[12px] focus:outline-none resize-none placeholder:italic bg-transparent"
+              className="w-full text-meta focus:outline-none resize-none placeholder:italic bg-transparent"
               style={{ color: '#6b7280' }}
               placeholder="Session-level notes — coach cues, focus, anything…"
             />
           </div>
 
-          {/* Week column header — matches WeekCell border weights so the
-              grid lines run continuously from header through values. */}
+          {/* Week column header */}
           <div
-            className="flex items-stretch mt-3"
-            style={{ minWidth, borderBottom: '1px solid #e5e7eb' }}
+            className="flex items-stretch mt-2"
+            style={{ minWidth, borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #e5e7eb' }}
           >
             <div
-              className="sticky left-0 z-10 bg-white flex items-center pl-4 pr-3 py-2 text-[10px] font-bold uppercase tracking-widest"
+              className="sticky left-0 z-10 bg-white flex items-center pl-4 pr-3 py-2 text-micro font-bold uppercase"
               style={{
                 width: ROW_STICKY_WIDTH,
                 minWidth: ROW_STICKY_WIDTH,
@@ -165,7 +206,7 @@ export default function SessionBlock({
                 return (
                   <div
                     key={wk}
-                    className="flex items-center justify-center py-2 text-[10px] font-bold uppercase tracking-widest"
+                    className="flex items-center justify-center py-2 text-micro font-bold uppercase"
                     style={{
                       width: WEEK_COL_WIDTH,
                       color: '#6b7280',
@@ -181,7 +222,7 @@ export default function SessionBlock({
           </div>
 
           {/* Sections */}
-          <div className="pt-2" style={{ minWidth }}>
+          <div className="pt-2 pb-4" style={{ minWidth }}>
             {session.sections.map((sec, i) => (
               <SessionSection
                 key={sec.tempId}
@@ -209,12 +250,12 @@ export default function SessionBlock({
 
             {/* + Add section (sticky-left) */}
             <div
-              className="sticky left-0 z-10 bg-white pl-3 mt-6"
+              className="sticky left-0 z-10 bg-white pl-3 mt-5"
               style={{ width: ROW_STICKY_WIDTH, minWidth: ROW_STICKY_WIDTH }}
             >
               <button
                 onClick={onAddSection}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded transition-colors hover:bg-gray-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-meta font-semibold rounded-md transition-colors hover:bg-teal-50"
                 style={{ color: '#437E8D', border: '1px dashed #437E8D' }}
               >
                 + Add section
@@ -223,6 +264,15 @@ export default function SessionBlock({
           </div>
         </>
       )}
+
+      {/* Inline keyframe — keeps animation token co-located with the
+          component that uses it; avoids polluting the global stylesheet. */}
+      <style>{`
+        @keyframes sessionHighlight {
+          0%   { box-shadow: 0 0 0 3px rgba(165,141,105,0.45), 0 1px 3px rgba(15,15,15,0.05); }
+          100% { box-shadow: 0 0 0 0   rgba(165,141,105,0),    0 1px 3px rgba(15,15,15,0.05); }
+        }
+      `}</style>
     </div>
   );
 }

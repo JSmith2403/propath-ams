@@ -2,92 +2,101 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
- * Manages wellness token + submissions for a single athlete.
- * Used by WellnessTab in the athlete profile.
+ * Single-athlete wellness hook for the coach side.
+ *
+ * Reads from the new model:
+ *   - wellness_question_library  (global question catalogue)
+ *   - athlete_wellness_questions (per-athlete selections + featured)
+ *   - wellness_responses         (jsonb keyed by question_id)
+ *   - wellness_tokens            (whether the athlete app accepts wellness)
+ *
+ * Returns the athlete's selected questions, every submission they've
+ * made (oldest first), and a refresh callback.
  */
 export function useWellness(athleteId) {
-  const [tokenData, setTokenData] = useState(null);  // { id, token, is_active } | null
-  const [submissions, setSubmissions] = useState([]); // sorted oldest-first
-  const [loading, setLoading] = useState(true);
+  const [tokenData,    setTokenData]    = useState(null);   // { id, token, is_active } | null
+  const [questions,    setQuestions]    = useState([]);     // selected library rows for this athlete
+  const [featuredIds,  setFeaturedIds]  = useState(new Set());
+  const [submissions,  setSubmissions]  = useState([]);     // wellness_responses rows
+  const [loading,      setLoading]      = useState(true);
 
-  // Fetch token
-  const fetchToken = useCallback(async () => {
-    if (!athleteId) return;
-    const { data } = await supabase
-      .from('wellness_tokens')
-      .select('id, token, is_active')
-      .eq('athlete_id', athleteId)
-      .maybeSingle();
-    setTokenData(data || null);
+  const fetchAll = useCallback(async () => {
+    if (!athleteId) {
+      setTokenData(null); setQuestions([]); setFeaturedIds(new Set()); setSubmissions([]);
+      return;
+    }
+    const [
+      { data: token },
+      { data: selections },
+      { data: library },
+      { data: responses },
+    ] = await Promise.all([
+      supabase.from('wellness_tokens')
+        .select('id, token, is_active').eq('athlete_id', athleteId).maybeSingle(),
+      supabase.from('athlete_wellness_questions')
+        .select('question_id, is_featured').eq('athlete_id', athleteId),
+      supabase.from('wellness_question_library')
+        .select('*').eq('is_active', true).order('display_order', { ascending: true }),
+      supabase.from('wellness_responses')
+        .select('*').eq('athlete_id', athleteId)
+        .order('submission_date', { ascending: true }),
+    ]);
+
+    const libById = Object.fromEntries((library || []).map(q => [q.id, q]));
+    const selIds  = new Set((selections || []).map(s => s.question_id));
+    const feat    = new Set((selections || []).filter(s => s.is_featured).map(s => s.question_id));
+    const qs      = (library || []).filter(q => selIds.has(q.id)); // already in display_order
+
+    setTokenData(token || null);
+    setQuestions(qs);
+    setFeaturedIds(feat);
+    setSubmissions(responses || []);
   }, [athleteId]);
 
-  // Fetch submissions (oldest first for chart/stats)
-  const fetchSubmissions = useCallback(async () => {
-    if (!athleteId) return;
-    const { data } = await supabase
-      .from('wellness_submissions')
-      .select('*')
-      .eq('athlete_id', athleteId)
-      .order('submission_date', { ascending: true });
-    setSubmissions(data || []);
-  }, [athleteId]);
-
-  // Initial load
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([fetchToken(), fetchSubmissions()]);
+      await fetchAll();
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [fetchToken, fetchSubmissions]);
+  }, [fetchAll]);
 
-  // Activate — generate a new token or reactivate existing one
+  // Activate / deactivate kept for backwards compat with the old
+  // Wellness tab toggle (now driven by the Athlete App switch on
+  // the Overview tab, but the hook still exposes them in case any
+  // surface needs a manual override).
   const activateWellness = useCallback(async () => {
     try {
       if (tokenData) {
-        const { error } = await supabase
-          .from('wellness_tokens')
-          .update({ is_active: true })
-          .eq('id', tokenData.id);
-        if (error) throw error;
+        await supabase.from('wellness_tokens').update({ is_active: true }).eq('id', tokenData.id);
       } else {
-        const newToken = crypto.randomUUID();
-        const { error } = await supabase
-          .from('wellness_tokens')
-          .insert({ athlete_id: athleteId, token: newToken, is_active: true });
-        if (error) throw error;
+        await supabase.from('wellness_tokens').insert({
+          athlete_id: athleteId, token: crypto.randomUUID(), is_active: true,
+        });
       }
-      await fetchToken();
+      await fetchAll();
     } catch (err) {
       console.error('[Wellness] activate failed:', err);
       alert('Failed to activate wellness tracking: ' + (err.message || err));
     }
-  }, [athleteId, tokenData, fetchToken]);
+  }, [athleteId, tokenData, fetchAll]);
 
-  // Deactivate
   const deactivateWellness = useCallback(async () => {
     if (!tokenData) return;
-    const { error } = await supabase
-      .from('wellness_tokens')
-      .update({ is_active: false })
-      .eq('id', tokenData.id);
-    if (error) console.error('[Wellness] deactivate error:', error);
-    await fetchToken();
-  }, [tokenData, fetchToken]);
-
-  // Refresh submissions (call after data changes)
-  const refreshSubmissions = useCallback(async () => {
-    await fetchSubmissions();
-  }, [fetchSubmissions]);
+    await supabase.from('wellness_tokens').update({ is_active: false }).eq('id', tokenData.id);
+    await fetchAll();
+  }, [tokenData, fetchAll]);
 
   return {
     tokenData,
+    questions,
+    featuredIds,
     submissions,
     loading,
+    refresh: fetchAll,
     activateWellness,
     deactivateWellness,
-    refreshSubmissions,
   };
 }

@@ -63,6 +63,7 @@ export default function BlockBuilderModal({
   onSaveAsTemplate,     // (draft) => Promise<{ok, error?}> — save current draft as a new template
   onDeleteBlock,        // () => void — confirm + delete block
   contextSubtitle,      // optional text under the block name (e.g. athlete name)
+  focusSessionTempId,   // optional — collapse all other sessions on open
 }) {
   const [draft, setDraft] = useState(() => initialDraft || defaultDraft());
   const [saving, setSaving] = useState(false);
@@ -140,8 +141,52 @@ export default function BlockBuilderModal({
     });
   };
 
+  // Track newly-added session so we can briefly highlight it.
+  const [recentSessionId, setRecentSessionId] = useState(null);
+  useEffect(() => {
+    if (!recentSessionId) return;
+    const t = setTimeout(() => setRecentSessionId(null), 1600);
+    return () => clearTimeout(t);
+  }, [recentSessionId]);
+
   const addSession = () => {
-    setDraft(d => ({ ...d, sessions: [...d.sessions, defaultSession(d.sessions.length)] }));
+    const next = defaultSession(/* idx */ 0);
+    next.name = `Session ${/* numeric label */ 0 + 1}`;
+    setDraft(d => {
+      const idx = d.sessions.length;
+      const fresh = defaultSession(idx);
+      setRecentSessionId(fresh.tempId);
+      return { ...d, sessions: [...d.sessions, fresh] };
+    });
+  };
+
+  const duplicateSession = (idx) => {
+    setDraft(d => {
+      const src = d.sessions[idx];
+      if (!src) return d;
+      // Deep-clone with fresh tempIds so React keys + DB ids stay distinct.
+      const copy = {
+        ...src,
+        tempId: tempId('sess'),
+        name: `${src.name} (copy)`,
+        sections: src.sections.map(sec => ({
+          ...sec,
+          tempId: tempId('sec'),
+          exercises: sec.exercises.map(ex => ({
+            ...ex,
+            tempId: tempId(ex.kind === 'note' ? 'note' : 'ex'),
+            // Strip any persisted ids so the next save creates new rows.
+            id: undefined,
+            // Reset superset linkage — coach can re-link if they want.
+            superset_group_id: null,
+            week_prescriptions: (ex.week_prescriptions || []).map(wp => ({ ...wp, id: undefined })),
+          })),
+        })),
+      };
+      setRecentSessionId(copy.tempId);
+      const sessions = [...d.sessions.slice(0, idx + 1), copy, ...d.sessions.slice(idx + 1)];
+      return { ...d, sessions };
+    });
   };
 
   const removeSession = (idx) => {
@@ -573,8 +618,9 @@ export default function BlockBuilderModal({
           </div>
         </div>
 
-        {/* Body — vertical stack of sessions, single shared horizontal scroll */}
-        <div className="flex-1 overflow-auto">
+        {/* Body — vertical stack of session cards, single shared horizontal scroll.
+            Background tint makes the white session cards pop. */}
+        <div className="flex-1 overflow-auto" style={{ backgroundColor: '#f4f5f7' }}>
           {draft.sessions.map((sess, idx) => (
             <SessionBlock
               key={sess.tempId}
@@ -582,9 +628,12 @@ export default function BlockBuilderModal({
               index={idx}
               totalSessions={draft.sessions.length}
               weeks={weeks}
+              defaultCollapsed={!!focusSessionTempId && sess.tempId !== focusSessionTempId}
+              isRecent={recentSessionId === sess.tempId}
               onRenameSession={(name) => renameSession(idx, name)}
               onUpdateNotes={(notes) => updateSessionNotes(idx, notes)}
               onRemoveSession={() => removeSession(idx)}
+              onDuplicateSession={() => duplicateSession(idx)}
               onAddSection={() => addSectionToSession(idx)}
               onRenameSection={(secId, name) => renameSectionInSession(idx, secId, name)}
               onDeleteSection={(secId) => deleteSectionInSession(idx, secId)}
@@ -609,16 +658,16 @@ export default function BlockBuilderModal({
 
           {/* + Add session (sticky-left, bottom) */}
           <div
-            className="sticky left-0 z-10 bg-white pl-6 py-8"
-            style={{ width: ROW_STICKY_WIDTH + 60, minWidth: ROW_STICKY_WIDTH + 60 }}
+            className="sticky left-0 z-10 px-6 py-6"
+            style={{ width: ROW_STICKY_WIDTH + 60, minWidth: ROW_STICKY_WIDTH + 60, backgroundColor: '#f4f5f7' }}
           >
             <button
               onClick={addSession}
               disabled={draft.sessions.length >= MAX_SESSIONS}
-              className="flex items-center gap-1.5 px-4 py-2 text-[12px] font-semibold rounded transition-colors hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ color: '#A58D69', border: '1px dashed #A58D69' }}
+              className="w-full flex items-center justify-center gap-2 py-3.5 text-body font-semibold rounded-lg bg-white border-2 border-dashed transition-all hover:border-gold-500 hover:text-gold-600 hover:shadow-card disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none active:scale-[0.99]"
+              style={{ color: '#A58D69', borderColor: '#d1d5db' }}
             >
-              <Plus size={13} />
+              <Plus size={16} />
               Add session
             </button>
           </div>

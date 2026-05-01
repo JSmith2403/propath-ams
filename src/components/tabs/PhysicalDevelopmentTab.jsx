@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { TabBar } from '../ui';
 import WorkingOnSection from '../WorkingOnSection';
 
 // Lazy-load the heavy children — Overview's PillarTab, Testing's
@@ -6,36 +7,14 @@ import WorkingOnSection from '../WorkingOnSection';
 const PillarTab             = lazy(() => import('./PillarTab'));
 const PerformanceTestingTab = lazy(() => import('./PerformanceTestingTab'));
 const ProgrammeView         = lazy(() => import('../programming/ProgrammeView'));
+const LoggedSessionsTab     = lazy(() => import('./LoggedSessionsTab'));
 
 const SUBTABS = [
   { id: 'overview',  label: 'Overview'  },
   { id: 'programme', label: 'Programme' },
+  { id: 'logged',    label: 'Logged Sessions' },
   { id: 'testing',   label: 'Testing'   },
 ];
-
-// Mirrors the top-level TabBar styling (gold underline, gray inactive)
-// but slightly more compact so it reads as a secondary nav.
-function SubTabBar({ active, onChange }) {
-  return (
-    <div className="border-b border-gray-200 mb-6 no-print">
-      <div className="flex">
-        {SUBTABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
-            className="relative px-4 py-2.5 text-sm font-medium transition-colors"
-            style={{
-              color: active === t.id ? '#A58D69' : '#6b7280',
-              borderBottom: active === t.id ? '2px solid #A58D69' : '2px solid transparent',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SubTabLoader() {
   return (
@@ -86,7 +65,7 @@ export default function PhysicalDevelopmentTab({
 }) {
   return (
     <div>
-      <SubTabBar active={subTab} onChange={onChangeSubTab} />
+      <TabBar tabs={SUBTABS} active={subTab} onChange={onChangeSubTab} className="mb-6 no-print" />
 
       <Suspense fallback={<SubTabLoader />}>
         {subTab === 'overview' && (
@@ -115,6 +94,10 @@ export default function PhysicalDevelopmentTab({
             athlete={athlete}
             role={role}
           />
+        )}
+
+        {subTab === 'logged' && (
+          <LoggedSessionsTab athlete={athlete} />
         )}
 
         {subTab === 'testing' && (

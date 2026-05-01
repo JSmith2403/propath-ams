@@ -1,9 +1,17 @@
 import { useState } from 'react';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, Trash2, Clock } from 'lucide-react';
 import WeekCell from './WeekCell';
 import LoadingPopover from './LoadingPopover';
 import ExerciseSearchDropdown from './ExerciseSearchDropdown';
 import { cascadeWk1Edit, isInheritedFromWk1 } from './loadingPatterns';
+
+// Format rest_seconds as a compact human label: 90s → "1:30", 180 → "3:00".
+function fmtRest(s) {
+  if (s == null || s <= 0) return null;
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}:${String(sec).padStart(2, '0')}` : `${sec}s`;
+}
 
 const PRESCRIPTION_OPTIONS = [
   { value: 'kg',            label: 'kg' },
@@ -91,6 +99,17 @@ export default function SessionExerciseRow({
     onChange({ week_prescriptions: next });
   };
 
+  // Rest is per-week in the data model; surface the Wk1 value as the
+  // "default" badge on the row. If multiple weeks have varying rest,
+  // we still show the Wk1 figure — the LoadingPopover handles per-week
+  // adjustments.
+  const restLabel = fmtRest(wk1?.rest_seconds);
+
+  // Tinted background for supersetted rows so the link reads visually.
+  const bgClass = (linkedToPrev || linkedToNext)
+    ? 'bg-[rgba(165,141,105,0.04)] group-hover:bg-[rgba(165,141,105,0.08)]'
+    : 'bg-white group-hover:bg-[#FAFAFA]';
+
   return (
     <div
       draggable
@@ -99,19 +118,24 @@ export default function SessionExerciseRow({
       onDrop={onDrop}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
-      className="group flex items-stretch transition-colors hover:bg-[#FAFAFA]"
+      className={`group flex items-stretch transition-colors ${
+        (linkedToPrev || linkedToNext) ? 'hover:bg-[rgba(165,141,105,0.06)]' : 'hover:bg-[#FAFAFA]'
+      }`}
       style={{
         borderTop: isDropTarget ? '2px solid #437E8D' : '2px solid transparent',
       }}
     >
       {/* Sticky-left fixed area */}
       <div
-        className="sticky left-0 z-10 bg-white group-hover:bg-[#FAFAFA] flex items-stretch gap-2.5 pl-3 pr-3 py-2.5"
+        className={`sticky left-0 z-10 ${bgClass} flex items-stretch gap-2.5 pl-3 pr-3 py-3.5`}
         style={{
           width: ROW_STICKY_WIDTH,
           minWidth: ROW_STICKY_WIDTH,
           borderRight: '1px solid #e5e7eb',
-          borderBottom: '1px solid #f3f4f6',
+          // Suppress the row divider when this row chains into the next
+          // — the SupersetLinkButton + breathing gap below carries the
+          // visual separation.
+          borderBottom: linkedToNext ? 'none' : '1px solid #f3f4f6',
         }}
       >
         <div
@@ -121,12 +145,13 @@ export default function SessionExerciseRow({
           <GripVertical size={14} />
         </div>
 
+        {/* Accent stripe — wider when supersetted so the chain reads clearly */}
         <div
           className="shrink-0 self-stretch"
           style={{
             width: linkedToPrev || linkedToNext ? 4 : 3,
             borderRadius: linkedToPrev || linkedToNext ? 0 : 2,
-            backgroundColor: accentColour,
+            backgroundColor: linkedToPrev || linkedToNext ? '#A58D69' : accentColour,
           }}
         />
 
@@ -146,22 +171,19 @@ export default function SessionExerciseRow({
               <button
                 type="button"
                 onClick={() => setReplacing(true)}
-                className="text-[15px] font-medium truncate text-left hover:underline decoration-dotted underline-offset-4"
+                className="text-body font-semibold truncate text-left hover:underline decoration-dotted underline-offset-4"
                 style={{ color: '#1C1C1C' }}
                 title="Click to replace exercise"
               >
                 {exercise.exercise_name}
               </button>
-              {exercise.bilateral_unilateral === 'unilateral' && (
-                <span className="text-[10px] shrink-0" style={{ color: '#9ca3af' }}>uni</span>
-              )}
             </div>
           )}
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             <select
               value={ptype}
               onChange={(e) => onChange({ prescription_type: e.target.value })}
-              className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border-0 focus:outline-none cursor-pointer appearance-none"
+              className="text-micro font-semibold uppercase px-2 py-0.5 rounded-full border-0 focus:outline-none cursor-pointer appearance-none"
               style={{
                 color: '#437E8D',
                 backgroundColor: 'rgba(67,126,141,0.08)',
@@ -173,6 +195,17 @@ export default function SessionExerciseRow({
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+
+            {restLabel && (
+              <span
+                className="inline-flex items-center gap-1 text-micro font-semibold uppercase px-2 py-0.5 rounded-full"
+                style={{ color: '#52525b', backgroundColor: 'rgba(15,15,15,0.05)' }}
+                title={`Rest: ${restLabel}`}
+              >
+                <Clock size={10} />
+                {restLabel}
+              </span>
+            )}
 
             {weeks > 1 && (
               <LoadingPopover
@@ -186,7 +219,7 @@ export default function SessionExerciseRow({
               value={exercise.notes || ''}
               onChange={(e) => onChange({ notes: e.target.value })}
               placeholder="+ Add note"
-              className="flex-1 min-w-[60px] text-[12px] italic focus:outline-none placeholder:italic bg-transparent"
+              className="flex-1 min-w-[60px] text-meta italic focus:outline-none placeholder:italic bg-transparent"
               style={{ color: '#6b7280' }}
             />
           </div>
@@ -194,11 +227,11 @@ export default function SessionExerciseRow({
 
         <button
           onClick={onRemove}
-          className="self-start mt-0.5 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-100 transition-opacity shrink-0"
+          className="self-start mt-0.5 opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-50 hover:text-red-500 transition-all shrink-0"
           style={{ color: '#9ca3af' }}
           title="Remove exercise"
         >
-          <Trash2 size={12} />
+          <Trash2 size={13} />
         </button>
       </div>
 

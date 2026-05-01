@@ -981,6 +981,55 @@ export async function applyBlockTemplate({
   return { ok: true, trainingBlockId: tb.id };
 }
 
+/**
+ * Replace an athlete's exercise from a given week onwards. Sets
+ * `override_exercise_id` on every exercise_week_prescriptions row for
+ * the target session_exercise where week_number >= fromWeek. Past
+ * weeks (and any weeks already overridden to a different exercise)
+ * are left alone unless caller explicitly requests overwrite.
+ *
+ * @param {object} args
+ * @param {string} args.sessionExerciseId  the original session_exercises row
+ * @param {number} args.fromWeek           inclusive — apply to week >= fromWeek
+ * @param {string} args.newExerciseId      exercise_library.id of the replacement
+ *
+ * Returns { ok, updated } or { ok: false, error }.
+ */
+export async function replaceExerciseFromWeek({ sessionExerciseId, fromWeek, newExerciseId }) {
+  if (!sessionExerciseId) return { ok: false, error: new Error('Missing session_exercise_id.') };
+  if (!newExerciseId)     return { ok: false, error: new Error('Missing replacement exercise.') };
+  if (!Number.isFinite(fromWeek) || fromWeek < 1) {
+    return { ok: false, error: new Error('fromWeek must be a positive integer.') };
+  }
+  const { data, error } = await supabase
+    .from('exercise_week_prescriptions')
+    .update({ override_exercise_id: newExerciseId })
+    .eq('session_exercise_id', sessionExerciseId)
+    .gte('week_number', fromWeek)
+    .select();
+  if (error) return { ok: false, error };
+  return { ok: true, updated: data?.length || 0 };
+}
+
+/**
+ * Clear an active replacement, restoring the original exercise from a
+ * given week onwards.
+ */
+export async function clearExerciseOverrideFromWeek({ sessionExerciseId, fromWeek }) {
+  if (!sessionExerciseId) return { ok: false, error: new Error('Missing session_exercise_id.') };
+  if (!Number.isFinite(fromWeek) || fromWeek < 1) {
+    return { ok: false, error: new Error('fromWeek must be a positive integer.') };
+  }
+  const { data, error } = await supabase
+    .from('exercise_week_prescriptions')
+    .update({ override_exercise_id: null })
+    .eq('session_exercise_id', sessionExerciseId)
+    .gte('week_number', fromWeek)
+    .select();
+  if (error) return { ok: false, error };
+  return { ok: true, updated: data?.length || 0 };
+}
+
 // ─── Date helper ───────────────────────────────────────────────────────
 // Returns the ISO date string of the Monday on/before the given ISO
 // date. Operates in UTC to dodge timezone wobble.

@@ -3,6 +3,7 @@ import { Star, Trash2 } from 'lucide-react';
 import { RAG_CONFIG } from '../../data/athletes';
 import { renderBold } from '../../utils/renderBold';
 import WordCounter from '../WordCounter';
+import { Card } from '../ui';
 
 const RAG_OPTIONS = ['green', 'amber', 'red', 'grey'];
 const DEFAULT_ENTRY_TYPES = ['Assessment', 'Check-in', 'Observation'];
@@ -171,8 +172,7 @@ export default function PillarTab({
 
   // JSX blocks used in conditional order (noteFormFirst swaps history vs add-note)
   const historyBlock = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5"
-      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <Card padding="lg">
       <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">
         Notes Log
         {logEntries.length > 0 && (
@@ -198,7 +198,7 @@ export default function PillarTab({
           ))}
         </>
       )}
-    </div>
+    </Card>
   );
 
   // Full-width stacked RAG button.
@@ -233,8 +233,7 @@ export default function PillarTab({
   const lastNote = sorted[0] || null;
 
   const addNoteBlock = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col h-full"
-      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <Card padding="lg" className="flex flex-col h-full">
       <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Add Note</h2>
 
       <div className="space-y-3 flex-1 flex flex-col">
@@ -307,13 +306,12 @@ export default function PillarTab({
           </button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 
   // Status panel block — left card in the 30/70 row.
   const statusPanel = (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col h-full"
-      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <Card padding="lg" className="flex flex-col h-full">
       <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Status</h2>
 
       {/* Current RAG value — large */}
@@ -358,7 +356,7 @@ export default function PillarTab({
           <p className="text-xs italic text-gray-400">No notes yet.</p>
         )}
       </div>
-    </div>
+    </Card>
   );
 
   return (

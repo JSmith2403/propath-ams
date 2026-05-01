@@ -1,4 +1,4 @@
-const COLOURS = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444' };
+const COLOURS = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444', grey: '#9ca3af' };
 
 /**
  * A small SVG donut ring for a single wellness metric.
