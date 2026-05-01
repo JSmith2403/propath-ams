@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Plus, Timer, CheckCircle2, Check, Minus, Share2, ArrowLeft } from 'lucide-react';
+import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3 } from 'lucide-react';
 import { useSessionLogger } from '../../hooks/useSessionLogger';
 import { tintForLetter } from '../../utils/letterTints';
 import { parsePrescription } from '../../utils/prescriptionRender';
@@ -53,6 +53,10 @@ export default function SessionLogger({ session, athleteId, onClose }) {
   const [finishedRpe,        setFinishedRpe]        = useState(null);
   const [finishedDuration,   setFinishedDuration]   = useState(null);
   const [finishedReflection, setFinishedReflection] = useState(null);
+  // Snapshot of stats taken BEFORE finish() runs, because the hook's
+  // refresh() empties `sets` once completed_at is stamped (it only
+  // queries open logs).
+  const [finishedStats,      setFinishedStats]      = useState(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -108,6 +112,9 @@ export default function SessionLogger({ session, athleteId, onClose }) {
           totalLogged={totalLogged}
           onCancel={() => setPhase('logging')}
           onConfirm={async ({ rpe, durationMinutes, reflection }) => {
+            // Snapshot stats from current sets BEFORE finish() runs
+            // (which fires refresh() that empties `sets`).
+            setFinishedStats(computeSummaryStats(sets));
             const ok = await finish(rpe, durationMinutes, reflection);
             if (!ok) return;
             setFinishedRpe(rpe);
@@ -125,8 +132,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
       <Overlay>
         <SummaryPanel
           session={session}
-          sets={sets}
-          exercises={exercises}
+          stats={finishedStats}
           rpe={finishedRpe}
           durationMinutes={finishedDuration}
           reflection={finishedReflection}
@@ -404,56 +410,62 @@ function RpePanel({ elapsed, missing, totalExpected, totalLogged, onCancel, onCo
   );
 }
 
-// ── Post-session summary screen ───────────────────────────────────────────
-function SummaryPanel({ session, sets, exercises, rpe, durationMinutes, reflection, onBackHome, onEdit }) {
-  // Compute stats from logged sets only.
-  const stats = useMemo(() => {
-    let totalVolume = 0;
-    let totalSets   = 0;
-    let totalReps   = 0;
-    let weightSeen  = false;
-    const exIdsWithLogs = new Set();
-    for (const s of sets) {
-      totalSets += 1;
-      if (s.session_exercise_id) exIdsWithLogs.add(s.session_exercise_id);
-      const r = Number(s.reps) || 0;
-      const w = Number(s.weight_kg) || 0;
-      totalReps += r;
-      if (w > 0) {
-        weightSeen = true;
-        totalVolume += w * r;
-      }
+// Pure helper — used by the SessionLogger before finish() to snapshot
+// stats while `sets` is still populated. Exposed at module scope for
+// future use by the share-image render in Phase E.
+function computeSummaryStats(sets) {
+  let totalVolume = 0;
+  let totalSets   = 0;
+  let totalReps   = 0;
+  let weightSeen  = false;
+  const exIdsWithLogs = new Set();
+  for (const s of sets || []) {
+    totalSets += 1;
+    if (s.session_exercise_id) exIdsWithLogs.add(s.session_exercise_id);
+    const r = Number(s.reps) || 0;
+    const w = Number(s.weight_kg) || 0;
+    totalReps += r;
+    if (w > 0) {
+      weightSeen = true;
+      totalVolume += w * r;
     }
-    return {
-      totalVolume,
-      hasWeight: weightSeen,
-      exercises: exIdsWithLogs.size,
-      sets: totalSets,
-      reps: totalReps,
-    };
-  }, [sets]);
+  }
+  return {
+    totalVolume,
+    hasWeight: weightSeen,
+    exercises: exIdsWithLogs.size,
+    sets: totalSets,
+    reps: totalReps,
+  };
+}
 
-  const dateLabel = new Date().toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  });
+// ── Post-session summary screen ───────────────────────────────────────────
+//
+// Designed for shareability: hero, single anchor stat, secondary grid,
+// optional reflection, brand mark in the same light frame. The whole
+// shareable region is captured into a PNG by the share button.
+function SummaryPanel({ session, stats, rpe, durationMinutes, reflection, onBackHome, onEdit }) {
+  const safeStats = stats || { totalVolume: 0, hasWeight: false, exercises: 0, sets: 0, reps: 0 };
+
   const sessionTitle = (session.session_name || 'Session').replace(/\s+[—–]\s+/g, ': ');
   const subTitle = session.week_number != null
     ? `Week ${session.week_number}` + (session.session_order != null ? ` · Day ${session.session_order + 1}` : '')
     : null;
 
+  const heroStat = safeStats.hasWeight
+    ? { label: 'Total Volume', value: safeStats.totalVolume.toLocaleString('en-GB'), unit: 'kg' }
+    : { label: 'Total Reps',   value: String(safeStats.reps),                         unit: 'reps' };
+
+  // Ref kept for parity with previous structure; export feature was
+  // removed (see commit notes — deferred to a later phase).
+  const cardRef = useRef(null);
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-ink-50">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-ink-100 bg-white">
-        <button
-          onClick={() => alert('Sharing coming in the next update.')}
-          aria-label="Share"
-          className="p-2 -ml-2 text-ink-500 hover:text-gold-600 transition-colors"
-          style={{ minWidth: 44, minHeight: 44 }}
-        >
-          <Share2 size={18} />
-        </button>
-        <p className="text-micro font-bold uppercase text-ink-400">Session complete</p>
+      <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-ink-100">
+        <span style={{ minWidth: 44, minHeight: 44 }} aria-hidden="true" />
+        <p className="text-micro font-bold uppercase tracking-widest text-ink-400">Session complete</p>
         <button
           onClick={onBackHome}
           aria-label="Close"
@@ -464,56 +476,85 @@ function SummaryPanel({ session, sets, exercises, rpe, durationMinutes, reflecti
         </button>
       </div>
 
-      {/* Hero */}
-      <div className="bg-white px-4 pt-5 pb-3 text-center border-b border-ink-100">
-        <h1 className="text-h1 text-ink-900 leading-tight">{sessionTitle}</h1>
-        {subTitle && (
-          <p className="text-meta uppercase tracking-wider font-bold mt-1.5 text-ink-400">{subTitle}</p>
-        )}
-      </div>
-
-      {/* Stats grid */}
-      <div className="px-4 py-5 grid grid-cols-2 gap-3 bg-ink-50 flex-1">
-        <StatTile
-          label="Total Volume"
-          value={stats.hasWeight ? `${stats.totalVolume.toLocaleString('en-GB')}` : '—'}
-          unit={stats.hasWeight ? 'kg' : null}
-        />
-        <StatTile label="Exercises" value={String(stats.exercises)} />
-        <StatTile label="Sets"      value={String(stats.sets)} />
-        <StatTile label="Reps"      value={String(stats.reps)} />
-        <StatTile
-          label="Duration"
-          value={durationMinutes != null ? String(durationMinutes) : '—'}
-          unit={durationMinutes != null ? 'min' : null}
-        />
-        <StatTile
-          label="Intensity"
-          value={rpe != null ? String(rpe) : '—'}
-          unit={rpe != null ? '/ 10' : null}
-        />
-
-        {reflection && (
-          <div className="col-span-2 mt-1 rounded-lg p-4 bg-white border border-ink-100">
-            <p className="text-micro font-bold uppercase mb-1.5 text-ink-400">Reflection</p>
-            <p className="text-body italic text-ink-700 leading-relaxed">"{reflection}"</p>
+      {/* ── In-app summary card — mirrors the 1080×1920 export design ──── */}
+      <div ref={cardRef} className="bg-white flex-1">
+        {/* Hero */}
+        <div className="px-5 pt-7 pb-5 text-center">
+          <div className="w-14 h-14 rounded-full bg-gold-50 flex items-center justify-center mx-auto mb-3"
+            style={{ boxShadow: '0 0 0 6px rgba(165,141,105,0.08)' }}>
+            <CheckCircle2 size={28} className="text-gold-600" strokeWidth={2.4} />
           </div>
-        )}
-      </div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-gold-600 mb-2">
+            You finished
+          </p>
+          <h1 className="text-h1 text-ink-900 leading-tight px-2">{sessionTitle}</h1>
+          {subTitle && (
+            <p className="text-[11px] uppercase tracking-[0.24em] font-semibold mt-2 text-ink-400">{subTitle}</p>
+          )}
+        </div>
 
-      {/* ProPath logo footer */}
-      <div className="bg-ink-900 px-4 py-6 flex flex-col items-center gap-1">
-        <img src={logoBlack} alt="ProPath" style={{ height: 28, filter: 'invert(0.85) sepia(1) saturate(2) hue-rotate(5deg)' }} />
-        <p className="text-micro uppercase tracking-widest text-gold-500">ProPath Performance</p>
-        <p className="text-[10px] text-ink-500 mt-0.5">{dateLabel}</p>
+        {/* Hero stat — light cream card with centred dumbbell tile */}
+        <div className="px-4">
+          <div className="rounded-xl px-5 py-5 text-center"
+            style={{ backgroundColor: '#faf7f2', border: '1px solid #f1eadc' }}>
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-2.5"
+              style={{ backgroundColor: 'rgba(165,141,105,0.18)' }}>
+              <Dumbbell size={22} className="text-gold-600" />
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-ink-500 mb-1">
+              {heroStat.label}
+            </p>
+            <div className="flex justify-center items-baseline gap-1.5">
+              <span className="text-display font-bold tabular-nums leading-none text-ink-900">
+                {heroStat.value}
+              </span>
+              <span className="text-body font-bold text-gold-600">{heroStat.unit}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Secondary stats — centred-icon-above tiles */}
+        <div className="px-4 pt-3 pb-3 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <CentreStat icon={Layers}    label="Exercises" value={String(safeStats.exercises)} />
+            <CentreStat icon={BarChart3} label="Sets"      value={String(safeStats.sets)} />
+            <CentreStat icon={Repeat}    label="Reps"      value={String(safeStats.reps)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <CentreStat
+              icon={Clock} label="Duration"
+              value={durationMinutes != null ? String(durationMinutes) : '—'}
+              unit={durationMinutes != null ? 'min' : null}
+            />
+            <CentreStat
+              icon={Flame} label="Intensity"
+              value={rpe != null ? String(rpe) : '—'}
+              unit={rpe != null ? '/ 10' : null}
+              valueColor={rpe != null ? rpeColour(rpe) : undefined}
+            />
+          </div>
+        </div>
+
+        {/* Brand mark — proper black logo, no dark band, no border */}
+        <div className="px-5 pt-8 pb-6 flex flex-col items-center gap-2 text-center">
+          <img
+            src={logoBlack}
+            alt="ProPath"
+            style={{ height: 56, width: 'auto', display: 'block' }}
+          />
+          <p className="text-[10px] uppercase tracking-[0.32em] font-semibold text-teal-600">
+            People . Performance . Pathways
+          </p>
+        </div>
       </div>
+      {/* ── End in-app card ─────────────────────────────────────────────── */}
 
       {/* Bottom actions */}
-      <div className="px-4 py-4 bg-white border-t border-ink-100 flex flex-col gap-2 sticky bottom-0">
+      <div className="px-4 py-3 bg-white border-t border-ink-100 flex flex-col gap-1 mt-auto">
         <button
           onClick={onBackHome}
-          className="w-full rounded-lg py-3.5 text-body font-bold bg-gold-500 text-white hover:bg-gold-600 active:scale-[0.99] transition-all"
-          style={{ minHeight: 52 }}
+          className="w-full rounded-lg py-3.5 text-body font-bold bg-gold-500 text-white hover:bg-gold-600 active:scale-[0.99] transition-all shadow-xs"
+          style={{ minHeight: 50 }}
         >
           Back to home
         </button>
@@ -524,20 +565,37 @@ function SummaryPanel({ session, sets, exercises, rpe, durationMinutes, reflecti
           <ArrowLeft size={13} /> Edit session
         </button>
       </div>
+
     </div>
   );
 }
 
-function StatTile({ label, value, unit }) {
+// In-app stat tile — centred icon above label and value.
+function CentreStat({ icon: Icon, label, value, unit, valueColor }) {
   return (
-    <div className="rounded-lg p-4 bg-white border border-ink-100">
-      <p className="text-micro font-bold uppercase text-ink-400 mb-1.5">{label}</p>
-      <div className="flex items-baseline gap-1">
-        <span className="text-h1 font-bold text-ink-900 tabular-nums leading-none">{value}</span>
-        {unit && <span className="text-meta text-ink-500 font-semibold">{unit}</span>}
+    <div className="rounded-xl bg-white border border-ink-100 px-3 py-3.5 text-center shadow-card">
+      <Icon size={16} className="text-ink-400 mx-auto mb-1.5" />
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-500 mb-1">{label}</p>
+      <div className="flex justify-center items-baseline gap-1">
+        <span
+          className="text-h2 font-bold tabular-nums leading-none"
+          style={{ color: valueColor || '#1C1C1C' }}
+        >
+          {value}
+        </span>
+        {unit && <span className="text-caption text-ink-500 font-semibold">{unit}</span>}
       </div>
     </div>
   );
+}
+
+// Match the gradient slider's colour ramp so Intensity reads visually.
+function rpeColour(rpe) {
+  if (rpe <= 2) return '#22c55e';
+  if (rpe <= 4) return '#84cc16';
+  if (rpe <= 6) return '#facc15';
+  if (rpe <= 8) return '#f59e0b';
+  return '#ef4444';
 }
 
 function ExerciseLogger({ exercise, index, upNext, sets, onLog, onDelete }) {
