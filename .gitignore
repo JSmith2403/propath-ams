@@ -40,3 +40,23 @@ Thumbs.db
 
 # Vite cache
 .vite/
+
+# Local DB backups — contain real athlete PII, NEVER commit
+backups/
+!backups/.keep
+
+# Local CLI binaries
+.bin/
+
+# One-off import scripts and CSVs
+bolton-exercise-library-1.csv
+hossunit-template.mjs
+import_bolton.mjs
+import_bolton.py
+env_diagnostic.ps1
+security_audit.ps1
+security_remediation.ps1
+
+# Stage 1 deploy operational scratch — local only
+stage1_execution_prompt.md
+supabase/.temp/
