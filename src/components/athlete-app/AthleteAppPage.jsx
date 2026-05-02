@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import TabBar from './TabBar';
 import TrainingTab from './TrainingTab';
+import InstallPrompt from '../InstallPrompt';
 
 // Wellness + Readiness are no longer surfaced as tabs. Wellness lives
 // on the home (Training) screen; Readiness is deferred for v1.
@@ -118,6 +119,7 @@ export default function AthleteAppPage() {
         {/* Bottom tab bar */}
         <TabBar active={activeTab} onChange={setActive} />
       </div>
+      <InstallPrompt />
     </div>
   );
 }

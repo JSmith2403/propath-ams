@@ -7,6 +7,7 @@ import SessionTracker from './components/SessionTracker';
 import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
+import InstallPrompt from './components/InstallPrompt';
 import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -284,6 +285,7 @@ export default function App() {
         userName={userName}
         signOut={signOut}
       />
+      <InstallPrompt />
     </>
   );
 }
