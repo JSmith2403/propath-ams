@@ -28,40 +28,33 @@ export default function AthleteAppPage() {
   const [athlete, setAthlete]   = useState(null);
   const [activeTab, setActive]  = useState('train');
 
-  // ── Per-athlete PWA manifest ────────────────────────────────────────────
-  // iOS / Android capture the manifest at "Add to Home Screen" time. The
-  // shipped /manifest.json has start_url "/" — which is wrong for an
-  // athlete installing from their token URL (relaunch dumps them on the
-  // coach login). Swap the manifest <link> with a token-specific blob
-  // before the user taps install. Restored on unmount so other parts of
-  // the app keep using the default manifest.
+  // ── Disable the global PWA manifest on athlete pages ────────────────────
+  // The shipped /manifest.json has start_url "/" so any Add to Home Screen
+  // tap installs the coach login regardless of which URL the athlete tapped
+  // Share from. With no manifest at all, iOS falls back to the *current*
+  // URL as the install target — which is exactly /athlete/<token> for an
+  // athlete on their token page. Apple-touch-icon and the
+  // apple-mobile-web-app-* meta tags in index.html still drive the dark
+  // icon, theme, and standalone display, so install appearance is
+  // unchanged.
+  //
+  // The manifest is restored on unmount so other routes still get PWA
+  // install prompts on Android.
   useEffect(() => {
     if (!token) return;
     const link = document.querySelector('link[rel="manifest"]');
     if (!link) return;
     const originalHref = link.getAttribute('href');
-    let blobUrl = null;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const base = await fetch('/manifest.json').then(r => r.json());
-        if (cancelled) return;
-        const dynamic = {
-          ...base,
-          start_url: `/athlete/${token}`,
-          scope: '/',  // keep scope wide so any internal nav stays in-app
-        };
-        const blob = new Blob([JSON.stringify(dynamic)], { type: 'application/json' });
-        blobUrl = URL.createObjectURL(blob);
-        link.setAttribute('href', blobUrl);
-      } catch (_) { /* keep the default manifest on failure */ }
-    })();
-
+    link.parentNode?.removeChild(link);
     return () => {
-      cancelled = true;
-      if (originalHref) link.setAttribute('href', originalHref);
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      if (!originalHref) return;
+      // Re-add only if it isn't already back (StrictMode double-effects).
+      if (!document.querySelector('link[rel="manifest"]')) {
+        const restored = document.createElement('link');
+        restored.rel  = 'manifest';
+        restored.href = originalHref;
+        document.head.appendChild(restored);
+      }
     };
   }, [token]);
 
