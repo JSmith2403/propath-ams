@@ -1,65 +1,42 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
- * Manages programming_settings for a single athlete.
- * Used by ProgrammeView (Physical Development → Programme sub-tab).
+ * Programming is now always-on for every athlete (Brief: Overview tabs +
+ * Programme weekly view, Part 3). The toggle UI has been removed and the
+ * `programming_settings.programming_active` column has been backfilled to
+ * true for every athlete on LIVE + DEV.
  *
- * On first interaction with the toggle, creates a row in programming_settings
- * for the athlete if none exists. Mirrors the wellness activation pattern.
+ * The hook keeps its public API (isActive, loading, setActive, refresh) so
+ * existing call sites — ProgrammeView, AssignTab, AthleteSidebar — keep
+ * compiling. It just always reports active.
+ *
+ * `setActive` is preserved as a no-op-ish writer: it still upserts the row
+ * (always to true) so any external system that reads the table sees the
+ * row exists, but it ignores the requested value. This is intentional —
+ * Part 3's contract is "always on, the table is just for legacy readers".
  */
 export function useProgrammingSettings(athleteId) {
-  const [settings, setSettings] = useState(null); // { id, programming_active } | null
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
-
-  const fetchSettings = useCallback(async () => {
-    if (!athleteId) { setSettings(null); return; }
-    const { data, error: e } = await supabase
+  const setActive = useCallback(async (_active) => {
+    if (!athleteId) return;
+    // Upsert keeps the row in step with reality even though the toggle
+    // is gone. Always writes true regardless of the requested value.
+    const { error: e } = await supabase
       .from('programming_settings')
-      .select('id, programming_active')
-      .eq('athlete_id', athleteId)
-      .maybeSingle();
-    if (e) setError(e); else setSettings(data || null);
+      .upsert(
+        { athlete_id: athleteId, programming_active: true },
+        { onConflict: 'athlete_id' },
+      );
+    if (e) console.warn('[Programming] setActive upsert failed (non-fatal):', e);
   }, [athleteId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await fetchSettings();
-      if (!cancelled) setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [fetchSettings]);
-
-  const setActive = useCallback(async (active) => {
-    if (!athleteId) return;
-    try {
-      if (settings) {
-        const { error: e } = await supabase
-          .from('programming_settings')
-          .update({ programming_active: active })
-          .eq('id', settings.id);
-        if (e) throw e;
-      } else {
-        const { error: e } = await supabase
-          .from('programming_settings')
-          .insert({ athlete_id: athleteId, programming_active: active });
-        if (e) throw e;
-      }
-      await fetchSettings();
-    } catch (err) {
-      console.error('[Programming] setActive failed:', err);
-      alert('Failed to update programming setting: ' + (err.message || err));
-    }
-  }, [athleteId, settings, fetchSettings]);
+  const refresh = useCallback(async () => { /* no-op — always active */ }, []);
 
   return {
-    isActive: !!settings?.programming_active,
-    loading,
-    error,
+    isActive: true,
+    loading:  false,
+    error:    null,
     setActive,
-    refresh: fetchSettings,
+    refresh,
   };
 }

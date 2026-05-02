@@ -316,50 +316,24 @@ export default function ProgrammeView({
   };
 
   // ── Activation toggle card ──────────────────────────────────────────────
-  const ToggleCard = (
-    <div
-      className="rounded-xl px-5 py-4 flex items-center justify-between"
-      style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
-    >
-      <div>
-        <h3 className="text-sm font-semibold" style={{ color: '#1C1C1C' }}>
-          Programming active for this athlete
-        </h3>
-        {!isActive && !settingsLoading && (
-          <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
-            Enable to start adding events and blocks for this athlete.
-          </p>
-        )}
-      </div>
-      <button
-        onClick={() => canEdit && setActive(!isActive)}
-        disabled={!canEdit || settingsLoading}
-        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        style={{ backgroundColor: isActive ? '#A58D69' : '#d1d5db' }}
-        aria-label="Toggle programming active"
-      >
-        <span
-          className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
-          style={{ transform: isActive ? 'translateX(22px)' : 'translateX(4px)' }}
-        />
-      </button>
-    </div>
-  );
+  // Brief Part 3: programming is always-on. The toggle UI has been
+  // removed from the rendered tree below; the variable is retained as
+  // dead code in case the toggle is ever re-introduced.
+  const ToggleCard = null;
 
   // ── Inactive state ──────────────────────────────────────────────────────
+  // Dead branch under the always-on contract — useProgrammingSettings now
+  // hard-returns isActive: true. Left in place so a future revert is a
+  // one-line hook change rather than a re-add.
   if (!settingsLoading && !isActive) {
     return (
       <div className="space-y-6">
-        {ToggleCard}
         <div
           className="rounded-xl p-12 text-center"
           style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
         >
           <p className="text-sm" style={{ color: '#6b7280' }}>
             Programming is not active for this athlete.
-          </p>
-          <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
-            Enable above to start adding events and blocks.
           </p>
         </div>
       </div>
@@ -370,7 +344,6 @@ export default function ProgrammeView({
   if (settingsLoading) {
     return (
       <div className="space-y-6">
-        {ToggleCard}
         <div className="flex items-center justify-center py-20">
           <div
             className="w-8 h-8 border-2 rounded-full animate-spin"
@@ -384,8 +357,6 @@ export default function ProgrammeView({
   // ── Active state — calendar only (no sidebar on Surface 1) ──────────────
   return (
     <div className="space-y-6">
-      {ToggleCard}
-
       {/* Block timeline above the calendar.
           Click block → session builder for that athlete's snapshot.
           Pencil hover-icon on block → block-details modal (name/dates). */}
