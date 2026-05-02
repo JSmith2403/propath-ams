@@ -314,6 +314,8 @@ export default function OverviewTab({
   // Deep-link out of the Calendar sub-tab when a gym session pill is clicked.
   // Routed via AthleteProfile so it can switch to Physical Dev → Programme → Week.
   onNavigateToProgrammeWeek,
+  // Role gates editing in the Calendar sub-tab.
+  role,
 }) {
   const fileRef = useRef();
   const [cropSrc, setCropSrc] = useState(null);
@@ -353,6 +355,7 @@ export default function OverviewTab({
       {subTab === 'calendar' ? (
         <OverviewCalendar
           athlete={localAthlete}
+          role={role}
           onNavigateToProgrammeWeek={onNavigateToProgrammeWeek}
         />
       ) : (

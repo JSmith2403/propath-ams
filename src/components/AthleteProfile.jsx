@@ -297,6 +297,7 @@ export default function AthleteProfile({
         return (
           <OverviewTab
             athlete={athlete}
+            role={role}
             onUpdate={onUpdate}
             onUpdatePhoto={onUpdatePhoto}
             localAthlete={localAthlete}

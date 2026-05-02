@@ -1,21 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
-import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
-import ProgrammeCalendar, {
-  _parseDate as parseDate,
-  _addDays   as addDays,
-  _dayDiff   as dayDiff,
-  _toISO     as toISO,
-  _formatToastDate as formatToastDate,
-} from './ProgrammeCalendar';
+import { usePlannedSessions } from '../../hooks/usePlannedSessions';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
-import AthleteWeekView  from './AthleteWeekView';
+import ProgrammeWeekList from './ProgrammeWeekList';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
 import {
@@ -82,23 +75,9 @@ export default function ProgrammeView({
     removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
 
-  // Brief 5d/5e — planned training sessions, surfaced as outlined teal
-  // pills on the calendar. Always shown on the per-athlete view (no
-  // filter panel here; coach explicitly opted into this athlete).
+  // Brief 5d/5e — planned training sessions, sourced into the new
+  // week-by-week list (Brief Part 4 replaced the calendar surface).
   const { planned: plannedRows } = usePlannedSessions(athleteIds);
-  const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
-
-  // ── Calendar nav state ──────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState(initialFocus?.viewMode || 'month');
-  const [viewDate, setViewDate] = useState(() => initialFocus?.viewDate || new Date());
-
-  // Re-apply deep-link focus on every nonce bump. Without the nonce a
-  // second click on the same date wouldn't re-trigger the effect.
-  useEffect(() => {
-    if (!initialFocus?.nonce) return;
-    if (initialFocus.viewMode) setViewMode(initialFocus.viewMode);
-    if (initialFocus.viewDate) setViewDate(initialFocus.viewDate);
-  }, [initialFocus?.nonce]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Modal state ─────────────────────────────────────────────────────────
   // event === null means a fresh add. event === { start_date, ... } may carry
@@ -196,10 +175,6 @@ export default function ProgrammeView({
     }
   };
 
-  // Hovered range from the timeline (block-bar hover OR week-pill hover)
-  // both pipe through here so the calendar paints the right tint.
-  const [highlightRange, setHighlightRange] = useState(null);
-
   // Pending week-removal confirmation
   const [removeWeekTarget, setRemoveWeekTarget] = useState(null);
 
@@ -265,30 +240,6 @@ export default function ProgrammeView({
     if (!startCutoff) return competitions;
     return competitions.filter(e => e.start_date >= startCutoff);
   }, [blockModal, events]);
-
-  const handleMoveEvent = async (event, newStartISO) => {
-    if (!canEdit) return;
-    // Team events can't be rescheduled from a per-athlete calendar.
-    if (event.is_team_event) {
-      showToast('Team events are managed from the Shared Calendar.', 'error');
-      return;
-    }
-    const oldStart = parseDate(event.start_date);
-    const oldEnd   = event.end_date ? parseDate(event.end_date) : null;
-    const newStart = parseDate(newStartISO);
-    const duration = oldEnd ? dayDiff(oldEnd, oldStart) : 0;
-    const newEndISO = oldEnd ? toISO(addDays(newStart, duration)) : null;
-
-    const res = await updateEventOptimistic(event.id, {
-      start_date: newStartISO,
-      end_date: newEndISO,
-    });
-    if (res.ok) {
-      showToast(`Event moved to ${formatToastDate(newStartISO)}`);
-    } else {
-      showToast("Couldn't move event — please try again", 'error');
-    }
-  };
 
   const handleSave = async (payload) => {
     setEventSaveError(null);
@@ -366,52 +317,29 @@ export default function ProgrammeView({
         onAdd={openBlockAdd}
         onClickBlock={openBlockBuilder}
         onEditBlockDetails={openBlockEdit}
-        onHoverRange={setHighlightRange}
+        onHoverRange={null}
         onAddWeek={handleAddWeek}
         onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
         showHeading
       />
 
-      {eventsLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <div
-            className="w-8 h-8 border-2 rounded-full animate-spin"
-            style={{ borderColor: '#e5e7eb', borderTopColor: '#A58D69' }}
-          />
-        </div>
-      ) : viewMode === 'week' ? (
-        <AthleteWeekView
-          athlete={athlete}
-          viewDate={viewDate}
-          onChangeDate={setViewDate}
-          onChangeView={setViewMode}
-          onClickPlanned={(planned) => {
-            const target = blocks.find(b => b.id === planned.block_id);
-            if (!target) return;
-            // Open the builder focused on this specific session — all
-            // other sessions in the block start collapsed so the coach
-            // lands on what they clicked.
-            openBlockBuilder(target, { focusSessionTempId: `sess-${planned.block_session_id}` });
-          }}
-        />
-      ) : (
-        <ProgrammeCalendar
-          viewMode={viewMode}
-          onChangeView={setViewMode}
-          viewDate={viewDate}
-          onChangeDate={setViewDate}
-          canEdit={canEdit}
-          athleteContext
-          onAddEvent={openAdd}
-          onAddEventOnDate={openAddOnDate}
-          onMoveEvent={handleMoveEvent}
-          events={[...events, ...plannedEvents]}
-          onClickEvent={openEdit}
-          highlightRange={highlightRange}
-          blocks={blocks}
-          blockColourMap={blockColourMap}
-        />
-      )}
+      {/* Week-by-week list of planned sessions. Replaces the calendar
+          surface (Brief Part 4). Past completed sessions live in the
+          Logged Sessions sub-tab; the current week shows them greyed +
+          ticked; future weeks within 7 days expand by default. */}
+      <ProgrammeWeekList
+        blocks={blocks}
+        plannedRows={plannedRows}
+        loading={blocksLoading}
+        focusDate={initialFocus?.viewDate || null}
+        blockColourMap={blockColourMap}
+        onClickPlanned={(planned) => {
+          const target = blocks.find(b => b.id === planned.block_id);
+          if (!target) return;
+          // Open the builder focused on this specific session.
+          openBlockBuilder(target, { focusSessionTempId: `sess-${planned.block_session_id}` });
+        }}
+      />
 
       {/* Manage Blocks — collapsible secondary list */}
       <BlockList
