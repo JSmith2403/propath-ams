@@ -6,7 +6,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <!-- ── PWA / install ─────────────────────────────────────────────── -->
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="manifest" href="/manifest.json" id="pwa-manifest" />
+    <!--
+      iOS / Android capture the manifest at "Add to Home Screen" time
+      and use its start_url as the install URL. The default manifest
+      points at "/", which is wrong for athletes installing from
+      /athlete/<token>. This inline script runs before any external
+      JS, swapping the manifest <link> to a per-token endpoint that
+      returns start_url=/athlete/<token>. Synchronous so iOS sees the
+      right manifest URL on first paint.
+    -->
+    <script>
+      (function () {
+        try {
+          var m = location.pathname.match(/^\/athlete\/([A-Za-z0-9_-]+)/);
+          if (!m) return;
+          var token = m[1];
+          var link = document.getElementById('pwa-manifest');
+          if (link) link.setAttribute('href', '/api/manifest/' + encodeURIComponent(token));
+        } catch (e) { /* keep default manifest on failure */ }
+      })();
+    </script>
     <meta name="theme-color" content="#1C1C1C" />
 
     <!-- iOS home-screen icons -->

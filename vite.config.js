@@ -27,6 +27,12 @@ export default defineConfig({
             urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.(co|in)\/.*/,
             handler: 'NetworkOnly',
           },
+          {
+            // Per-token PWA manifest endpoint must always hit the network
+            // — caching would defeat the whole point.
+            urlPattern: /\/api\//,
+            handler: 'NetworkOnly',
+          },
         ],
       },
     }),

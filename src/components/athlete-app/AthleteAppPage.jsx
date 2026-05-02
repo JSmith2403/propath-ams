@@ -28,35 +28,12 @@ export default function AthleteAppPage() {
   const [athlete, setAthlete]   = useState(null);
   const [activeTab, setActive]  = useState('train');
 
-  // ── Disable the global PWA manifest on athlete pages ────────────────────
-  // The shipped /manifest.json has start_url "/" so any Add to Home Screen
-  // tap installs the coach login regardless of which URL the athlete tapped
-  // Share from. With no manifest at all, iOS falls back to the *current*
-  // URL as the install target — which is exactly /athlete/<token> for an
-  // athlete on their token page. Apple-touch-icon and the
-  // apple-mobile-web-app-* meta tags in index.html still drive the dark
-  // icon, theme, and standalone display, so install appearance is
-  // unchanged.
-  //
-  // The manifest is restored on unmount so other routes still get PWA
-  // install prompts on Android.
-  useEffect(() => {
-    if (!token) return;
-    const link = document.querySelector('link[rel="manifest"]');
-    if (!link) return;
-    const originalHref = link.getAttribute('href');
-    link.parentNode?.removeChild(link);
-    return () => {
-      if (!originalHref) return;
-      // Re-add only if it isn't already back (StrictMode double-effects).
-      if (!document.querySelector('link[rel="manifest"]')) {
-        const restored = document.createElement('link');
-        restored.rel  = 'manifest';
-        restored.href = originalHref;
-        document.head.appendChild(restored);
-      }
-    };
-  }, [token]);
+  // The PWA manifest <link> for athlete pages is set BEFORE React mounts,
+  // by an inline script in index.html that detects /athlete/<token> in
+  // the URL and points the manifest at /api/manifest/<token>. That
+  // serverless endpoint returns a manifest whose start_url is the
+  // athlete's token URL, so Add to Home Screen captures the correct
+  // launch URL. Nothing for React to do at runtime.
 
   useEffect(() => {
     let cancelled = false;
