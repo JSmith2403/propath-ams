@@ -81,6 +81,10 @@ export default function AthleteProfile({
   // switches for the lifetime of the open profile. Defaults to 'overview'
   // on first entry per Brief 2 Part A.
   const [physicalDevSubTab, setPhysicalDevSubTab] = useState('overview');
+  // Deep-link focus for the Programme sub-tab — bumped (and ProgrammeView
+  // re-applies) every time the user clicks a gym session pill on the
+  // Overview Calendar. Shape: { viewMode, viewDate, nonce } | null.
+  const [programmeFocus, setProgrammeFocus] = useState(null);
   const [localAthlete, setLocalAthlete] = useState(athlete);
 
   // Keep localAthlete in sync when the athlete prop updates externally
@@ -129,6 +133,15 @@ export default function AthleteProfile({
       : [...list, review];
     setLocalAthlete(a => ({ ...a, quarterlyReviews: updated }));
     onSaveQuarterlyReview(localAthlete.id, review);
+  };
+
+  // Deep link from Overview → Calendar (gym session click) → Physical
+  // Development → Programme sub-tab → Week view focused on dateISO.
+  const handleNavigateToProgrammeWeek = (dateISO) => {
+    const focusDate = dateISO ? new Date(dateISO + 'T00:00:00') : new Date();
+    setActiveTab('physical-dev');
+    setPhysicalDevSubTab('programme');
+    setProgrammeFocus({ viewMode: 'week', viewDate: focusDate, nonce: Date.now() });
   };
 
   // Navigate from an overview entry to the pillar section + highlight.
@@ -292,6 +305,7 @@ export default function AthleteProfile({
             onSaveReview={handleSaveReview}
             onNavigateToPillar={handleNavigateToPillar}
             onAddCheckIn={handleAddCheckIn}
+            onNavigateToProgrammeWeek={handleNavigateToProgrammeWeek}
           />
         );
       case 'maturation':
@@ -314,6 +328,7 @@ export default function AthleteProfile({
           <PhysicalDevelopmentTab
             subTab={physicalDevSubTab}
             onChangeSubTab={setPhysicalDevSubTab}
+            programmeFocus={programmeFocus}
             athlete={localAthlete}
             phase2={p2}
             allAthletes={allAthletes}

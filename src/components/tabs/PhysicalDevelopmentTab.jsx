@@ -41,6 +41,9 @@ export default function PhysicalDevelopmentTab({
   // sub-tab state (lifted to AthleteProfile)
   subTab,
   onChangeSubTab,
+  // Deep-link focus for the Programme sub-tab — set when the user clicks
+  // a gym session pill on the Overview Calendar. Forwarded to ProgrammeView.
+  programmeFocus = null,
 
   // shared
   athlete,
@@ -93,6 +96,7 @@ export default function PhysicalDevelopmentTab({
           <ProgrammeView
             athlete={athlete}
             role={role}
+            initialFocus={programmeFocus}
           />
         )}
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
@@ -48,6 +48,10 @@ function formatError(err, fallback) {
 export default function ProgrammeView({
   athlete,
   role = 'admin',
+  // Optional one-shot deep-link from Overview → Calendar (gym session click).
+  // Shape: { viewMode, viewDate, nonce } | null. Re-applied whenever `nonce`
+  // changes so successive clicks on the same session still re-focus.
+  initialFocus = null,
 }) {
   const canEdit = role === 'admin' || role === 'co_admin';
 
@@ -85,8 +89,16 @@ export default function ProgrammeView({
   const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
 
   // ── Calendar nav state ──────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState('month');
-  const [viewDate, setViewDate] = useState(() => new Date());
+  const [viewMode, setViewMode] = useState(initialFocus?.viewMode || 'month');
+  const [viewDate, setViewDate] = useState(() => initialFocus?.viewDate || new Date());
+
+  // Re-apply deep-link focus on every nonce bump. Without the nonce a
+  // second click on the same date wouldn't re-trigger the effect.
+  useEffect(() => {
+    if (!initialFocus?.nonce) return;
+    if (initialFocus.viewMode) setViewMode(initialFocus.viewMode);
+    if (initialFocus.viewDate) setViewDate(initialFocus.viewDate);
+  }, [initialFocus?.nonce]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Modal state ─────────────────────────────────────────────────────────
   // event === null means a fresh add. event === { start_date, ... } may carry

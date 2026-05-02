@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Cake, ChevronLeft, ChevronRight, Dumbbell, Plus, X } from 'lucide-react';
+import {
+  Cake, CalendarDays, ChevronLeft, ChevronRight, Dumbbell, Gauge, Plus, Tent,
+  Trophy, Volleyball, X,
+} from 'lucide-react';
+
+// Event-type → lucide icon. Used inside event pills so users get a quick
+// visual cue without having to read the label. Planned sessions, birthdays
+// and team events have their own dedicated icons handled separately above.
+const EVENT_TYPE_ICONS = {
+  competition:       Trophy,
+  training_camp:     Tent,
+  testing:           Gauge,
+  technical_session: Volleyball,
+  other:             CalendarDays,
+};
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -243,7 +257,8 @@ function buildWeekSegments(events, weekStart, pillColourMode, athleteContext) {
 }
 
 // ─── Pill ────────────────────────────────────────────────────────────────────
-// No event-type icons — just the name and (for competitions) a priority badge.
+// Renders the event name with a leading icon (event-type, planned-session,
+// birthday, or team) and — for competitions — a priority badge on the right.
 // The badge uses a priority-driven colour, not the athlete colour.
 
 function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext }) {
@@ -307,6 +322,13 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
       {isBirthday && leftRounded && (
         <Cake size={11} className="shrink-0" style={{ color: '#fff' }} />
       )}
+      {/* Event-type icon — only on regular (non-planned, non-birthday, non-team)
+          pills, and only on the leftmost segment so multi-day pills don't
+          double-stamp it. */}
+      {!isPlanned && !isBirthday && !isTeam && leftRounded && EVENT_TYPE_ICONS[event.event_type] && (() => {
+        const Icon = EVENT_TYPE_ICONS[event.event_type];
+        return <Icon size={10} className="shrink-0" style={{ color: style.fg }} />;
+      })()}
       {isTeam && leftRounded && (
         <span
           className="shrink-0 text-[8px] font-bold uppercase tracking-widest px-1 rounded-sm"

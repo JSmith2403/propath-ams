@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { X, Trash2, Users, User } from 'lucide-react';
 
 const EVENT_TYPES = [
-  { value: 'competition',    label: 'Competition'    },
-  { value: 'training_camp',  label: 'Training Camp'  },
-  { value: 'testing',        label: 'Testing'        },
-  { value: 'other',          label: 'Other'          },
+  { value: 'competition',       label: 'Competition'       },
+  { value: 'training_camp',     label: 'Training Camp'     },
+  { value: 'testing',           label: 'Testing'           },
+  { value: 'technical_session', label: 'Technical Session' },
+  { value: 'other',             label: 'Other'             },
 ];
 
 const PRIORITIES = [

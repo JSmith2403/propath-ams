@@ -3,8 +3,15 @@ import { Camera, FileText, ClipboardList, ChevronRight, Smartphone } from 'lucid
 import InitialsAvatar from '../InitialsAvatar';
 import QuarterlyReviews from '../QuarterlyReviews';
 import PhotoCropModal from '../PhotoCropModal';
+import TabBar from '../ui/TabBar';
+import OverviewCalendar from './OverviewCalendar';
 import { SPORTS, COHORTS, GENDERS, MATURATION_STAGES, RAG_DOMAINS, RAG_CONFIG, COHORT_CONFIG } from '../../data/athletes';
 import { useAthleteApp } from '../../hooks/useAthleteApp';
+
+const OVERVIEW_SUBTABS = [
+  { id: 'general',  label: 'General'  },
+  { id: 'calendar', label: 'Calendar' },
+];
 
 // ─── Athlete App activation panel ────────────────────────────────────────────
 function AthleteAppPanel({ athleteId }) {
@@ -304,9 +311,13 @@ export default function OverviewTab({
   onSaveReview,       // (review) — for QuarterlyReviews completion
   onNavigateToPillar, // (domain, entryId | null) — navigate to pillar section
   onAddCheckIn,       // (entry) — add a check-in note
+  // Deep-link out of the Calendar sub-tab when a gym session pill is clicked.
+  // Routed via AthleteProfile so it can switch to Physical Dev → Programme → Week.
+  onNavigateToProgrammeWeek,
 }) {
   const fileRef = useRef();
   const [cropSrc, setCropSrc] = useState(null);
+  const [subTab, setSubTab]   = useState('general');
 
   const set = (field, value) => setLocalAthlete(a => ({ ...a, [field]: value }));
   const save = () => onUpdate(localAthlete.id, localAthlete);
@@ -331,6 +342,20 @@ export default function OverviewTab({
   const age = calculateAge(localAthlete.dob);
 
   return (
+    <div>
+      <TabBar
+        tabs={OVERVIEW_SUBTABS}
+        active={subTab}
+        onChange={setSubTab}
+        className="mb-6 no-print"
+      />
+
+      {subTab === 'calendar' ? (
+        <OverviewCalendar
+          athlete={localAthlete}
+          onNavigateToProgrammeWeek={onNavigateToProgrammeWeek}
+        />
+      ) : (
     <div className="space-y-6">
       {cropSrc && (
         <PhotoCropModal
@@ -506,6 +531,8 @@ export default function OverviewTab({
         <Placeholder icon={FileText} title="Individual Development Plan (IDP)" phase="Phase 2" />
         <Placeholder icon={ClipboardList} title="Session Log" phase="Phase 3" />
       </div>
+    </div>
+      )}
     </div>
   );
 }
