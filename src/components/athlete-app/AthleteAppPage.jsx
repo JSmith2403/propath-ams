@@ -39,6 +39,13 @@ export default function AthleteAppPage() {
 
       if (cancelled) return;
       if (!tokenRow || !tokenRow.is_active) {
+        // Token no longer valid — drop any stale PWA-launch redirect so
+        // the athlete doesn't get bounced back here on next launch.
+        try {
+          if (localStorage.getItem('propath_athlete_token') === token) {
+            localStorage.removeItem('propath_athlete_token');
+          }
+        } catch (_) {}
         setStatus('invalid');
         return;
       }
@@ -57,6 +64,10 @@ export default function AthleteAppPage() {
         photo: d.photo || null,
         sport: d.sport || '',
       });
+      // Remember this token so future PWA launches (start_url is "/")
+      // can redirect the user back to their athlete app instead of
+      // dumping them on the AMS login screen.
+      try { localStorage.setItem('propath_athlete_token', token); } catch (_) {}
       setStatus('ready');
     })();
     return () => { cancelled = true; };
