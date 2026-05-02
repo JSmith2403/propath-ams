@@ -28,6 +28,43 @@ export default function AthleteAppPage() {
   const [athlete, setAthlete]   = useState(null);
   const [activeTab, setActive]  = useState('train');
 
+  // ── Per-athlete PWA manifest ────────────────────────────────────────────
+  // iOS / Android capture the manifest at "Add to Home Screen" time. The
+  // shipped /manifest.json has start_url "/" — which is wrong for an
+  // athlete installing from their token URL (relaunch dumps them on the
+  // coach login). Swap the manifest <link> with a token-specific blob
+  // before the user taps install. Restored on unmount so other parts of
+  // the app keep using the default manifest.
+  useEffect(() => {
+    if (!token) return;
+    const link = document.querySelector('link[rel="manifest"]');
+    if (!link) return;
+    const originalHref = link.getAttribute('href');
+    let blobUrl = null;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const base = await fetch('/manifest.json').then(r => r.json());
+        if (cancelled) return;
+        const dynamic = {
+          ...base,
+          start_url: `/athlete/${token}`,
+          scope: '/',  // keep scope wide so any internal nav stays in-app
+        };
+        const blob = new Blob([JSON.stringify(dynamic)], { type: 'application/json' });
+        blobUrl = URL.createObjectURL(blob);
+        link.setAttribute('href', blobUrl);
+      } catch (_) { /* keep the default manifest on failure */ }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (originalHref) link.setAttribute('href', originalHref);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [token]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
