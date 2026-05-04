@@ -29,19 +29,34 @@ const VALD_FD_BASE =
   process.env.VALD_FD_BASE || 'https://prd-aue-api-extforcedecks.valdperformance.com';
 
 // ─── OAuth2 client-credentials token exchange ──────────────────────────────
+// VALD's identity server expects credentials via HTTP Basic auth header
+// (RFC 6749 §2.3.1), not body params. Sending them in the body is what
+// triggers their `invalid_client` 400.
 async function getAccessToken({ clientId, clientSecret }) {
-  const body = new URLSearchParams({
-    grant_type:    'client_credentials',
-    client_id:     clientId,
-    client_secret: clientSecret,
-    scope:         'api.external',
-  });
-  const r = await fetch(VALD_AUTH_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-  const text = await r.text();
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const body = new URLSearchParams({ grant_type: 'client_credentials' });
+
+  const tryRequest = async (extraParams = {}) => {
+    const fullBody = new URLSearchParams({ ...Object.fromEntries(body), ...extraParams });
+    return fetch(VALD_AUTH_URL, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Basic ${basic}`,
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Accept':        'application/json',
+      },
+      body: fullBody,
+    });
+  };
+
+  // Most tenants don't need a scope. If the no-scope request fails on
+  // `invalid_scope` we retry with the documented external scope.
+  let r = await tryRequest();
+  let text = await r.text();
+  if (!r.ok && /invalid_scope/i.test(text)) {
+    r = await tryRequest({ scope: 'api.external' });
+    text = await r.text();
+  }
   if (!r.ok) {
     throw new Error(`VALD auth failed (${r.status})`, { cause: text });
   }
