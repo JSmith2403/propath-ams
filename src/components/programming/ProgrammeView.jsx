@@ -328,6 +328,7 @@ export default function ProgrammeView({
           Logged Sessions sub-tab; the current week shows them greyed +
           ticked; future weeks within 7 days expand by default. */}
       <ProgrammeWeekList
+        athlete={athlete}
         blocks={blocks}
         plannedRows={plannedRows}
         loading={blocksLoading}

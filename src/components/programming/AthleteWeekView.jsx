@@ -60,6 +60,20 @@ export default function AthleteWeekView({
   onChangeDate,
   onChangeView,    // (mode) → switches month/week toggle on the parent
   onClickPlanned,  // (planned) → opens session builder
+  // ── Embed-mode props ────────────────────────────────────────────────
+  // When `hideToolbar` is true, the prev/next/today/month-week controls
+  // are not rendered. Use this when the parent already owns the week
+  // selection (e.g. ProgrammeWeekList expanded tile).
+  hideToolbar = false,
+  // When `hideCompleted` is true, sessions whose status === 'completed'
+  // are filtered out before the grid renders. Used for past weeks
+  // inside the week-by-week list — completed sessions live in the
+  // Logged Sessions sub-tab.
+  hideCompleted = false,
+  // When provided, sessions whose id appears here render with reduced
+  // opacity + a "Done" tick. Used for the current week so the grid
+  // shows everything but visually distinguishes the completed ones.
+  dimCompletedIds = null,
 }) {
   const weekStart = useMemo(() => startOfWeekMon(viewDate), [viewDate]);
   const days = useMemo(() => {
@@ -99,13 +113,16 @@ export default function AthleteWeekView({
   const plannedByDate = useMemo(() => {
     const m = new Map();
     for (const p of planned) {
+      // Embed-mode: drop completed sessions for past weeks (they live
+      // in the Logged Sessions sub-tab now).
+      if (hideCompleted && p.status === 'completed') continue;
       if (!m.has(p.planned_date)) m.set(p.planned_date, []);
       m.get(p.planned_date).push(p);
     }
     // Stable order: by session_order within each day
     for (const list of m.values()) list.sort((a, b) => a.session_order - b.session_order);
     return m;
-  }, [planned]);
+  }, [planned, hideCompleted]);
 
   const todayISO = toISO(new Date());
 
@@ -126,8 +143,12 @@ export default function AthleteWeekView({
   const handleToday = () => onChangeDate(new Date());
 
   return (
-    <div className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
-      {/* Toolbar */}
+    <div
+      className={hideToolbar ? 'bg-white' : 'rounded-xl bg-white'}
+      style={hideToolbar ? undefined : { border: '1px solid #e5e7eb' }}
+    >
+      {/* Toolbar — hidden in embed mode (parent owns week selection) */}
+      {!hideToolbar && (
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div className="flex items-center gap-1">
           <button onClick={handlePrev}  className="p-1.5 rounded hover:bg-gray-100 transition-colors" aria-label="Previous week">
@@ -165,6 +186,7 @@ export default function AthleteWeekView({
           </button>
         </div>
       </div>
+      )}
 
       {/* Picker overlay used to pick the replacement exercise */}
       {replaceTarget && (
@@ -214,15 +236,20 @@ export default function AthleteWeekView({
                 {!loading && sessions.length === 0 && (
                   <div className="text-[10px] italic" style={{ color: '#cbd5e1' }}>No session</div>
                 )}
-                {!loading && sessions.map(s => (
-                  <SessionCard
-                    key={s.id}
-                    session={s}
-                    onClick={() => onClickPlanned && onClickPlanned(s)}
-                    onRequestReplace={(item) => setReplaceTarget({ exercise: item, sessionName: s.session_name })}
-                    onClearOverride={(item) => handleClearOverride(item)}
-                  />
-                ))}
+                {!loading && sessions.map(s => {
+                  const dim = (dimCompletedIds && dimCompletedIds.has(s.id))
+                    || (s.status === 'completed' && !hideCompleted);
+                  return (
+                    <SessionCard
+                      key={s.id}
+                      session={s}
+                      dim={dim}
+                      onClick={() => onClickPlanned && onClickPlanned(s)}
+                      onRequestReplace={(item) => setReplaceTarget({ exercise: item, sessionName: s.session_name })}
+                      onClearOverride={(item) => handleClearOverride(item)}
+                    />
+                  );
+                })}
               </div>
             </div>
           );
@@ -233,7 +260,7 @@ export default function AthleteWeekView({
 }
 
 // ─── SessionCard ────────────────────────────────────────────────────
-function SessionCard({ session, onClick, onRequestReplace, onClearOverride }) {
+function SessionCard({ session, onClick, onRequestReplace, onClearOverride, dim = false }) {
   // The card itself acts as a button (click → builder), but inner
   // controls (per-exercise menus) need to stop propagation so they
   // don't also trigger the card click.
@@ -244,12 +271,24 @@ function SessionCard({ session, onClick, onRequestReplace, onClearOverride }) {
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
       className="block w-full text-left rounded-lg transition-shadow hover:shadow-sm cursor-pointer"
-      style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
+      style={{
+        backgroundColor: '#fff',
+        border: '1px solid #e5e7eb',
+        opacity: dim ? 0.55 : 1,
+      }}
     >
-      <div className="px-2.5 py-1.5 border-b border-gray-100">
-        <div className="text-[11px] font-bold truncate" style={{ color: '#1C1C1C' }}>
+      <div className="px-2.5 py-1.5 border-b border-gray-100 flex items-center gap-1.5">
+        <div className="flex-1 text-[11px] font-bold truncate" style={{ color: '#1C1C1C' }}>
           {session.session_name}
         </div>
+        {dim && (
+          <span
+            className="shrink-0 inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+            style={{ color: '#16a34a', backgroundColor: 'rgba(22,163,74,0.1)' }}
+          >
+            ✓ Done
+          </span>
+        )}
       </div>
       <div className="px-2 py-1.5 space-y-1">
         {session.items.length === 0 && (

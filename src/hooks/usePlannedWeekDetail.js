@@ -37,7 +37,7 @@ export function usePlannedWeekDetail(athleteId, fromISO, toISO, refreshTick = 0)
       const { data: rows, error: pErr } = await supabase
         .from('planned_sessions')
         .select(`
-          id, planned_date, week_number, block_session_id, block_id,
+          id, planned_date, week_number, block_session_id, block_id, status,
           block_sessions ( id, session_name, session_order )
         `)
         .eq('athlete_id', athleteId)
@@ -145,6 +145,7 @@ export function usePlannedWeekDetail(athleteId, fromISO, toISO, refreshTick = 0)
           week_number:      p.week_number,
           block_id:         p.block_id,
           block_session_id: p.block_session_id,
+          status:           p.status,  // 'planned' | 'in_progress' | 'completed'
           session_name:     p.block_sessions?.session_name
                             || (p.block_sessions?.session_order != null
                                   ? `Session ${p.block_sessions.session_order + 1}`

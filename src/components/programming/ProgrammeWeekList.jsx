@@ -1,8 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Dumbbell } from 'lucide-react';
+import { ChevronDown, ChevronRight, Dumbbell } from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
-
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+import AthleteWeekView from './AthleteWeekView';
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -29,12 +28,6 @@ function fmtRange(startISO) {
   return `${sStr} – ${eStr}`;
 }
 
-function sessionDisplayName(p) {
-  const sess = p.block_sessions || {};
-  return sess.session_name
-    || (sess.session_order != null ? `Session ${sess.session_order + 1}` : 'Session');
-}
-
 /**
  * ProgrammeWeekList — replaces the calendar surface inside the
  * Physical Development → Programme tab. Sessions for each block are
@@ -59,6 +52,7 @@ function sessionDisplayName(p) {
  * week is forced expanded and scrolled into view.
  */
 export default function ProgrammeWeekList({
+  athlete,
   blocks = [],
   plannedRows = [],
   loading = false,
@@ -183,6 +177,7 @@ export default function ProgrammeWeekList({
           <WeekTile
             key={weekISO}
             ref={(node) => { focusWeekRef.current[weekISO] = node; }}
+            athlete={athlete}
             weekISO={weekISO}
             state={state}
             isOpen={isOpen}
@@ -201,7 +196,7 @@ export default function ProgrammeWeekList({
 
 // React.forwardRef so the parent can scroll a week into view on deep link.
 const WeekTile = forwardRef(function WeekTile({
-  weekISO, state, isOpen, onToggle, visible, allCount,
+  athlete, weekISO, state, isOpen, onToggle, visible, allCount,
   blockById, blockColourMap, onClickPlanned,
 }, ref) {
   const stateAccent = {
@@ -258,65 +253,23 @@ const WeekTile = forwardRef(function WeekTile({
         </div>
       </button>
 
-      {isOpen && visible.length > 0 && (
-        <ul className="border-t border-gray-100 divide-y divide-gray-100">
-          {visible.map(p => {
-            const isCompleted = p.status === 'completed';
-            const isInProgress = p.status === 'in_progress';
-            const blk = blockById[p.block_id];
-            const blkColour = blockColourMap?.[p.block_id] || '#9ca3af';
-            const dow = (parseDate(p.planned_date).getDay() + 6) % 7; // Mon=0
-            const dayLabel = DAY_LABELS[dow];
-
-            return (
-              <li key={p.id}>
-                <button
-                  onClick={() => onClickPlanned && onClickPlanned(p)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-                  style={isCompleted ? { opacity: 0.55 } : undefined}
-                >
-                  <span
-                    className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-8 shrink-0"
-                  >
-                    {dayLabel}
-                  </span>
-                  <span
-                    className="w-1.5 h-6 rounded-sm shrink-0"
-                    style={{ backgroundColor: blkColour }}
-                    title={blk?.block_name || ''}
-                  />
-                  <Dumbbell size={13} className="shrink-0" style={{ color: '#437E8D' }} />
-                  <span
-                    className={`flex-1 text-sm truncate ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-800 font-medium'}`}
-                  >
-                    {sessionDisplayName(p)}
-                  </span>
-                  {blk?.block_name && (
-                    <span className="text-[10px] text-gray-400 truncate max-w-[140px]">
-                      {blk.block_name}
-                    </span>
-                  )}
-                  {isCompleted && (
-                    <span
-                      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                      style={{ color: '#16a34a', backgroundColor: 'rgba(22,163,74,0.1)' }}
-                    >
-                      <Check size={10} /> Done
-                    </span>
-                  )}
-                  {isInProgress && (
-                    <span
-                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                      style={{ color: '#A58D69', backgroundColor: 'rgba(165,141,105,0.12)' }}
-                    >
-                      In progress
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {isOpen && (
+        <div className="border-t border-gray-100">
+          {athlete ? (
+            <AthleteWeekView
+              athlete={athlete}
+              viewDate={parseDate(weekISO)}
+              onChangeDate={() => {}}
+              onClickPlanned={onClickPlanned}
+              hideToolbar
+              hideCompleted={state === 'past'}
+            />
+          ) : (
+            <div className="px-4 py-6 text-xs italic text-gray-400">
+              Loading week…
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
