@@ -22,9 +22,20 @@
           var m = location.pathname.match(/^\/athlete\/([A-Za-z0-9_-]+)/);
           if (!m) return;
           var token = m[1];
+          // Per-token manifest (kept as belt-and-braces for browsers that
+          // do honour it; iOS does not when capable=no, see below).
           var link = document.getElementById('pwa-manifest');
           if (link) link.setAttribute('href', '/api/manifest/' + encodeURIComponent(token));
-        } catch (e) { /* keep default manifest on failure */ }
+          // PRIMARY FIX for iOS: flip apple-mobile-web-app-capable to "no".
+          // This tells iOS Safari "this isn't a PWA — just bookmark me."
+          // iOS then captures Add to Home Screen as a regular bookmark
+          // pointing at the EXACT current URL (not start_url), so the
+          // home-screen icon always opens the athlete's token URL.
+          // The trade-off: opens in Safari (with the address bar visible)
+          // rather than fullscreen — acceptable for the athlete cohort.
+          var pwa = document.getElementById('apple-pwa-capable');
+          if (pwa) pwa.setAttribute('content', 'no');
+        } catch (e) { /* keep defaults on failure */ }
       })();
     </script>
     <meta name="theme-color" content="#1C1C1C" />
@@ -33,7 +44,7 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
     <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
     <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" id="apple-pwa-capable" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ProPath" />
 
