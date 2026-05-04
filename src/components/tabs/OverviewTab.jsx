@@ -596,6 +596,27 @@ export default function OverviewTab({
         </div>
       </div>
 
+      {/* ── External integrations — VALD Profile ID ─────────── */}
+      <div className="bg-white rounded-lg border border-ink-100 shadow-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-micro font-bold text-ink-400 uppercase mb-1.5">VALD Profile ID</p>
+            <input
+              type="text"
+              value={localAthlete.vald_profile_id || ''}
+              onChange={e => set('vald_profile_id', e.target.value.trim())}
+              onBlur={save}
+              placeholder="Paste from VALD Hub — e.g. 47f22ec4-953a-431a-b5d5-…"
+              spellCheck={false}
+              className="text-body font-mono font-semibold text-ink-800 w-full bg-transparent border-b border-transparent hover:border-ink-200 focus:border-gold-500 focus:outline-none transition-colors placeholder:text-ink-400 placeholder:font-normal placeholder:font-sans"
+            />
+          </div>
+          <p className="text-meta text-ink-400 shrink-0 max-w-[180px] text-right">
+            Required to pull ForceDecks tests from VALD into Performance Testing.
+          </p>
+        </div>
+      </div>
+
       {/* ── Athlete App activation ────────────────────────────── */}
       <AthleteAppPanel athleteId={localAthlete.id} />
 

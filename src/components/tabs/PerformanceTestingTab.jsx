@@ -8,6 +8,7 @@ import {
 import { Settings, Plus, X, RotateCcw } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
+import VALDPanel from './VALDPanel';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -896,6 +897,9 @@ export default function PerformanceTestingTab({
 
   return (
     <div className="space-y-6">
+
+      {/* ── VALD ForceDecks integration ──────────────────────────── */}
+      <VALDPanel athlete={athlete} />
 
       {/* ── Section 1: Diagnostic Quadrant ───────────────────────── */}
       <DiagnosticQuadrant
