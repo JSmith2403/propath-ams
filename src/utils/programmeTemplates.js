@@ -551,6 +551,45 @@ export async function saveAthleteBlock(blockId, draft) {
     return { ok: false, error: new Error('Block must have at least one session.') };
   }
 
+  // 0. Pre-wipe snapshots so planned_sessions can be restored after the
+  //    block_sessions reshuffle (Brief: per-athlete edits not flowing
+  //    into their week-by-week list). Without this, edits to a single
+  //    exercise wipe-and-recreate every block_session and orphan all
+  //    planned_sessions for the block — the athlete sees no programme.
+  //
+  //    We map the old block_session_id → its session_order, then snapshot
+  //    each planned_session along with that order. After the rebuild, the
+  //    new block_session at the same session_order takes over.
+  const { data: tbRow, error: tbReadErr } = await supabase
+    .from('training_blocks')
+    .select('athlete_id')
+    .eq('id', blockId)
+    .single();
+  if (tbReadErr) return { ok: false, error: tbReadErr };
+  const athleteId = tbRow?.athlete_id;
+
+  const { data: oldBlockSessions } = await supabase
+    .from('block_sessions')
+    .select('id, session_order')
+    .eq('block_id', blockId);
+  const oldOrderById = new Map(
+    (oldBlockSessions || []).map(b => [b.id, b.session_order]),
+  );
+
+  const { data: oldPlanned } = await supabase
+    .from('planned_sessions')
+    .select('id, block_session_id, week_number, planned_date, status')
+    .eq('block_id', blockId);
+  const plannedSnapshot = (oldPlanned || [])
+    .map(p => ({
+      id:           p.id,
+      week_number:  p.week_number,
+      planned_date: p.planned_date,
+      status:       p.status,
+      session_order: oldOrderById.get(p.block_session_id) ?? null,
+    }))
+    .filter(p => p.session_order != null);
+
   // 1. Update training_blocks.notes (everything else stays put)
   const { error: tbErr } = await supabase
     .from('training_blocks')
@@ -566,6 +605,10 @@ export async function saveAthleteBlock(blockId, draft) {
   if (delErr) return { ok: false, error: delErr };
 
   // 3. Re-insert from draft
+  // newBlockSessionByOrder[N] = new block_session id at session_order N.
+  // Filled inside the loop so we can re-link planned_sessions once the
+  // rebuild is done.
+  const newBlockSessionByOrder = [];
   try {
     for (let si = 0; si < draft.sessions.length; si++) {
       const sess = draft.sessions[si];
@@ -581,6 +624,7 @@ export async function saveAthleteBlock(blockId, draft) {
         .select()
         .single();
       if (bsErr) throw bsErr;
+      newBlockSessionByOrder[si] = bs.id;
 
       const sections = sess.sections || [];
       if (!sections.length) continue;
@@ -667,6 +711,62 @@ export async function saveAthleteBlock(blockId, draft) {
   } catch (e) {
     console.error('[Block] saveAthleteBlock failed mid-write', e);
     return { ok: false, error: e };
+  }
+
+  // 4. Restore planned_sessions to point at the new block_session ids.
+  //    Two paths because we don't assume the FK behaviour:
+  //
+  //      • If the FK has ON DELETE CASCADE, the wipe in step 2 took the
+  //        planned_sessions with it. We re-create from snapshot.
+  //      • If the FK is NO ACTION / SET NULL, the rows still exist and
+  //        we just patch their block_session_id by session_order.
+  //
+  //    Either way the athlete's week-by-week list ends up linked to the
+  //    new block_sessions, so coach edits show up immediately.
+  if (plannedSnapshot.length && newBlockSessionByOrder.length) {
+    const { data: stillThere } = await supabase
+      .from('planned_sessions')
+      .select('id')
+      .eq('block_id', blockId)
+      .limit(1);
+
+    if (stillThere?.length) {
+      // Update path — planned_sessions survived the wipe.
+      for (const snap of plannedSnapshot) {
+        const newId = newBlockSessionByOrder[snap.session_order];
+        if (!newId) continue;
+        const { error: upErr } = await supabase
+          .from('planned_sessions')
+          .update({ block_session_id: newId })
+          .eq('id', snap.id);
+        if (upErr) {
+          console.error('[Block] planned_session update failed', { id: snap.id, upErr });
+          // Don't fail the save — partial relink is still better than none.
+        }
+      }
+    } else if (athleteId) {
+      // Recreate path — FK cascaded planned_sessions away.
+      const recreate = plannedSnapshot
+        .map(snap => {
+          const newId = newBlockSessionByOrder[snap.session_order];
+          if (!newId) return null;
+          return {
+            athlete_id:       athleteId,
+            block_id:         blockId,
+            block_session_id: newId,
+            week_number:      snap.week_number,
+            planned_date:     snap.planned_date,
+            status:           snap.status || 'planned',
+          };
+        })
+        .filter(Boolean);
+      if (recreate.length) {
+        const { error: insErr } = await supabase
+          .from('planned_sessions')
+          .insert(recreate);
+        if (insErr) console.error('[Block] planned_sessions recreate failed', insErr);
+      }
+    }
   }
 
   return { ok: true, blockId };
