@@ -119,29 +119,42 @@ const METRIC_MATCHERS = {
   lr_asymmetry_pct: [/asymmetry/i],
 };
 
-function pickFromResults(results, defs, patterns, { preferLimb = 'Trial' } = {}) {
-  // Each result: { resultId, value, limb, repeat }. Resolve each via def.
-  const resolved = results.map(r => ({
-    ...r,
-    name: defs[r.resultId]?.resultName || '',
-  }));
-  for (const pattern of patterns) {
-    const hit = resolved.find(r => pattern.test(r.name) && r.limb === preferLimb);
-    if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
-  }
-  // Fallback — any limb
-  for (const pattern of patterns) {
-    const hit = resolved.find(r => pattern.test(r.name));
-    if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
-  }
-  return null;
+// Enrich each VALD trial result with its definition metadata so the
+// client doesn't need its own /resultdefinitions fetch. Each row of
+// raw_metrics ends up with everything needed to render a column in the
+// data-storage table — name, unit, group, decimals.
+function enrichResults(results, defs) {
+  return results.map(r => {
+    const def = defs[r.resultId] || {};
+    return {
+      resultId: r.resultId,
+      value:    r.value,
+      limb:     r.limb,
+      repeat:   r.repeat,
+      time:     r.time,
+      name:     def.resultName || `Metric ${r.resultId}`,
+      unit:     def.resultUnitName || '',
+      group:    def.resultGroup || 'General',
+      decimals: def.numberOfDecimalPlaces ?? 1,
+      asymmetry:        !!def.supportsAsymmetry,
+      isRepeatResult:   !!def.isRepeatResult,
+      trendDirection:   def.trendDirection || 'None',
+    };
+  });
 }
 
 function trialToRow({ test, trial, profileId, defs }) {
-  const results = Array.isArray(trial.results) ? trial.results : [];
+  const results  = Array.isArray(trial.results) ? trial.results : [];
+  const enriched = enrichResults(results, defs);
+
+  // Surfaced columns kept for legacy/KPI integration. They use the
+  // enriched name from the definition rather than the raw regex on
+  // result text, so matches are stable. `Trial` limb preferred so
+  // we get the bilateral value when both bilateral and limb-specific
+  // versions of the same metric exist.
   const surfaced = {};
   for (const [key, patterns] of Object.entries(METRIC_MATCHERS)) {
-    surfaced[key] = pickFromResults(results, defs, patterns);
+    surfaced[key] = pickFromEnriched(enriched, patterns);
   }
   return {
     vald_test_id:    test.testId || test.id,
@@ -150,8 +163,20 @@ function trialToRow({ test, trial, profileId, defs }) {
     test_type:       test.testType || null,
     recorded_at:     test.recordedDateUtc || test.modifiedDateUtc || null,
     ...surfaced,
-    raw_metrics:     results,
+    raw_metrics:     enriched,
   };
+}
+
+function pickFromEnriched(enriched, patterns) {
+  for (const p of patterns) {
+    const hit = enriched.find(r => p.test(r.name) && r.limb === 'Trial');
+    if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
+  }
+  for (const p of patterns) {
+    const hit = enriched.find(r => p.test(r.name));
+    if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
+  }
+  return null;
 }
 
 // ─── Handler ───────────────────────────────────────────────────────────────
