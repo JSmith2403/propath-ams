@@ -29,18 +29,27 @@ const VALD_FD_BASE =
   process.env.VALD_FD_BASE || 'https://prd-aue-api-extforcedecks.valdperformance.com';
 
 // ─── OAuth2 client-credentials token exchange ──────────────────────────────
-// Per VALD's official integration guide:
-//   • Credentials go in the form body, not HTTP Basic.
-//   • scope=api.external is REQUIRED. Their old api.dashboard /
-//     api.forcedecks scopes were retired in Feb 2024 and the server
-//     responds with 400 invalid_client when no scope is sent.
+// VALD's official "How to integrate with VALD APIs" article (article
+// 23415335574553) shows the canonical request shape — no scope param,
+// credentials in form body:
+//
+//   POST https://security.valdperformance.com/connect/token
+//   Content-Type: application/x-www-form-urlencoded
+//   body: grant_type=client_credentials&client_id=…&client_secret=…
+//
+// That's it. Adding scope=api.external triggers 400 invalid_client on
+// some tenants, so we send no scope by default. If a tenant ever needs
+// one, set VALD_AUTH_SCOPE in env vars.
 async function getAccessToken({ clientId, clientSecret }) {
-  const body = new URLSearchParams({
+  const params = {
     grant_type:    'client_credentials',
     client_id:     clientId,
     client_secret: clientSecret,
-    scope:         'api.external',
-  });
+  };
+  const scope = (process.env.VALD_AUTH_SCOPE || '').trim();
+  if (scope) params.scope = scope;
+  const body = new URLSearchParams(params);
+
   const r = await fetch(VALD_AUTH_URL, {
     method:  'POST',
     headers: {
