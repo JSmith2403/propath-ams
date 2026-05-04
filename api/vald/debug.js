@@ -13,8 +13,11 @@
 // to VALD support with a copy of the response. Throwaway endpoint — remove
 // after VALD integration is confirmed working.
 
+// VALD's actual API token endpoint (Auth0). Old security.valdperformance.com
+// host is for Hub user logins, not API client_credentials.
 const VALD_AUTH_URL =
-  process.env.VALD_AUTH_URL || 'https://security.valdperformance.com/connect/token';
+  process.env.VALD_AUTH_URL || 'https://auth.prd.vald.com/oauth/token';
+const VALD_AUDIENCE = process.env.VALD_AUDIENCE || 'vald-api-external';
 
 function safe(s) {
   if (!s) return { present: false };
@@ -54,36 +57,31 @@ export default async function handler(req, res) {
   // Variant A — body params, no scope (VALD's documented example)
   // Variant B — body params, scope=api.external (community fallback)
   // Variant C — Basic auth header, no scope
+  // Variants — body + audience (the documented working combo first), then
+  // a couple of fallbacks in case this tenant is provisioned differently.
   const variants = [
-    { name: 'A_body_no_scope', useBasic: false, scope: null },
-    { name: 'B_body_with_scope', useBasic: false, scope: 'api.external' },
-    { name: 'C_basic_no_scope', useBasic: true,  scope: null },
+    { name: 'A_body_with_audience', body: { audience: VALD_AUDIENCE } },
+    { name: 'B_body_audience_and_scope', body: { audience: VALD_AUDIENCE, scope: 'api.external' } },
+    { name: 'C_body_no_audience',  body: {} },
   ];
 
   out.attempts = [];
 
   for (const v of variants) {
-    const params = { grant_type: 'client_credentials' };
-    if (!v.useBasic) {
-      params.client_id     = clientId;
-      params.client_secret = clientSecret;
-    }
-    if (v.scope) params.scope = v.scope;
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept':       'application/json',
+    const params = {
+      grant_type:    'client_credentials',
+      client_id:     clientId,
+      client_secret: clientSecret,
+      ...v.body,
     };
-    if (v.useBasic) {
-      const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      headers.Authorization = `Basic ${basic}`;
-    }
-
     let status = 0, body = '';
     try {
       const r = await fetch(VALD_AUTH_URL, {
-        method: 'POST',
-        headers,
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept':       'application/json',
+        },
         body: new URLSearchParams(params),
       });
       status = r.status;
@@ -91,7 +89,6 @@ export default async function handler(req, res) {
     } catch (e) {
       body = String(e);
     }
-
     const succeeded = status >= 200 && status < 300;
     out.attempts.push({
       variant: v.name,

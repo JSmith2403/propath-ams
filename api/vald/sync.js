@@ -13,43 +13,36 @@
 //       test_type, recorded_at,
 //       jump_height_cm, cmj_depth_cm, peak_force_n, peak_impulse_ns,
 //       rsi_modified, lr_asymmetry_pct,
-//       raw_metrics       // full result list, opaque to client
+//       raw_metrics       // full result list with resultId+value, opaque to client
 //     }, ...]
 //   }
 //
 // Response shape (failure):
 //   { ok: false, error: 'human message', detail?: '…' }
 
+// VALD's actual API token endpoint (Auth0-backed). The `security.valdperformance.com`
+// host is for Hub user logins, NOT the External API — using it returns
+// invalid_client. The Swagger UI for ForceDecks confirms this URL plus the
+// `audience=vald-api-external` body param requirement.
 const VALD_AUTH_URL =
-  process.env.VALD_AUTH_URL || 'https://security.valdperformance.com/connect/token';
+  process.env.VALD_AUTH_URL || 'https://auth.prd.vald.com/oauth/token';
 
-// VALD's public ForceDecks API base. Override via env if a tenant lives
-// in a different region (eu-, us-).
+const VALD_AUDIENCE =
+  process.env.VALD_AUDIENCE || 'vald-api-external';
+
+// Region-specific data API base. AU East default; override in env if your
+// tenant lives in EU or US.
 const VALD_FD_BASE =
   process.env.VALD_FD_BASE || 'https://prd-aue-api-extforcedecks.valdperformance.com';
 
 // ─── OAuth2 client-credentials token exchange ──────────────────────────────
-// VALD's official "How to integrate with VALD APIs" article (article
-// 23415335574553) shows the canonical request shape — no scope param,
-// credentials in form body:
-//
-//   POST https://security.valdperformance.com/connect/token
-//   Content-Type: application/x-www-form-urlencoded
-//   body: grant_type=client_credentials&client_id=…&client_secret=…
-//
-// That's it. Adding scope=api.external triggers 400 invalid_client on
-// some tenants, so we send no scope by default. If a tenant ever needs
-// one, set VALD_AUTH_SCOPE in env vars.
 async function getAccessToken({ clientId, clientSecret }) {
-  const params = {
+  const body = new URLSearchParams({
     grant_type:    'client_credentials',
     client_id:     clientId,
     client_secret: clientSecret,
-  };
-  const scope = (process.env.VALD_AUTH_SCOPE || '').trim();
-  if (scope) params.scope = scope;
-  const body = new URLSearchParams(params);
-
+    audience:      VALD_AUDIENCE,
+  });
   const r = await fetch(VALD_AUTH_URL, {
     method:  'POST',
     headers: {
@@ -69,36 +62,54 @@ async function getAccessToken({ clientId, clientSecret }) {
 }
 
 // ─── ForceDecks: list tests for a profile + fetch trial detail ─────────────
-// Per VALD's External ForceDecks guide the current shape is flat:
-//   GET /tests?tenantId=…&modifiedFromUtc=…&profileId=…
-// modifiedFromUtc is required — pass the unix epoch to mean "all time".
+// Per Swagger v2019q3: GET /tests with PascalCase query params.
 async function fetchTestsForProfile({ token, tenantId, profileId, fromIso }) {
   const params = new URLSearchParams({
-    tenantId,
-    modifiedFromUtc: fromIso || '1970-01-01T00:00:00Z',
+    TenantId:        tenantId,
+    ModifiedFromUtc: fromIso || '1970-01-01T00:00:00Z',
   });
-  if (profileId) params.set('profileId', profileId);
+  if (profileId) params.set('ProfileId', profileId);
   const url = `${VALD_FD_BASE}/tests?${params}`;
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const text = await r.text();
   if (!r.ok) throw new Error(`VALD list-tests failed (${r.status})`, { cause: text });
-  try { return JSON.parse(text); } catch { throw new Error('VALD list-tests returned non-JSON'); }
+  let json;
+  try { json = JSON.parse(text); } catch { throw new Error('VALD list-tests returned non-JSON'); }
+  // Swagger response shape: { tests: [...] }
+  return Array.isArray(json) ? json : (json?.tests || []);
 }
 
-async function fetchTestDetail({ token, tenantId, testId }) {
-  // Trial-level detail still lives under the older path.
+// Per-trial detail still lives under the legacy v2019q3 path. teamId in
+// the legacy world == tenantId in the new External API.
+async function fetchTrialsForTest({ token, tenantId, testId }) {
   const url = `${VALD_FD_BASE}/v2019q3/teams/${encodeURIComponent(tenantId)}/tests/${encodeURIComponent(testId)}/trials`;
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const text = await r.text();
-  if (!r.ok) throw new Error(`VALD test-detail (${testId}) failed (${r.status})`, { cause: text });
-  try { return JSON.parse(text); } catch { throw new Error('VALD test-detail returned non-JSON'); }
+  if (!r.ok) throw new Error(`VALD trials (${testId}) failed (${r.status})`, { cause: text });
+  try { return JSON.parse(text); } catch { throw new Error('VALD trials returned non-JSON'); }
+}
+
+// One-time fetch of the resultId → metric metadata table. Cached for the
+// lifetime of this serverless invocation; first sync per cold-start pays
+// the round-trip, subsequent syncs in the same instance reuse it.
+let resultDefsCache = null;
+async function getResultDefinitions({ token }) {
+  if (resultDefsCache) return resultDefsCache;
+  const r = await fetch(`${VALD_FD_BASE}/resultdefinitions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`VALD resultdefinitions failed (${r.status})`, { cause: text });
+  let json;
+  try { json = JSON.parse(text); } catch { throw new Error('VALD resultdefinitions non-JSON'); }
+  const list = json?.resultDefinitions || json || [];
+  resultDefsCache = Object.fromEntries(list.map(d => [d.resultId, d]));
+  return resultDefsCache;
 }
 
 // ─── Metric extraction ─────────────────────────────────────────────────────
-// VALD trial.results is an array of { definition: { id, name, unit }, value }.
-// We match by case-insensitive substring on `definition.name` because exact
-// names occasionally drift between firmware versions; the matcher list is
-// ordered by specificity so the more precise pattern wins.
+// Match by case-insensitive substring on resultName from the resolved
+// definition. More specific patterns win.
 const METRIC_MATCHERS = {
   jump_height_cm:   [/jump height.*imp.?mom/i, /jump height/i],
   cmj_depth_cm:     [/countermovement depth/i, /cm depth/i],
@@ -108,26 +119,36 @@ const METRIC_MATCHERS = {
   lr_asymmetry_pct: [/asymmetry/i],
 };
 
-function extractMetric(results, patterns) {
+function pickFromResults(results, defs, patterns, { preferLimb = 'Trial' } = {}) {
+  // Each result: { resultId, value, limb, repeat }. Resolve each via def.
+  const resolved = results.map(r => ({
+    ...r,
+    name: defs[r.resultId]?.resultName || '',
+  }));
   for (const pattern of patterns) {
-    const hit = results.find(r => pattern.test(r?.definition?.name || ''));
+    const hit = resolved.find(r => pattern.test(r.name) && r.limb === preferLimb);
+    if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
+  }
+  // Fallback — any limb
+  for (const pattern of patterns) {
+    const hit = resolved.find(r => pattern.test(r.name));
     if (hit && hit.value != null && isFinite(Number(hit.value))) return Number(hit.value);
   }
   return null;
 }
 
-function trialToRow({ test, trial, profileId }) {
+function trialToRow({ test, trial, profileId, defs }) {
   const results = Array.isArray(trial.results) ? trial.results : [];
   const surfaced = {};
   for (const [key, patterns] of Object.entries(METRIC_MATCHERS)) {
-    surfaced[key] = extractMetric(results, patterns);
+    surfaced[key] = pickFromResults(results, defs, patterns);
   }
   return {
     vald_test_id:    test.testId || test.id,
-    vald_trial_id:   trial.trialId || trial.id,
+    vald_trial_id:   trial.trialId || trial.id || `${test.testId}-${trial.repeat ?? results[0]?.repeat ?? Math.random().toString(36).slice(2)}`,
     vald_profile_id: profileId,
-    test_type:       test.testType?.name || test.testTypeName || test.testType || null,
-    recorded_at:     test.recordedDateUtc || test.recordedDateTimeUtc || test.recordedDate || null,
+    test_type:       test.testType || null,
+    recorded_at:     test.recordedDateUtc || test.modifiedDateUtc || null,
     ...surfaced,
     raw_metrics:     results,
   };
@@ -143,9 +164,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Trim defensively — env vars copy-pasted into Vercel often pick up
-  // a stray trailing newline, which IdentityServer rejects as
-  // invalid_client without explanation.
   const tenantId     = (process.env.VALD_TENANT_ID     || '').trim();
   const clientId     = (process.env.VALD_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.VALD_CLIENT_SECRET || '').trim();
@@ -156,15 +174,17 @@ export default async function handler(req, res) {
 
   try {
     const token = await getAccessToken({ clientId, clientSecret });
-    const tests = await fetchTestsForProfile({ token, tenantId, profileId, fromIso });
-    const list  = Array.isArray(tests) ? tests : (tests?.tests || tests?.items || []);
+    const [tests, defs] = await Promise.all([
+      fetchTestsForProfile({ token, tenantId, profileId, fromIso }),
+      getResultDefinitions({ token }),
+    ]);
 
     const trials = [];
-    for (const test of list) {
-      const detail = await fetchTestDetail({ token, tenantId, testId: test.testId || test.id });
-      const trialList = Array.isArray(detail?.trials) ? detail.trials : [];
-      for (const trial of trialList) {
-        trials.push(trialToRow({ test: { ...test, ...detail }, trial, profileId }));
+    for (const test of tests) {
+      const trialList = await fetchTrialsForTest({ token, tenantId, testId: test.testId });
+      const items = Array.isArray(trialList) ? trialList : (trialList?.trials || []);
+      for (const trial of items) {
+        trials.push(trialToRow({ test, trial, profileId, defs }));
       }
     }
 
