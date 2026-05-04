@@ -272,9 +272,9 @@ function CheckInSection({ checkIns = [], onAddCheckIn, onUpdateCheckIn, onDelete
         <p className="text-xs text-gray-300 py-4 text-center">No check-in notes yet.</p>
       ) : (
         <div className="space-y-2">
-          {sorted.map(entry => (
+          {sorted.map((entry, i) => (
             <CheckInRow
-              key={entry.id}
+              key={entry.id || `legacy-${i}-${entry.date}-${entry.note?.slice(0, 20)}`}
               entry={entry}
               onUpdate={onUpdateCheckIn}
               onDelete={onDeleteCheckIn}
@@ -308,7 +308,7 @@ function CheckInRow({ entry, onUpdate, onDelete, inputCls }) {
   const cancelEdit = () => setEditing(false);
   const saveEdit = () => {
     if (!note.trim()) return;
-    onUpdate?.(entry.id, {
+    onUpdate?.(entry, {
       date,
       author: author.trim(),
       noteType,
@@ -369,7 +369,7 @@ function CheckInRow({ entry, onUpdate, onDelete, inputCls }) {
           {confirmDel ? (
             <>
               <span className="text-[11px] text-red-600 font-semibold mr-1">Delete?</span>
-              <button onClick={() => { onDelete?.(entry.id); setConfirmDel(false); }}
+              <button onClick={() => { onDelete?.(entry); setConfirmDel(false); }}
                 className="p-1 rounded text-white"
                 style={{ backgroundColor: '#dc2626' }}
                 title="Confirm delete">

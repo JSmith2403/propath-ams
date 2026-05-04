@@ -91,6 +91,19 @@ export default function AthleteProfile({
   // (e.g. after initial session sync populates phase2 performance entries)
   useEffect(() => { setLocalAthlete(athlete); }, [athlete]);
 
+  // Backfill ids on any check-in that's missing one. Legacy entries created
+  // before id-stamping was universal otherwise can't be edited or deleted
+  // because the row matchers below all key off entry.id.
+  useEffect(() => {
+    const list = athlete?.checkIns || [];
+    const missing = list.filter(e => !e.id);
+    if (missing.length === 0) return;
+    const fixed = list.map(e => e.id ? e : { ...e, id: uid() });
+    setLocalAthlete(a => ({ ...a, checkIns: fixed }));
+    // Persist once via the parent updater so the backfill survives reload.
+    if (onUpdate) onUpdate(athlete.id, { ...athlete, checkIns: fixed });
+  }, [athlete?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // { domain: string, entryId: string } | null
   const [highlightEntry, setHighlightEntry] = useState(initialHighlight || null);
 
@@ -205,20 +218,32 @@ export default function AthleteProfile({
     onAddCheckIn(localAthlete.id, newEntry);
   };
 
-  const handleUpdateCheckIn = (entryId, patch) => {
+  // Defensive matcher — prefers id when present, falls back to the
+  // entry payload (date+author+noteType+note) so legacy rows that
+  // never got an id can still be edited or deleted before backfill
+  // completes its round-trip to storage.
+  const matchesEntry = (e, target) =>
+    (target?.id && e.id === target.id)
+    || (!target?.id
+        && e.date === target?.date
+        && e.author === target?.author
+        && e.noteType === target?.noteType
+        && e.note === target?.note);
+
+  const handleUpdateCheckIn = (target, patch) => {
     setLocalAthlete(a => ({
       ...a,
-      checkIns: (a.checkIns || []).map(e => e.id === entryId ? { ...e, ...patch } : e),
+      checkIns: (a.checkIns || []).map(e => matchesEntry(e, target) ? { ...e, ...patch } : e),
     }));
-    onUpdateCheckIn?.(localAthlete.id, entryId, patch);
+    if (target?.id) onUpdateCheckIn?.(localAthlete.id, target.id, patch);
   };
 
-  const handleDeleteCheckIn = (entryId) => {
+  const handleDeleteCheckIn = (target) => {
     setLocalAthlete(a => ({
       ...a,
-      checkIns: (a.checkIns || []).filter(e => e.id !== entryId),
+      checkIns: (a.checkIns || []).filter(e => !matchesEntry(e, target)),
     }));
-    onDeleteCheckIn?.(localAthlete.id, entryId);
+    if (target?.id) onDeleteCheckIn?.(localAthlete.id, target.id);
   };
 
   const handleSavePhysicalWorkingOn = (workingOn) => {
