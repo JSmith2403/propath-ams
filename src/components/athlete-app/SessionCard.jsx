@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, CheckCircle2, Play } from 'lucide-react';
-import { tintForLetter } from '../../utils/letterTints';
+import { tintForExercise } from '../../utils/letterTints';
 import { parsePrescription } from '../../utils/prescriptionRender';
 
 // Strip em dashes from coach-authored session names for house style.
@@ -87,7 +87,7 @@ export default function SessionCard({ session, index = 0, defaultOpen = false, o
                       </p>
                     );
                   }
-                  const tint = tintForLetter(row.letter);
+                  const tint = tintForExercise({ letter: row.letter, isWarmUp: row.sectionIsWarmUp });
                   const summary = parsePrescription(row).summary;
                   return (
                     <div

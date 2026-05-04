@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3 } from 'lucide-react';
 import { useSessionLogger } from '../../hooks/useSessionLogger';
-import { tintForLetter } from '../../utils/letterTints';
+import { tintForExercise } from '../../utils/letterTints';
 import { parsePrescription } from '../../utils/prescriptionRender';
 import logoBlack from '../../assets/Propath_Primary Logo_Black.png';
 
@@ -599,7 +599,7 @@ function rpeColour(rpe) {
 }
 
 function ExerciseLogger({ exercise, index, upNext, sets, onLog, onDelete }) {
-  const tint = tintForLetter(exercise.letter);
+  const tint = tintForExercise({ letter: exercise.letter, isWarmUp: exercise.sectionIsWarmUp });
   const prescription = useMemo(() => parsePrescription(exercise), [exercise]);
 
   const sortedSets = [...sets].sort((a, b) => a.set_number - b.set_number);
