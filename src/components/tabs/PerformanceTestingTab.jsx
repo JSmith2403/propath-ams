@@ -8,6 +8,7 @@ import {
 import { Settings, Plus, X, RotateCcw } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
+import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -316,7 +317,7 @@ function savePerf(athleteId, patch) {
 
 // ─── Metric Picker ────────────────────────────────────────────────────────────
 
-function MetricPicker({ onSelect, onClose, exclude = [] }) {
+function MetricPicker({ onSelect, onClose, exclude = [], valdMetrics = [] }) {
   const { customMetrics } = useCustomMetrics();
   const ref = useRef();
 
@@ -368,6 +369,25 @@ function MetricPicker({ onSelect, onClose, exclude = [] }) {
               onClick={() => { onSelect(m.key); onClose(); }}
               className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors">
               {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {valdMetrics.filter(m => !exclude.includes(m.key)).length > 0 && (
+        <div>
+          <div className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide sticky top-0"
+            style={{ color: '#437E8D', backgroundColor: 'rgba(67,126,141,0.08)' }}>
+            VALD Imports
+          </div>
+          {valdMetrics.filter(m => !exclude.includes(m.key)).map(m => (
+            <button key={m.key}
+              onClick={() => { onSelect(m.key); onClose(); }}
+              className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+              title={m.label}
+            >
+              <span className="font-semibold">{m.testType}</span>
+              <span className="text-gray-500"> — {m.name}</span>
+              {m.unit && <span className="text-gray-400"> ({m.unit})</span>}
             </button>
           ))}
         </div>
@@ -532,11 +552,26 @@ function KpiDot({ cx, cy, payload }) {
   return <circle cx={cx} cy={cy} r={4} fill={payload?.flagged ? '#f59e0b' : TEAL} stroke="white" strokeWidth={1.5} />;
 }
 
-function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemove, includedInReport, onToggleReport, toggleWarning }) {
-  const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
-  const rawEntries = entries[sourceKey] || [];
+function KpiCard({
+  metricKey, entries, matEntries, customMetrics,
+  onSwap, onRemove, includedInReport, onToggleReport, toggleWarning,
+  // VALD plumbing — supplied by the parent so KpiCard can branch its
+  // data source when the metric key starts with `vald:`.
+  valdMetrics = [],
+  valdEntriesFor,
+  valdDefFor,
+}) {
+  const isVALD = metricKey?.startsWith?.('vald:');
 
-  const isDualLine = DUAL_LINE_METRICS.has(metricKey);
+  const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
+  const rawEntries = isVALD
+    ? (valdEntriesFor ? valdEntriesFor(metricKey) : [])
+    : (entries[sourceKey] || []);
+
+  // Dual-line view doesn't apply to VALD imports — they're already
+  // surfaced as bilateral 'Trial' values with L/R/Asym available in
+  // Data Storage instead.
+  const isDualLine = !isVALD && DUAL_LINE_METRICS.has(metricKey);
 
   const chartData = useMemo(
     () => isDualLine
@@ -546,7 +581,9 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
     [rawEntries.length, metricKey, isDualLine]
   );
 
-  const metricDef = SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey];
+  const metricDef = isVALD
+    ? (valdDefFor ? valdDefFor(metricKey) : null)
+    : (SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey]);
   const unit      = metricDef?.unit || '';
   const customList = Object.values(customMetrics || {});
 
@@ -582,6 +619,13 @@ function KpiCard({ metricKey, entries, matEntries, customMetrics, onSwap, onRemo
             <optgroup label="Custom">
               {customList.map(m => (
                 <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </optgroup>
+          )}
+          {valdMetrics.length > 0 && (
+            <optgroup label="VALD Imports">
+              {valdMetrics.map(m => (
+                <option key={m.key} value={m.key}>{m.label}{m.unit ? ` (${m.unit})` : ''}</option>
               ))}
             </optgroup>
           )}
@@ -803,6 +847,13 @@ export default function PerformanceTestingTab({
   const { customMetrics } = useCustomMetrics();
   const athleteId = athlete?.id || '';
 
+  // VALD imports for this athlete — surfaced in the KPI metric picker
+  // alongside manual + custom metrics. Lets coaches chart any imported
+  // VALD metric (e.g. CMJ Concentric Peak Force, IMTP RFD 0-100ms) as
+  // a Test Result without leaving the Testing tab.
+  const { metrics: valdMetrics, entriesFor: valdEntriesFor, defFor: valdDefFor } =
+    useVALDMetrics(athleteId);
+
   const persisted = useMemo(() => loadPerf(athleteId), [athleteId]);
   const defaultThresh = useMemo(() => getDefaultThresholds(athlete), [athlete]);
 
@@ -917,6 +968,9 @@ export default function PerformanceTestingTab({
               entries={entries}
               matEntries={maturationEntries}
               customMetrics={customMetrics}
+              valdMetrics={valdMetrics}
+              valdEntriesFor={valdEntriesFor}
+              valdDefFor={valdDefFor}
               onSwap={newKey => swapKpi(idx, newKey)}
               includedInReport={reportSet.has(key)}
               onToggleReport={toggleReportMetric}
@@ -938,7 +992,12 @@ export default function PerformanceTestingTab({
             </button>
             {addPickerOpen && (
               <div className="absolute right-0" style={{ top: 32, zIndex: 50 }}>
-                <MetricPicker onSelect={addAdditional} onClose={addPickerClose} exclude={addlMetrics} />
+                <MetricPicker
+                  onSelect={addAdditional}
+                  onClose={addPickerClose}
+                  exclude={addlMetrics}
+                  valdMetrics={valdMetrics}
+                />
               </div>
             )}
           </div>
@@ -957,6 +1016,9 @@ export default function PerformanceTestingTab({
                 entries={entries}
                 matEntries={maturationEntries}
                 customMetrics={customMetrics}
+                valdMetrics={valdMetrics}
+                valdEntriesFor={valdEntriesFor}
+                valdDefFor={valdDefFor}
                 onSwap={newKey => swapAdditional(key, newKey)}
                 onRemove={() => removeAdditional(key)}
                 includedInReport={reportSet.has(key)}
