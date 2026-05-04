@@ -8,13 +8,6 @@ import {
 import { Settings, Plus, X, RotateCcw } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
-import VALDPanel from './VALDPanel';
-import TabBar from '../ui/TabBar';
-
-const TESTING_SUBTABS = [
-  { id: 'manual', label: 'Manual Entry'  },
-  { id: 'vald',   label: 'VALD Imports'  },
-];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -809,7 +802,6 @@ export default function PerformanceTestingTab({
 }) {
   const { customMetrics } = useCustomMetrics();
   const athleteId = athlete?.id || '';
-  const [subTab, setSubTab] = useState('manual');
 
   const persisted = useMemo(() => loadPerf(athleteId), [athleteId]);
   const defaultThresh = useMemo(() => getDefaultThresholds(athlete), [athlete]);
@@ -903,19 +895,6 @@ export default function PerformanceTestingTab({
   ];
 
   return (
-    <div>
-      <TabBar
-        tabs={TESTING_SUBTABS}
-        active={subTab}
-        onChange={setSubTab}
-        className="mb-6 no-print"
-      />
-
-      {subTab === 'vald' && (
-        <VALDPanel athlete={athlete} />
-      )}
-
-      {subTab === 'manual' && (
     <div className="space-y-6">
 
       {/* ── Section 1: Diagnostic Quadrant ───────────────────────── */}
@@ -1036,8 +1015,6 @@ export default function PerformanceTestingTab({
             </table>
           </div>
         </div>
-      )}
-    </div>
       )}
     </div>
   );

@@ -8,6 +8,45 @@ import NewSessionForm    from './NewSessionForm';
 import SessionTable      from './SessionTable';
 import SessionLog        from './SessionLog';
 import DataStorageTable  from './DataStorageTable';
+import VALDDataStorage   from './VALDDataStorage';
+
+// Inner tab pair that lives inside the "Data Storage" sub-tab of the
+// Data Management page. Splits the existing manual storage view from
+// the new VALD API imports so they're discoverable side-by-side.
+function DataStorageView({ athletes, customMetrics, updateEntryById, onUpdateAthlete }) {
+  const [tab, setTab] = useState('manual');
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-1 px-4 pt-2 pb-0 bg-white border-b border-gray-200 shrink-0">
+        {[{ key: 'manual', label: 'Manual Entry' }, { key: 'vald', label: 'VALD API' }].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className="px-3 py-1.5 text-xs font-semibold rounded-t transition-colors border-b-2"
+            style={tab === t.key
+              ? { color: GOLD, borderColor: GOLD }
+              : { color: '#6b7280', borderColor: 'transparent' }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-hidden">
+        {tab === 'manual' && (
+          <DataStorageTable
+            athletes={athletes}
+            customMetrics={customMetrics}
+            updateEntryById={updateEntryById}
+            onUpdateAthlete={onUpdateAthlete}
+          />
+        )}
+        {tab === 'vald' && (
+          <VALDDataStorage athletes={athletes} />
+        )}
+      </div>
+    </div>
+  );
+}
 
 const GOLD = '#A58D69';
 
@@ -253,9 +292,9 @@ export default function PhysicalMobilitySheet({ athletes, syncSessionData, onUpd
         </div>
       )}
 
-      {/* Data Storage sub-tab */}
+      {/* Data Storage sub-tab — split into Manual Entry / VALD API */}
       {view !== 'session' && subTab === 'storage' && (
-        <DataStorageTable
+        <DataStorageView
           athletes={athletes}
           customMetrics={customMetrics}
           updateEntryById={updateEntryById}

@@ -109,7 +109,7 @@ export default function Sidebar({
         {!isExternal && (
           <NavItem
             icon={Database}
-            label="Data Entry"
+            label="Data Management"
             active={isDataEntry}
             onClick={() => onNavigate('dataentry')}
           />
