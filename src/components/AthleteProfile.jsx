@@ -73,7 +73,7 @@ export default function AthleteProfile({
   onAddPhysioEntry, onAddNutritionEntry, onAddAcsi28Entry, onAddPsychNote,
   onSavePsychWorkingOn, onSaveNutritionWorkingOn,
   onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag, onSaveReportMetrics,
-  onAddCheckIn,
+  onAddCheckIn, onUpdateCheckIn, onDeleteCheckIn,
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
@@ -205,6 +205,22 @@ export default function AthleteProfile({
     onAddCheckIn(localAthlete.id, newEntry);
   };
 
+  const handleUpdateCheckIn = (entryId, patch) => {
+    setLocalAthlete(a => ({
+      ...a,
+      checkIns: (a.checkIns || []).map(e => e.id === entryId ? { ...e, ...patch } : e),
+    }));
+    onUpdateCheckIn?.(localAthlete.id, entryId, patch);
+  };
+
+  const handleDeleteCheckIn = (entryId) => {
+    setLocalAthlete(a => ({
+      ...a,
+      checkIns: (a.checkIns || []).filter(e => e.id !== entryId),
+    }));
+    onDeleteCheckIn?.(localAthlete.id, entryId);
+  };
+
   const handleSavePhysicalWorkingOn = (workingOn) => {
     setLocalAthlete(a => ({
       ...a,
@@ -306,6 +322,8 @@ export default function AthleteProfile({
             onSaveReview={handleSaveReview}
             onNavigateToPillar={handleNavigateToPillar}
             onAddCheckIn={handleAddCheckIn}
+            onUpdateCheckIn={handleUpdateCheckIn}
+            onDeleteCheckIn={handleDeleteCheckIn}
             onNavigateToProgrammeWeek={handleNavigateToProgrammeWeek}
           />
         );

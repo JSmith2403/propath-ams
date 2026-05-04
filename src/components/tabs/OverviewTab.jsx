@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, FileText, ClipboardList, ChevronRight, Smartphone } from 'lucide-react';
+import { Camera, FileText, ClipboardList, ChevronRight, Smartphone, Pencil, Trash2, Check, X } from 'lucide-react';
 import InitialsAvatar from '../InitialsAvatar';
 import QuarterlyReviews from '../QuarterlyReviews';
 import PhotoCropModal from '../PhotoCropModal';
@@ -205,7 +205,7 @@ const TYPE_COLORS = {
   'Welfare note': { bg: '#fff7ed', text: '#c2410c' },
 };
 
-function CheckInSection({ checkIns = [], onAddCheckIn }) {
+function CheckInSection({ checkIns = [], onAddCheckIn, onUpdateCheckIn, onDeleteCheckIn }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date,     setDate]     = useState(today);
   const [author,   setAuthor]   = useState('');
@@ -272,30 +272,131 @@ function CheckInSection({ checkIns = [], onAddCheckIn }) {
         <p className="text-xs text-gray-300 py-4 text-center">No check-in notes yet.</p>
       ) : (
         <div className="space-y-2">
-          {sorted.map(entry => {
-            const tc = TYPE_COLORS[entry.noteType] || TYPE_COLORS['General note'];
-            return (
-              <div key={entry.id} className="bg-white rounded-lg border border-gray-100 px-4 py-3"
-                style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs font-semibold text-gray-500">{entry.date}</span>
-                  {entry.author && (
-                    <>
-                      <span className="text-gray-200 text-xs">·</span>
-                      <span className="text-xs font-medium text-gray-600">{entry.author}</span>
-                    </>
-                  )}
-                  <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded"
-                    style={{ backgroundColor: tc.bg, color: tc.text }}>
-                    {entry.noteType}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700 leading-relaxed">{entry.note}</p>
-              </div>
-            );
-          })}
+          {sorted.map(entry => (
+            <CheckInRow
+              key={entry.id}
+              entry={entry}
+              onUpdate={onUpdateCheckIn}
+              onDelete={onDeleteCheckIn}
+              inputCls={inp}
+            />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Single check-in row with edit + delete affordances ─────────────────────
+function CheckInRow({ entry, onUpdate, onDelete, inputCls }) {
+  const [editing, setEditing] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [date,     setDate]     = useState(entry.date || '');
+  const [author,   setAuthor]   = useState(entry.author || '');
+  const [noteType, setNoteType] = useState(entry.noteType || 'Check-in');
+  const [note,     setNote]     = useState(entry.note || '');
+
+  const tc = TYPE_COLORS[entry.noteType] || TYPE_COLORS['General note'];
+
+  const beginEdit = () => {
+    setDate(entry.date || '');
+    setAuthor(entry.author || '');
+    setNoteType(entry.noteType || 'Check-in');
+    setNote(entry.note || '');
+    setEditing(true);
+  };
+  const cancelEdit = () => setEditing(false);
+  const saveEdit = () => {
+    if (!note.trim()) return;
+    onUpdate?.(entry.id, {
+      date,
+      author: author.trim(),
+      noteType,
+      note: note.trim(),
+    });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="bg-white rounded-lg border border-gold-200 px-4 py-3"
+        style={{ boxShadow: '0 1px 3px rgba(165,141,105,0.12)' }}>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className={inputCls} style={{ '--tw-ring-color': '#A58D69' }} />
+          <input type="text" value={author} onChange={e => setAuthor(e.target.value)}
+            placeholder="Author" className={inputCls} style={{ '--tw-ring-color': '#A58D69' }} />
+          <select value={noteType} onChange={e => setNoteType(e.target.value)}
+            className={inputCls} style={{ '--tw-ring-color': '#A58D69' }}>
+            {CHECK_IN_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <textarea value={note} onChange={e => setNote(e.target.value)}
+          rows={3} className={`${inputCls} resize-none mb-3`}
+          style={{ '--tw-ring-color': '#A58D69' }} />
+        <div className="flex justify-end gap-2">
+          <button onClick={cancelEdit}
+            className="px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
+            Cancel
+          </button>
+          <button onClick={saveEdit} disabled={!note.trim()}
+            className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg transition-opacity disabled:opacity-40"
+            style={{ backgroundColor: '#A58D69' }}>
+            Save changes
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group/checkin bg-white rounded-lg border border-gray-100 px-4 py-3"
+      style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-xs font-semibold text-gray-500">{entry.date}</span>
+        {entry.author && (
+          <>
+            <span className="text-gray-200 text-xs">·</span>
+            <span className="text-xs font-medium text-gray-600">{entry.author}</span>
+          </>
+        )}
+        <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded"
+          style={{ backgroundColor: tc.bg, color: tc.text }}>
+          {entry.noteType}
+        </span>
+        {/* Edit / delete — visible on hover; always visible mid-confirm */}
+        <div className={`flex items-center gap-1 ${confirmDel ? '' : 'opacity-0 group-hover/checkin:opacity-100'} transition-opacity`}>
+          {confirmDel ? (
+            <>
+              <span className="text-[11px] text-red-600 font-semibold mr-1">Delete?</span>
+              <button onClick={() => { onDelete?.(entry.id); setConfirmDel(false); }}
+                className="p-1 rounded text-white"
+                style={{ backgroundColor: '#dc2626' }}
+                title="Confirm delete">
+                <Check size={12} />
+              </button>
+              <button onClick={() => setConfirmDel(false)}
+                className="p-1 rounded text-gray-500 hover:bg-gray-100" title="Cancel">
+                <X size={12} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={beginEdit}
+                className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                title="Edit">
+                <Pencil size={12} />
+              </button>
+              <button onClick={() => setConfirmDel(true)}
+                className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="Delete">
+                <Trash2 size={12} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <p className="text-sm text-gray-700 leading-relaxed">{entry.note}</p>
     </div>
   );
 }
@@ -311,6 +412,8 @@ export default function OverviewTab({
   onSaveReview,       // (review) — for QuarterlyReviews completion
   onNavigateToPillar, // (domain, entryId | null) — navigate to pillar section
   onAddCheckIn,       // (entry) — add a check-in note
+  onUpdateCheckIn,    // (entryId, patch) — edit an existing note
+  onDeleteCheckIn,    // (entryId) — remove a note
   // Deep-link out of the Calendar sub-tab when a gym session pill is clicked.
   // Routed via AthleteProfile so it can switch to Physical Dev → Programme → Week.
   onNavigateToProgrammeWeek,
@@ -520,6 +623,8 @@ export default function OverviewTab({
       <CheckInSection
         checkIns={localAthlete.checkIns || []}
         onAddCheckIn={onAddCheckIn}
+        onUpdateCheckIn={onUpdateCheckIn}
+        onDeleteCheckIn={onDeleteCheckIn}
       />
 
       {/* ── Quarterly reviews ────────────────────────────────── */}

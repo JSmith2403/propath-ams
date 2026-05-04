@@ -290,6 +290,18 @@ export function useAthletes({ seedEnabled = true } = {}) {
       checkIns: [entry, ...(a.checkIns || [])],
     })), [update]);
 
+  const updateCheckIn = useCallback((id, entryId, patch) =>
+    update(id, a => ({
+      ...a,
+      checkIns: (a.checkIns || []).map(e => e.id === entryId ? { ...e, ...patch } : e),
+    })), [update]);
+
+  const deleteCheckIn = useCallback((id, entryId) =>
+    update(id, a => ({
+      ...a,
+      checkIns: (a.checkIns || []).filter(e => e.id !== entryId),
+    })), [update]);
+
   const deleteRagEntry = useCallback((id, domain, entryId) =>
     update(id, a => ({
       ...a,
@@ -471,7 +483,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     // Phase 1
     addAthlete, updateAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
-    addCheckIn,
+    addCheckIn, updateCheckIn, deleteCheckIn,
     // Phase 2 — individual
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,

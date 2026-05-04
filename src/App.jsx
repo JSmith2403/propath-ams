@@ -53,7 +53,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     updateLatestEntry, updateEntryById,
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
     syncSessionData,
-    addCheckIn,
+    addCheckIn, updateCheckIn, deleteCheckIn,
   } = useAthletes({ seedEnabled: !isExternal });
 
   // Re-sync all saved sessions once after athletes load (admin/co_admin only).
@@ -186,6 +186,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onSavePerformanceBrag={savePerformanceBrag}
             onSaveReportMetrics={saveReportMetrics}
             onAddCheckIn={addCheckIn}
+            onUpdateCheckIn={updateCheckIn}
+            onDeleteCheckIn={deleteCheckIn}
             onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
             onUpdatePhysioEntry={updatePhysioEntry}
             onDeletePhysioEntry={canDelete ? deletePhysioEntry : undefined}
