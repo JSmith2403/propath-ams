@@ -29,34 +29,27 @@ const VALD_FD_BASE =
   process.env.VALD_FD_BASE || 'https://prd-aue-api-extforcedecks.valdperformance.com';
 
 // ─── OAuth2 client-credentials token exchange ──────────────────────────────
-// VALD's identity server expects credentials via HTTP Basic auth header
-// (RFC 6749 §2.3.1), not body params. Sending them in the body is what
-// triggers their `invalid_client` 400.
+// Per VALD's official integration guide:
+//   • Credentials go in the form body, not HTTP Basic.
+//   • scope=api.external is REQUIRED. Their old api.dashboard /
+//     api.forcedecks scopes were retired in Feb 2024 and the server
+//     responds with 400 invalid_client when no scope is sent.
 async function getAccessToken({ clientId, clientSecret }) {
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const body = new URLSearchParams({ grant_type: 'client_credentials' });
-
-  const tryRequest = async (extraParams = {}) => {
-    const fullBody = new URLSearchParams({ ...Object.fromEntries(body), ...extraParams });
-    return fetch(VALD_AUTH_URL, {
-      method:  'POST',
-      headers: {
-        'Authorization': `Basic ${basic}`,
-        'Content-Type':  'application/x-www-form-urlencoded',
-        'Accept':        'application/json',
-      },
-      body: fullBody,
-    });
-  };
-
-  // Most tenants don't need a scope. If the no-scope request fails on
-  // `invalid_scope` we retry with the documented external scope.
-  let r = await tryRequest();
-  let text = await r.text();
-  if (!r.ok && /invalid_scope/i.test(text)) {
-    r = await tryRequest({ scope: 'api.external' });
-    text = await r.text();
-  }
+  const body = new URLSearchParams({
+    grant_type:    'client_credentials',
+    client_id:     clientId,
+    client_secret: clientSecret,
+    scope:         'api.external',
+  });
+  const r = await fetch(VALD_AUTH_URL, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept':       'application/json',
+    },
+    body,
+  });
+  const text = await r.text();
   if (!r.ok) {
     throw new Error(`VALD auth failed (${r.status})`, { cause: text });
   }
@@ -67,11 +60,16 @@ async function getAccessToken({ clientId, clientSecret }) {
 }
 
 // ─── ForceDecks: list tests for a profile + fetch trial detail ─────────────
+// Per VALD's External ForceDecks guide the current shape is flat:
+//   GET /tests?tenantId=…&modifiedFromUtc=…&profileId=…
+// modifiedFromUtc is required — pass the unix epoch to mean "all time".
 async function fetchTestsForProfile({ token, tenantId, profileId, fromIso }) {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({
+    tenantId,
+    modifiedFromUtc: fromIso || '1970-01-01T00:00:00Z',
+  });
   if (profileId) params.set('profileId', profileId);
-  if (fromIso)   params.set('modifiedFromUtc', fromIso);
-  const url = `${VALD_FD_BASE}/v2019q3/teams/${encodeURIComponent(tenantId)}/tests?${params}`;
+  const url = `${VALD_FD_BASE}/tests?${params}`;
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const text = await r.text();
   if (!r.ok) throw new Error(`VALD list-tests failed (${r.status})`, { cause: text });
@@ -79,7 +77,8 @@ async function fetchTestsForProfile({ token, tenantId, profileId, fromIso }) {
 }
 
 async function fetchTestDetail({ token, tenantId, testId }) {
-  const url = `${VALD_FD_BASE}/v2019q3/teams/${encodeURIComponent(tenantId)}/tests/${encodeURIComponent(testId)}`;
+  // Trial-level detail still lives under the older path.
+  const url = `${VALD_FD_BASE}/v2019q3/teams/${encodeURIComponent(tenantId)}/tests/${encodeURIComponent(testId)}/trials`;
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const text = await r.text();
   if (!r.ok) throw new Error(`VALD test-detail (${testId}) failed (${r.status})`, { cause: text });
@@ -135,9 +134,12 @@ export default async function handler(req, res) {
     return;
   }
 
-  const tenantId     = process.env.VALD_TENANT_ID;
-  const clientId     = process.env.VALD_CLIENT_ID;
-  const clientSecret = process.env.VALD_CLIENT_SECRET;
+  // Trim defensively — env vars copy-pasted into Vercel often pick up
+  // a stray trailing newline, which IdentityServer rejects as
+  // invalid_client without explanation.
+  const tenantId     = (process.env.VALD_TENANT_ID     || '').trim();
+  const clientId     = (process.env.VALD_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.VALD_CLIENT_SECRET || '').trim();
   if (!tenantId || !clientId || !clientSecret) {
     res.status(500).json({ ok: false, error: 'VALD env vars missing on server' });
     return;
