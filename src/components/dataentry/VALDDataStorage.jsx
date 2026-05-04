@@ -49,6 +49,25 @@ export default function VALDDataStorage({ athletes = [] }) {
     [athletes],
   );
 
+  // Live VALD result-definitions catalogue used to resolve resultId →
+  // name/unit for any raw_metrics row that was imported before
+  // server-side enrichment existed. Cached at the edge so the call is
+  // basically free.
+  const [definitions, setDefinitions] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/vald/result-definitions');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        if (json?.ok && json.definitions) setDefinitions(json.definitions);
+      } catch (_) { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [rows, setRows]           = useState([]);
   const [loading, setLoading]     = useState(true);
   const [syncing, setSyncing]     = useState(false);
@@ -285,7 +304,7 @@ export default function VALDDataStorage({ athletes = [] }) {
                             </div>
                           </button>
                           {isSOpen && (
-                            <SessionTable session={sess} limbFilter={limbFilter} />
+                            <SessionTable session={sess} limbFilter={limbFilter} definitions={definitions} />
                           )}
                         </div>
                       );
@@ -313,8 +332,17 @@ export default function VALDDataStorage({ athletes = [] }) {
 // ─── Per-session dynamic-column table ──────────────────────────────────────
 // Shared shape with the athlete-side panel; lives here so the data-storage
 // view doesn't depend on the athlete tab existing.
-function SessionTable({ session, limbFilter }) {
+function SessionTable({ session, limbFilter, definitions = {} }) {
   const filterFn = LIMB_FILTERS.find(f => f.id === limbFilter)?.test || (() => true);
+
+  // Resolve a raw_metrics item against the live catalogue when the
+  // server-side enrichment fields are missing (older imports).
+  const resolve = (m) => {
+    if (m?.name) return m;
+    const def = definitions[m?.resultId];
+    if (def) return { ...m, name: def.name, unit: def.unit, group: def.group, decimals: def.decimals };
+    return { ...m, name: m?.resultId != null ? `Metric ${m.resultId}` : 'Unknown' };
+  };
 
   const { columns, rows } = useMemo(() => {
     const out = [];
@@ -322,8 +350,9 @@ function SessionTable({ session, limbFilter }) {
     session.trials.forEach((t, i) => {
       const metrics = Array.isArray(t.raw_metrics) ? t.raw_metrics : [];
       const byLimb = new Map();
-      for (const m of metrics) {
-        if (!filterFn(m.limb)) continue;
+      for (const raw of metrics) {
+        if (!filterFn(raw.limb)) continue;
+        const m = resolve(raw);
         const lk = m.limb || 'Trial';
         if (!byLimb.has(lk)) byLimb.set(lk, {});
         byLimb.get(lk)[m.name] = m;
@@ -347,7 +376,8 @@ function SessionTable({ session, limbFilter }) {
         || a.name.localeCompare(b.name),
       );
     return { columns: cols, rows: out };
-  }, [session, limbFilter, filterFn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, limbFilter, definitions]);
 
   if (rows.length === 0) {
     return (
