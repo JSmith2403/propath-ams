@@ -116,8 +116,26 @@ export default function ResourcesTab() {
                   <Icon size={18} className="text-white" strokeWidth={1.6} />
                 </div>
               </div>
+              {/* Coming Soon overlay — dark wash plus a top badge so it
+                  doesn't crossover the category label at the bottom. */}
+              {empty && (
+                <>
+                  <div
+                    className="absolute inset-0"
+                    style={{ backgroundColor: 'rgba(28,28,28,0.78)' }}
+                  />
+                  <span
+                    className="absolute top-2 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-widest text-white/85 z-10"
+                  >
+                    Coming Soon
+                  </span>
+                </>
+              )}
+
+              {/* Category label — rendered after the overlay so it sits
+                  on top and stays legible even when greyed out. */}
               <div
-                className="absolute left-0 right-0 bottom-0 px-1.5 py-2"
+                className="absolute left-0 right-0 bottom-0 px-1.5 py-2 z-10"
                 style={{
                   background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.65) 100%)',
                 }}
@@ -126,21 +144,6 @@ export default function ResourcesTab() {
                   {c.label}
                 </p>
               </div>
-
-              {/* Coming Soon overlay — dark grey wash that signals the
-                  category exists but has no content yet. */}
-              {empty && (
-                <div
-                  className="absolute inset-0 flex items-end justify-center pb-2"
-                  style={{ backgroundColor: 'rgba(28,28,28,0.78)' }}
-                >
-                  <span
-                    className="text-[9px] font-bold uppercase tracking-widest text-white/85"
-                  >
-                    Coming Soon
-                  </span>
-                </div>
-              )}
             </button>
           );
         })}
