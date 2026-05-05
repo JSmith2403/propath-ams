@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, MoreVertical, RotateCcw, StickyNote } from 'lucide-react';
+import { ArrowLeftRight, ChevronLeft, ChevronRight, MoreVertical, RotateCcw, StickyNote } from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import {
@@ -318,6 +318,7 @@ function ExerciseItem({
   target_value,
   prescription_type,
   is_overridden,
+  swapped_from,
   onRequestReplace,
   onClearOverride,
 }) {
@@ -341,6 +342,11 @@ function ExerciseItem({
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
 
+  // Right-edge slot is a fixed 18×18 frame:
+  //   - swap icon at rest (when overridden) — gold chip with double-arrow
+  //   - three-dots on row hover — overlays the swap icon
+  // This keeps row layout stable so wrapped names don't shift on hover.
+
   return (
     <div className="group/exrow flex items-start gap-2 relative">
       <span
@@ -350,44 +356,77 @@ function ExerciseItem({
           backgroundColor: tint.bg,
           color: tint.fg,
         }}
-        title={is_overridden ? 'Replaced from this week' : undefined}
       >
         {letter}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-semibold truncate flex items-center gap-1" style={{ color: '#1C1C1C' }} title={name}>
+        <div
+          className="text-[11px] font-semibold leading-snug"
+          style={{
+            color: '#1C1C1C',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}
+          title={swapped_from ? `${name} (swapped from ${swapped_from})` : name}
+        >
           {name}
-          {is_overridden && (
-            <span
-              className="text-[8px] uppercase tracking-wider px-1 py-0.5 rounded shrink-0"
-              style={{ backgroundColor: 'rgba(165,141,105,0.14)', color: '#A58D69' }}
-            >
-              swapped
-            </span>
-          )}
         </div>
         {setsRepsLine && (
-          <div className="text-[10px] tabular-nums" style={{ color: '#6b7280' }}>
+          <div className="text-[10px] tabular-nums mt-0.5" style={{ color: '#6b7280' }}>
             {setsRepsLine}
           </div>
         )}
       </div>
 
-      <div ref={menuRef} className="shrink-0 relative">
+      <div
+        ref={menuRef}
+        className="shrink-0 relative mt-0.5"
+        style={{ width: 18, height: 18 }}
+      >
+        {/* Swap status chip — gold rounded square with white double-arrow.
+            Always visible at rest when overridden; fades out on row hover
+            so the three-dots can take its place without jumping. */}
+        {is_overridden && (
+          <span
+            className="absolute inset-0 inline-flex items-center justify-center rounded-md transition-opacity pointer-events-none group-hover/exrow:opacity-0"
+            style={{ backgroundColor: '#A58D69' }}
+            title={swapped_from
+              ? `Swapped from ${swapped_from} — click ⋮ to restore`
+              : 'Swapped from this week'}
+          >
+            <ArrowLeftRight size={11} style={{ color: '#fff' }} strokeWidth={2.5} />
+          </span>
+        )}
+        {/* Three-dots — only on row hover (or when menu open). Sits in
+            the same slot as the swap chip so the row never reflows. */}
         <button
           onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
-          className="opacity-0 group-hover/exrow:opacity-100 hover:opacity-100 p-1 rounded hover:bg-gray-100 transition-opacity"
+          className={`absolute inset-0 flex items-center justify-center rounded hover:bg-gray-100 transition-opacity ${
+            menuOpen
+              ? 'opacity-100'
+              : 'opacity-0 group-hover/exrow:opacity-100'
+          }`}
           style={{ color: '#9ca3af' }}
           title="Exercise actions"
         >
-          <MoreVertical size={11} />
+          <MoreVertical size={12} />
         </button>
         {menuOpen && (
           <div
             className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-30"
-            style={{ border: '1px solid #e5e7eb', minWidth: 200 }}
+            style={{ border: '1px solid #e5e7eb', minWidth: 220 }}
             onClick={(e) => e.stopPropagation()}
           >
+            {is_overridden && swapped_from && (
+              <div
+                className="px-3 py-1.5 text-[10px] italic border-b border-gray-100"
+                style={{ color: '#9ca3af' }}
+              >
+                Swapped from {swapped_from}
+              </div>
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onRequestReplace && onRequestReplace(); }}
               className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 transition-colors"

@@ -37,13 +37,18 @@ export function buildSessionItems({ sessExs, sessNotes, sessSecs, wps, libById, 
 
     const wp = wps.find(w => w.session_exercise_id === ex.id && w.week_number === weekNumber) || null;
     const effectiveExerciseId = wp?.override_exercise_id || ex.exercise_id;
-    const lib = libById[effectiveExerciseId] || {};
+    const lib     = libById[effectiveExerciseId] || {};
+    const baseLib = libById[ex.exercise_id]      || {};
     const sec = sectionById[ex.section_id] || null;
 
     items.push({
       kind: 'exercise',
       letter,
       name: lib.name || '(missing exercise)',
+      // The original exercise name when this week is overridden — used
+      // by the week-view tooltip ("Swapped from X") so the coach knows
+      // what the row used to be without opening the menu.
+      swapped_from: wp?.override_exercise_id ? (baseLib.name || null) : null,
       sectionName: sec?.name || null,
       sectionIsWarmUp: !!sec?.is_warm_up,
       sets: wp?.sets ?? null,
