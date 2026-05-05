@@ -270,16 +270,7 @@ export default function ResourcesAdminView() {
 // an inline 'Add Resource' tile at the end.
 function CategoryCard({ cat, items, onTogglePublish, onEdit, onRemove, onAdd }) {
   const [open, setOpen] = useState(true);
-  const [menuOpenId, setMenuOpenId] = useState(null);
   const Icon = cat.icon;
-
-  // Close any open ⋮ menu when clicking elsewhere.
-  useEffect(() => {
-    if (!menuOpenId) return;
-    const close = () => setMenuOpenId(null);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [menuOpenId]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
@@ -343,11 +334,9 @@ function CategoryCard({ cat, items, onTogglePublish, onEdit, onRemove, onAdd }) 
                 <ResourceTile
                   key={it.id}
                   item={it}
-                  menuOpen={menuOpenId === it.id}
-                  onMenu={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === it.id ? null : it.id); }}
-                  onEdit={() => { setMenuOpenId(null); onEdit(it); }}
-                  onTogglePublish={() => { setMenuOpenId(null); onTogglePublish(it); }}
-                  onRemove={() => { setMenuOpenId(null); onRemove(it); }}
+                  onEdit={() => onEdit(it)}
+                  onTogglePublish={() => onTogglePublish(it)}
+                  onRemove={() => onRemove(it)}
                 />
               ))}
 
@@ -369,22 +358,23 @@ function CategoryCard({ cat, items, onTogglePublish, onEdit, onRemove, onAdd }) 
 }
 
 // ─── ResourceTile — one resource card inside a category's horizontal row ─
-// The menu is portalled to document.body so it can extend beyond the
-// tile's overflow-hidden image area + the row's overflow-x-auto scroll.
-function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemove }) {
-  const triggerRef = useRef(null);
-  const [menuPos, setMenuPos] = useState(null);
-
-  // Compute screen-space position of the menu when it opens.
-  useEffect(() => {
-    if (!menuOpen || !triggerRef.current) { setMenuPos(null); return; }
-    const r = triggerRef.current.getBoundingClientRect();
-    setMenuPos({ top: r.bottom + 4, left: Math.max(8, r.right - 180) });
-  }, [menuOpen]);
+// The whole tile is clickable to open the editor. Two always-visible
+// action buttons (publish toggle + delete) sit on the cover image; their
+// clicks stop propagation so they don't trigger edit. Delete uses
+// window.confirm in the parent's `onRemove` handler.
+function ResourceTile({ item, onEdit, onTogglePublish, onRemove }) {
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
 
   return (
-    <div className="shrink-0 w-[220px] rounded-lg border border-gray-100 bg-white">
-      {/* Cover area — overflow-hidden so the rounded corners + image clip */}
+    <div
+      onClick={onEdit}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') onEdit(); }}
+      className="shrink-0 w-[220px] rounded-lg border border-gray-100 bg-white cursor-pointer transition-shadow hover:shadow-card"
+      title="Click to edit"
+    >
+      {/* Cover area — clipped corners */}
       <div
         className="relative rounded-t-lg overflow-hidden"
         style={{
@@ -405,62 +395,45 @@ function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemov
         >
           Guide
         </span>
-        {!item.is_published && (
-          <span
-            className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-            style={{ color: '#92400e', backgroundColor: '#fef3c7' }}
+
+        {/* Always-visible action buttons — top-right of image. */}
+        <div className="absolute top-2 right-2 flex items-center gap-1">
+          {!item.is_published && (
+            <span
+              className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mr-1"
+              style={{ color: '#92400e', backgroundColor: '#fef3c7' }}
+            >
+              Hidden
+            </span>
+          )}
+          <button
+            onClick={stop(onTogglePublish)}
+            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+            style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+            title={item.is_published ? 'Hide from athletes' : 'Publish to athletes'}
           >
-            Hidden
-          </span>
+            {item.is_published
+              ? <Eye size={13} style={{ color: '#1C1C1C' }} />
+              : <EyeOff size={13} style={{ color: '#1C1C1C' }} />}
+          </button>
+          <button
+            onClick={stop(onRemove)}
+            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-white"
+            style={{ backgroundColor: 'rgba(220,38,38,0.92)' }}
+            title="Delete resource"
+          >
+            <Trash2 size={13} style={{ color: '#fff' }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Footer — title + summary */}
+      <div className="px-3 py-2.5">
+        <p className="text-xs font-bold text-gray-900 truncate">{item.title}</p>
+        {item.summary && (
+          <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.summary}</p>
         )}
       </div>
-
-      {/* Footer — keep overflow visible so the dropdown trigger sits cleanly */}
-      <div className="px-3 py-2.5 flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-gray-900 truncate">{item.title}</p>
-          {item.summary && (
-            <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.summary}</p>
-          )}
-        </div>
-        <button
-          ref={triggerRef}
-          onClick={onMenu}
-          className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
-          title="Actions"
-        >
-          <MoreVertical size={14} />
-        </button>
-      </div>
-
-      {/* Portalled menu — escapes tile + scroll container clipping */}
-      {menuOpen && menuPos && createPortal(
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="fixed bg-white rounded-md shadow-lg py-1"
-          style={{
-            top:    menuPos.top,
-            left:   menuPos.left,
-            width:  180,
-            border: '1px solid #e5e7eb',
-            zIndex: 100,
-          }}
-        >
-          <button onClick={onEdit}
-            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
-            <Pencil size={11} /> Edit
-          </button>
-          <button onClick={onTogglePublish}
-            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
-            {item.is_published ? <><EyeOff size={11} /> Hide</> : <><Eye size={11} /> Publish</>}
-          </button>
-          <button onClick={onRemove}
-            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-red-50 text-red-600 flex items-center gap-1.5">
-            <Trash2 size={11} /> Delete permanently
-          </button>
-        </div>,
-        document.body,
-      )}
     </div>
   );
 }
