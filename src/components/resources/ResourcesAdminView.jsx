@@ -388,11 +388,12 @@ function Editor({ draft: initial, onSave, onCancel }) {
           <div className="grid grid-cols-2 gap-3">
             <FileDropZone
               label="PDF Document"
-              accept="application/pdf"
+              accept="application/pdf,.pdf"
               icon={FileText}
               currentUrl={draft.file_url}
               currentName={draft.file_name}
               previewKind="pdf"
+              hint="Cover auto-extracts from page 1"
               onUpload={(file) => uploadAndSet(file, 'pdf', set, draft)}
               onClear={() => set({ file_url: null, file_name: null })}
             />
@@ -554,30 +555,90 @@ function CardGroupEditor({ block, onChange }) {
 }
 
 // ─── File upload helpers ──────────────────────────────────────────────────
+
+// Render the first page of a PDF File to a PNG Blob, client-side, using
+// pdfjs-dist. Returns null if anything fails — caller should treat the
+// PDF upload as still successful and just leave the cover unset.
+async function extractPdfFirstPagePng(file) {
+  try {
+    // Dynamic import keeps the (large) pdfjs bundle out of the main chunk.
+    const pdfjs = await import('pdfjs-dist');
+    // Vite-friendly worker URL — bundled as a static asset and served.
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+    const buf  = await file.arrayBuffer();
+    const pdf  = await pdfjs.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2 }); // 2x for crisp display
+
+    const canvas  = document.createElement('canvas');
+    canvas.width  = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({
+      canvas,                                // pdfjs 5.x prefers `canvas`
+      canvasContext: canvas.getContext('2d'),
+      viewport,
+    }).promise;
+
+    return await new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
+  } catch (e) {
+    console.warn('[PDF cover extract] failed:', e);
+    return null;
+  }
+}
+
 async function uploadAndSet(file, kind, set, draft) {
   if (!file) return;
   try {
-    const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
+    // PDF mime types vary across browsers / OSes; sniff by extension as
+    // a fallback so a coach dropping a PDF labelled with an odd MIME
+    // (e.g. application/x-pdf) still uploads cleanly.
+    const ext      = (file.name.split('.').pop() || 'bin').toLowerCase();
+    const isPdf    = file.type === 'application/pdf' || ext === 'pdf';
+    const useType  = (kind === 'pdf' && isPdf) ? 'application/pdf' : (file.type || 'application/octet-stream');
+
     const safe = (draft.title || 'resource').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'resource';
     const path = `${kind}/${Date.now()}-${safe}.${ext}`;
     const { error: upErr } = await supabase
       .storage
       .from('resources')
-      .upload(path, file, { contentType: file.type, upsert: false });
+      .upload(path, file, { contentType: useType, upsert: false });
     if (upErr) throw upErr;
     const { data: pub } = supabase.storage.from('resources').getPublicUrl(path);
-    if (kind === 'pdf') {
-      set({ file_url: pub.publicUrl, file_name: file.name });
-    } else {
+
+    if (kind !== 'pdf') {
       set({ cover_image_url: pub.publicUrl });
+      return;
     }
+
+    // PDF path: set the file URL, then auto-extract page 1 as cover so
+    // the athlete app shows the front cover without the coach uploading
+    // a separate image. Manual cover upload still wins if the coach
+    // chooses to override.
+    set({ file_url: pub.publicUrl, file_name: file.name });
+
+    const png = await extractPdfFirstPagePng(file);
+    if (!png) return;
+
+    const coverPath = `cover/${Date.now()}-${safe}-auto.png`;
+    const { error: coverErr } = await supabase
+      .storage
+      .from('resources')
+      .upload(coverPath, png, { contentType: 'image/png', upsert: false });
+    if (coverErr) {
+      console.warn('[PDF cover upload] failed:', coverErr);
+      return;
+    }
+    const { data: coverPub } = supabase.storage.from('resources').getPublicUrl(coverPath);
+    set({ cover_image_url: coverPub.publicUrl });
   } catch (e) {
     console.error('[Resources upload]', e);
     alert(`Upload failed: ${e.message || e}`);
   }
 }
 
-function FileDropZone({ label, accept, icon: Icon, currentUrl, currentName, previewKind, onUpload, onClear }) {
+function FileDropZone({ label, accept, icon: Icon, currentUrl, currentName, previewKind, onUpload, onClear, hint }) {
   const [over, setOver]    = useState(false);
   const [busy, setBusy]    = useState(false);
   const inputRef = useRef(null);
@@ -653,7 +714,12 @@ function FileDropZone({ label, accept, icon: Icon, currentUrl, currentName, prev
               <p className="text-[11px] font-semibold text-center leading-tight">
                 Drop file or click to upload
               </p>
-              <p className="text-[10px] text-gray-400">{accept.replace(/application\/|image\//g, '').replace(/,/g, ' · ')}</p>
+              {hint && (
+                <p className="text-[10px] text-gray-400 text-center leading-tight px-2">{hint}</p>
+              )}
+              <p className="text-[10px] text-gray-400">
+                {accept.replace(/application\/|image\/|\./g, '').replace(/,/g, ' · ')}
+              </p>
             </>
           )}
         </button>
