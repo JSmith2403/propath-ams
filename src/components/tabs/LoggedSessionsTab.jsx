@@ -6,6 +6,7 @@ import { Clock, Dumbbell, Flame, Target, ChevronDown, ChevronRight } from 'lucid
 import { useAthleteLogs } from '../../hooks/useAthleteLogs';
 import { mayhew1RM, bestE1RM, roundKg } from '../../utils/strengthMath';
 import ProgressDashboard from '../programming/ProgressDashboard';
+import ExerciseProgressGrid from '../programming/ExerciseProgressGrid';
 
 const TEAL = '#437E8D';
 const GOLD = '#A58D69';
@@ -265,19 +266,11 @@ export default function LoggedSessionsTab({ athlete }) {
       {/* Bilateral / unilateral */}
       <SplitBar bilateralCount={stats.bi} unilateralCount={stats.uni} otherCount={stats.other} />
 
-      {/* 1RM trends */}
-      {e1rmSeries.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-400 mb-2">
-            Estimated 1RM Trends ({e1rmSeries.length} exercise{e1rmSeries.length === 1 ? '' : 's'})
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {e1rmSeries.slice(0, 8).map(s => (
-              <E1RMChart key={s.exId} exerciseName={s.name} data={s.points.map(p => ({ date: p.date, e1rm: p.e1rm }))} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Exercise Progress Grid — replaces the old per-exercise 1RM
+          mini-charts cluster. Multi-select picker picks any 4 exercises;
+          each card auto-uses Estimated 1RM (Mayhew) for weighted lifts
+          and Best Reps per Session for bodyweight movements. */}
+      <ExerciseProgressGrid sessions={sessions} weeks={8} />
 
       {/* Session log */}
       <div>

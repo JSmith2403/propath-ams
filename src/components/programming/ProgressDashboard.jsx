@@ -290,25 +290,33 @@ function LoadChartCard({ title, series, loadLabel, unit, colour }) {
   );
 }
 
-// ─── Exercise Progress Checker ────────────────────────────────────────────
+// ─── Exercise Progress Checker — multi-line chart, Mayhew exercises only ──
+// Bodyweight / non-1RM exercises (push-ups etc.) are surfaced separately
+// in the Logged Sessions tab grid; mixing them on one kg-axis here would
+// either flatten or distort the trends.
 function ExerciseProgressCard({ series, weeks, loading }) {
-  // Default selection — top 4 most-recently-active exercises.
-  const defaultIds = useMemo(
-    () => series.slice(0, 4).map(s => s.exerciseId),
+  // Filter to Mayhew-applicable exercises only.
+  const mayhew = useMemo(
+    () => series.filter(s => s.metric === 'e1rm'),
     [series],
   );
-  const [selected, setSelected] = useState(defaultIds);
 
+  // Default selection — top 4 most-recently-active Mayhew exercises.
+  const defaultIds = useMemo(
+    () => mayhew.slice(0, 4).map(s => s.exerciseId),
+    [mayhew],
+  );
+  const [selected, setSelected] = useState(defaultIds);
   // Re-default when the underlying series changes (e.g. weeks toggle).
   useMemo(() => { setSelected(defaultIds); }, [defaultIds.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleSeries = useMemo(
-    () => series.filter(s => selected.includes(s.exerciseId)),
-    [series, selected],
+    () => mayhew.filter(s => selected.includes(s.exerciseId)),
+    [mayhew, selected],
   );
 
-  // Build a single chart-data array with one entry per date and an
-  // e1rm field per visible exercise.
+  // Combined chart-data array — one entry per date with one numeric
+  // field per visible exercise.
   const chartData = useMemo(() => {
     const dateSet = new Set();
     visibleSeries.forEach(s => s.points.forEach(p => dateSet.add(p.date)));
@@ -317,7 +325,7 @@ function ExerciseProgressCard({ series, weeks, loading }) {
       const row = { date, label: dateLabel(date) };
       for (const s of visibleSeries) {
         const hit = s.points.find(p => p.date === date);
-        if (hit) row[s.exerciseId] = hit.e1rm;
+        if (hit) row[s.exerciseId] = hit.value;
       }
       return row;
     });
@@ -341,15 +349,15 @@ function ExerciseProgressCard({ series, weeks, loading }) {
 
       {loading ? (
         <p className="text-xs italic text-ink-400 py-8 text-center">Loading…</p>
-      ) : series.length === 0 ? (
+      ) : mayhew.length === 0 ? (
         <p className="text-xs italic text-ink-400 py-8 text-center">
-          No logged sets in this window yet.
+          No weighted exercises in this window — check the session log below for bodyweight progressions.
         </p>
       ) : (
         <>
           {/* Exercise selector chips */}
           <div className="flex items-center gap-1.5 flex-wrap mb-3">
-            {series.map((s, i) => {
+            {mayhew.map((s, i) => {
               const isOn = selected.includes(s.exerciseId);
               const colour = colours[i % colours.length];
               return (

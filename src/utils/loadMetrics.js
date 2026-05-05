@@ -90,14 +90,21 @@ function attachRollingAvg(daily, windowDays = 56) {
 // Acute  = sum of last 7 days
 // Chronic = mean weekly load over last 28 days (i.e. sum/4)
 // ACWR = acute / chronic
+//
+// We only emit a value once we have a full 28 days of history behind a
+// point. Days before that show as `null` so Recharts skips them and we
+// don't display the artificial spike that comes from a near-zero
+// chronic baseline at the start of a block.
 function attachACWR(daily) {
   const arr = daily.map(d => d.value);
+  const MIN_BASELINE_DAYS = 28;
   return daily.map((d, i) => {
+    if (i + 1 < MIN_BASELINE_DAYS) return { ...d, acwr: null };
     const acuteFrom   = Math.max(0, i - 6);
     const chronicFrom = Math.max(0, i - 27);
     const acute   = arr.slice(acuteFrom, i + 1).reduce((a, b) => a + b, 0);
     const chronic = arr.slice(chronicFrom, i + 1).reduce((a, b) => a + b, 0) / 4;
-    const ratio   = chronic > 0 ? acute / chronic : 0;
+    const ratio   = chronic > 0 ? acute / chronic : null;
     return { ...d, acwr: ratio };
   });
 }
@@ -140,47 +147,104 @@ function trailingWeekAverage(daily) {
   return last7.reduce((a, b) => a + b, 0) / last7.length;
 }
 
-// ── Exercise progress series (Mayhew estimated 1RM per session) ─────────
-// Returns [{ exerciseId, name, points: [{ date, label, e1rm }] }]
-//   * One point per session per exercise (best 1RM across that session's
-//     sets for that exercise).
+// Auto-detect if an exercise is best tracked as 1RM (Mayhew) or as
+// best-reps-per-session. The Mayhew formula doesn't apply when the
+// load is bodyweight or the load doesn't vary across sessions —
+// trying to use it then produces flat / misleading numbers.
+//
+// Heuristics (in order):
+//   1. Name match — common bodyweight movements always use reps.
+//   2. Variance check — if every set across all sessions is at the
+//      same load, treat it as a reps progression (consistent with
+//      bodyweight isolation movements).
+//   3. Default to 1RM Mayhew.
+const BODYWEIGHT_NAME_PATTERNS = [
+  /push[-\s]?up/i,
+  /pull[-\s]?up/i,
+  /chin[-\s]?up/i,
+  /^dip\b/i,
+  /burpee/i,
+  /sit[-\s]?up/i,
+  /plank/i,
+];
+
+function detectMetric(name, weights) {
+  if (BODYWEIGHT_NAME_PATTERNS.some(re => re.test(name))) return 'reps';
+  const numericWeights = weights.filter(w => w != null && isFinite(Number(w)));
+  if (numericWeights.length === 0) return 'reps';
+  const min = Math.min(...numericWeights);
+  const max = Math.max(...numericWeights);
+  if (max - min < 1) return 'reps';   // weight is effectively constant
+  return 'e1rm';
+}
+
+// ── Exercise progress series ────────────────────────────────────────────
+// Returns [{ exerciseId, name, metric, unit, points, latest }]
+//   * metric: 'e1rm' | 'reps'  (per-exercise auto-detected)
+//   * One point per session per exercise — best Mayhew 1RM (weighted)
+//     or best rep count (bodyweight) across the session's sets.
 //   * Filtered to the visible window so the chart aligns with the others.
-function computeExerciseSeries(sessions, weeks) {
+export function computeExerciseSeries(sessions, weeks) {
   const today = startOfDay(new Date());
   const start = new Date(today.getTime() - weeks * 7 * ONE_DAY_MS);
   const inSessions = sessions.filter(s => new Date(s.started_at) >= start);
 
-  const map = new Map(); // exerciseId -> { name, points: Map(date->bestE1rm) }
+  // First pass — collect raw sets per exercise so we can decide the metric.
+  const raw = new Map(); // exId -> { name, setsByDay: Map<day, set[]> }
   for (const s of inSessions) {
     if (!Array.isArray(s.sets)) continue;
+    const day = isoDay(new Date(s.started_at));
     for (const set of s.sets) {
       if (!set.exercise_id) continue;
-      const e1 = mayhew1RM(set.weight_kg, set.reps);
-      if (e1 == null) continue;
       const key = set.exercise_id;
-      if (!map.has(key)) {
-        map.set(key, { exerciseId: key, name: set.exercise_name || '(unknown)', points: new Map() });
-      }
-      const day = isoDay(new Date(s.started_at));
-      const cur = map.get(key).points.get(day);
-      if (cur == null || e1 > cur) map.get(key).points.set(day, e1);
+      if (!raw.has(key)) raw.set(key, { name: set.exercise_name || '(unknown)', setsByDay: new Map() });
+      const bucket = raw.get(key).setsByDay;
+      if (!bucket.has(day)) bucket.set(day, []);
+      bucket.get(day).push(set);
     }
   }
 
   const out = [];
-  for (const [, info] of map) {
-    const pts = Array.from(info.points.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, e1rm]) => ({ date, label: shortLabel(date), e1rm: round(e1rm, 1) }));
-    if (pts.length === 0) continue;
+  for (const [exerciseId, info] of raw) {
+    const allSets   = Array.from(info.setsByDay.values()).flat();
+    const allWeights = allSets.map(s => Number(s.weight_kg));
+    const metric    = detectMetric(info.name, allWeights);
+
+    const points = [];
+    for (const [day, sets] of info.setsByDay) {
+      let bestVal = null;
+      if (metric === 'e1rm') {
+        for (const s of sets) {
+          const e1 = mayhew1RM(s.weight_kg, s.reps);
+          if (e1 != null && (bestVal == null || e1 > bestVal)) bestVal = e1;
+        }
+      } else {
+        // Best reps in a single set this day.
+        for (const s of sets) {
+          const r = Number(s.reps || 0);
+          if (r > 0 && (bestVal == null || r > bestVal)) bestVal = r;
+        }
+      }
+      if (bestVal == null) continue;
+      points.push({
+        date:   day,
+        label:  shortLabel(day),
+        value:  round(bestVal, metric === 'e1rm' ? 1 : 0),
+      });
+    }
+    if (points.length === 0) continue;
+    points.sort((a, b) => a.date.localeCompare(b.date));
+
     out.push({
-      exerciseId: info.exerciseId,
+      exerciseId,
       name:       info.name,
-      points:     pts,
-      latest:     pts[pts.length - 1].e1rm,
+      metric,                                 // 'e1rm' | 'reps'
+      unit:       metric === 'e1rm' ? 'kg' : 'reps',
+      metricLabel: metric === 'e1rm' ? 'Estimated 1RM (Mayhew)' : 'Best Reps per Session',
+      points,
+      latest:     points[points.length - 1].value,
     });
   }
-  // Sort: most recently active first, then by latest 1RM desc
   out.sort((a, b) => {
     const aLast = a.points[a.points.length - 1].date;
     const bLast = b.points[b.points.length - 1].date;
