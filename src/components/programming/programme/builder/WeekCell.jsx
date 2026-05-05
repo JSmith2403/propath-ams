@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { ArrowLeftRight, X } from 'lucide-react';
 
 const PLACEHOLDER = {
   kg:            '60kg',
@@ -85,11 +85,12 @@ export default function WeekCell({
       {swapped && (
         <div className="flex items-center gap-1 mb-1.5">
           <span
-            className="inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded truncate"
+            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded min-w-0"
             style={{ color: '#A58D69', backgroundColor: 'rgba(165,141,105,0.20)' }}
             title={`Swapped to ${overrideExerciseName}`}
           >
-            Now: {overrideExerciseName}
+            <ArrowLeftRight size={10} className="shrink-0" />
+            <span className="truncate">{overrideExerciseName}</span>
           </span>
           {onClearOverride && (
             <button
