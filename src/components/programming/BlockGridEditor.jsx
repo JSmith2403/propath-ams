@@ -209,6 +209,18 @@ export default function BlockGridEditor({ block, blockSessionId, onClose, onSave
     if (!isEditable(firstEdit)) return; // block already finished
     setPickerFor({ ex, fromWeek: firstEdit });
   };
+
+  // Quick undo for a single-week swap directly from the cell. Clears
+  // override_exercise_id for that one week (the empty string is sent so
+  // NULLIF in the RPC turns it back into NULL).
+  const clearOneWeekSwap = async (sessionExerciseId, week) => {
+    await submitChanges([{
+      kind:                 'exercise_swap',
+      session_exercise_id:  sessionExerciseId,
+      week_numbers:         [week],
+      override_exercise_id: '',
+    }]);
+  };
   const onPickerConfirm = (libRow) => {
     const target = pickerFor;
     setPickerFor(null);
@@ -354,12 +366,11 @@ export default function BlockGridEditor({ block, blockSessionId, onClose, onSave
                   return (
                     <th
                       key={w}
-                      className="px-3 py-2 font-semibold whitespace-nowrap text-left"
+                      className="px-3 py-2 font-semibold whitespace-nowrap text-left text-[10px] uppercase tracking-widest"
                       style={{
                         minWidth: 150,
                         borderBottom: '1px solid #e5e7eb',
-                        borderRight:  '1px solid #f3f4f6',
-                        color: isCur ? GOLD : isPast ? '#9ca3af' : '#1C1C1C',
+                        color: isCur ? GOLD : isPast ? '#9ca3af' : '#6b7280',
                         backgroundColor: isCur ? 'rgba(165,141,105,0.10)' : '#fff',
                         boxShadow: isCur ? `inset 0 -2px 0 ${GOLD}` : 'none',
                       }}
@@ -381,12 +392,24 @@ export default function BlockGridEditor({ block, blockSessionId, onClose, onSave
                       style={{
                         backgroundColor: '#fff',
                         borderBottom: '1px solid #f3f4f6',
-                        borderRight:  '1px solid #f3f4f6',
+                        borderRight:  '1px solid #e5e7eb',
                       }}
                     >
                       <button
                         onClick={() => onRowExerciseClick(ex)}
-                        className="text-left w-full hover:bg-gray-50 rounded px-1.5 py-1 group"
+                        className="text-left w-full rounded-md px-2 py-1.5 transition-colors group"
+                        style={{
+                          backgroundColor: 'transparent',
+                          border: '1px solid transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(165,141,105,0.06)';
+                          e.currentTarget.style.borderColor     = 'rgba(165,141,105,0.30)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.borderColor     = 'transparent';
+                        }}
                         title="Change exercise (whole row)"
                       >
                         <div className="flex items-center gap-1.5">
@@ -402,9 +425,12 @@ export default function BlockGridEditor({ block, blockSessionId, onClose, onSave
                           <Edit2 size={10} className="text-gray-300 ml-auto shrink-0 opacity-0 group-hover:opacity-100" />
                         </div>
                         {ex.prescription_type && (
-                          <div className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: '#9ca3af' }}>
+                          <span
+                            className="inline-block mt-1.5 text-[9px] uppercase tracking-widest font-semibold px-1.5 py-0.5 rounded"
+                            style={{ color: '#6b7280', backgroundColor: '#f3f4f6' }}
+                          >
                             {ex.prescription_type}
-                          </div>
+                          </span>
                         )}
                       </button>
                     </td>
@@ -418,50 +444,102 @@ export default function BlockGridEditor({ block, blockSessionId, onClose, onSave
                       const cellKey   = `${ex.id}_${w}`;
                       const flashing  = highlight.has(cellKey);
 
+                      const overrideTint = overrideId
+                        ? 'rgba(165,141,105,0.10)'
+                        : 'transparent';
+
                       return (
                         <td
                           key={w}
-                          className="px-1 py-1 align-top"
+                          className="px-1.5 py-1.5 align-top"
                           style={{
                             borderBottom: '1px solid #f3f4f6',
-                            borderRight:  '1px solid #f3f4f6',
                             backgroundColor: flashing
-                              ? 'rgba(165,141,105,0.20)'
+                              ? 'rgba(165,141,105,0.22)'
                               : past ? '#fafafa' : '#fff',
                             transition: 'background-color 0.7s ease',
                           }}
                         >
-                          <button
+                          <div
+                            role={editable ? 'button' : undefined}
+                            tabIndex={editable ? 0 : -1}
                             onClick={() => editable && setEdit({ ex, week: w })}
-                            disabled={!editable}
-                            className="w-full text-left rounded px-1.5 py-1 hover:bg-gray-50 disabled:cursor-default"
-                            style={{ opacity: editable ? 1 : 0.7 }}
+                            onKeyDown={(e) => {
+                              if (editable && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault();
+                                setEdit({ ex, week: w });
+                              }
+                            }}
+                            className="rounded-md px-2 py-1.5 transition-colors relative"
+                            style={{
+                              backgroundColor: overrideTint,
+                              border: overrideId
+                                ? '1px dashed rgba(165,141,105,0.50)'
+                                : '1px solid transparent',
+                              cursor: editable ? 'pointer' : 'default',
+                              opacity: editable ? 1 : 0.75,
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!editable) return;
+                              e.currentTarget.style.backgroundColor = overrideId
+                                ? 'rgba(165,141,105,0.18)'
+                                : 'rgba(165,141,105,0.06)';
+                              e.currentTarget.style.borderColor = 'rgba(165,141,105,0.55)';
+                              e.currentTarget.style.borderStyle = overrideId ? 'dashed' : 'solid';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = overrideTint;
+                              e.currentTarget.style.borderColor = overrideId
+                                ? 'rgba(165,141,105,0.50)'
+                                : 'transparent';
+                              e.currentTarget.style.borderStyle = overrideId ? 'dashed' : 'solid';
+                            }}
                           >
                             {overrideId && (
-                              <div
-                                className="text-[9px] uppercase tracking-wider font-bold mb-0.5 truncate"
-                                style={{ color: GOLD }}
-                                title={`Swapped to ${cellLib?.name || '?'}`}
-                              >
-                                ↔ {cellLib?.name || '?'}
+                              <div className="flex items-center gap-1 mb-1">
+                                <span
+                                  className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded truncate"
+                                  style={{
+                                    color: GOLD,
+                                    backgroundColor: 'rgba(165,141,105,0.20)',
+                                  }}
+                                  title={`Swapped — was ${baseLib?.name || '?'}, now ${cellLib?.name || '?'}`}
+                                >
+                                  Now: {cellLib?.name || '?'}
+                                </span>
+                                {editable && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      clearOneWeekSwap(ex.id, w);
+                                    }}
+                                    className="ml-auto p-0.5 rounded hover:bg-white/70 shrink-0 transition-colors"
+                                    title={`Restore ${baseLib?.name || 'original'} for Week ${w}`}
+                                  >
+                                    <X size={10} style={{ color: GOLD }} />
+                                  </button>
+                                )}
                               </div>
                             )}
-                            <div className="tabular-nums" style={{ color: past ? '#9ca3af' : '#1C1C1C' }}>
+                            <div
+                              className="tabular-nums text-[12px] font-medium leading-tight"
+                              style={{ color: past ? '#9ca3af' : '#1C1C1C' }}
+                            >
                               {wp?.sets != null && wp?.reps != null
                                 ? `${wp.sets} × ${wp.reps}`
                                 : <span className="italic text-gray-400">—</span>}
                             </div>
                             {wp?.target_value && (
-                              <div className="text-[10px] tabular-nums" style={{ color: '#6b7280' }}>
+                              <div className="text-[10px] tabular-nums mt-0.5" style={{ color: '#6b7280' }}>
                                 {formatTarget(wp.target_value, ex.prescription_type)}
                               </div>
                             )}
                             {wp?.rest_seconds != null && (
-                              <div className="text-[9px]" style={{ color: '#9ca3af' }}>
+                              <div className="text-[9px] mt-0.5" style={{ color: '#9ca3af' }}>
                                 {wp.rest_seconds}s rest
                               </div>
                             )}
-                          </button>
+                          </div>
                         </td>
                       );
                     })}
