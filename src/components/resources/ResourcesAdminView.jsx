@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, GripVertical } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -30,13 +30,16 @@ const GOLD = '#A58D69';
 
 function blankItem() {
   return {
-    id:            null,
-    category:      'nutrition',
-    title:         '',
-    summary:       '',
-    content:       [{ type: 'paragraph', text: '' }],
-    display_order: 0,
-    is_published:  true,
+    id:               null,
+    category:         'nutrition',
+    title:            '',
+    summary:          '',
+    content:          [],
+    cover_image_url:  null,
+    file_url:         null,
+    file_name:        null,
+    display_order:    0,
+    is_published:     true,
   };
 }
 
@@ -79,12 +82,15 @@ export default function ResourcesAdminView() {
   // ── Save / Delete / Toggle publish ──────────────────────────────────────
   const save = async (draft) => {
     const payload = {
-      category:      draft.category,
-      title:         draft.title.trim(),
-      summary:       draft.summary?.trim() || null,
-      content:       draft.content || [],
-      display_order: draft.display_order ?? 0,
-      is_published:  !!draft.is_published,
+      category:         draft.category,
+      title:            draft.title.trim(),
+      summary:          draft.summary?.trim() || null,
+      content:          draft.content || [],
+      cover_image_url:  draft.cover_image_url || null,
+      file_url:         draft.file_url || null,
+      file_name:        draft.file_name || null,
+      display_order:    draft.display_order ?? 0,
+      is_published:     !!draft.is_published,
     };
     if (!payload.title) {
       showToast('Title is required.', 'error');
@@ -214,38 +220,16 @@ export default function ResourcesAdminView() {
   );
 }
 
-// ─── Category section with HTML5 drag-and-drop reordering ───────────────
-function CategorySection({ cat, items, onTogglePublish, onEdit, onRemove, onReorder }) {
-  const [dragId, setDragId]   = useState(null);
-  const [overId, setOverId]   = useState(null);
-
-  // Move dragId before overId in the local array, then push to parent.
-  const commit = () => {
-    if (!dragId || !overId || dragId === overId) {
-      setDragId(null); setOverId(null);
-      return;
-    }
-    const ids = items.map(i => i.id);
-    const from = ids.indexOf(dragId);
-    const to   = ids.indexOf(overId);
-    if (from < 0 || to < 0) {
-      setDragId(null); setOverId(null);
-      return;
-    }
-    const next = ids.slice();
-    next.splice(from, 1);
-    next.splice(to, 0, dragId);
-    setDragId(null); setOverId(null);
-    onReorder(next);
-  };
-
+// ─── Category section — plain list (drag-and-drop is reserved for file
+// upload inside the Editor, per coach feedback). Reorder via the
+// Display Order field on the item.
+function CategorySection({ cat, items, onTogglePublish, onEdit, onRemove }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{cat.label}</h2>
         <span className="text-xs text-gray-400">
           {items.length} item{items.length === 1 ? '' : 's'}
-          {items.length > 1 && <> · drag to reorder</>}
         </span>
       </div>
 
@@ -253,83 +237,50 @@ function CategorySection({ cat, items, onTogglePublish, onEdit, onRemove, onReor
         <p className="text-xs text-gray-300 italic px-2">No resources in this category yet.</p>
       ) : (
         <div className="space-y-2">
-          {items.map(it => {
-            const isDragging = dragId === it.id;
-            const isOver     = overId === it.id && dragId && dragId !== it.id;
-            return (
-              <div
-                key={it.id}
-                draggable
-                onDragStart={(e) => {
-                  setDragId(it.id);
-                  // Setting effectAllowed/dataTransfer makes the drag valid
-                  // on Chrome and Safari.
-                  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', it.id); } catch (_) {}
-                }}
-                onDragEnter={() => setOverId(it.id)}
-                onDragOver={(e) => { e.preventDefault(); }}
-                onDragEnd={commit}
-                onDrop={(e) => { e.preventDefault(); commit(); }}
-                className="bg-white rounded-lg border border-gray-100 px-4 py-3 flex items-center gap-3 transition-all"
-                style={{
-                  boxShadow:    '0 1px 2px rgba(0,0,0,0.04)',
-                  opacity:      isDragging ? 0.4 : 1,
-                  borderTop:    isOver ? '2px solid #A58D69' : undefined,
-                  cursor:       isDragging ? 'grabbing' : 'default',
-                  borderColor:  isOver ? '#A58D69' : undefined,
-                }}
-              >
-                <span
-                  className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors"
-                  style={{ cursor: 'grab' }}
-                  title="Drag to reorder"
-                >
-                  <GripVertical size={14} />
-                </span>
-                <div
-                  className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}
-                >
+          {items.map(it => (
+            <div key={it.id} className="bg-white rounded-lg border border-gray-100 px-4 py-3 flex items-center gap-3"
+              style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              {/* Cover thumbnail (or icon fallback) */}
+              {it.cover_image_url ? (
+                <img src={it.cover_image_url} alt=""
+                  className="shrink-0 w-9 h-9 rounded-lg object-cover" />
+              ) : (
+                <div className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}>
                   <FileText size={16} style={{ color: GOLD }} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
-                    {!it.is_published && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                        style={{ color: '#92400e', backgroundColor: '#fef3c7' }}>
-                        Hidden
-                      </span>
-                    )}
-                  </div>
-                  {it.summary && (
-                    <p className="text-xs text-gray-500 truncate mt-0.5">{it.summary}</p>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
+                  {!it.is_published && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                      style={{ color: '#92400e', backgroundColor: '#fef3c7' }}>Hidden</span>
+                  )}
+                  {it.file_url && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                      style={{ color: '#437E8D', backgroundColor: 'rgba(67,126,141,0.10)' }}>PDF</span>
                   )}
                 </div>
-                <button
-                  onClick={() => onTogglePublish(it)}
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                  title={it.is_published ? 'Hide from athletes' : 'Publish to athletes'}
-                >
-                  {it.is_published ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-                <button
-                  onClick={() => onEdit(it)}
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                  title="Edit"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => onRemove(it)}
-                  className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  title="Delete"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {it.summary && (
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{it.summary}</p>
+                )}
               </div>
-            );
-          })}
+              <button onClick={() => onTogglePublish(it)}
+                className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                title={it.is_published ? 'Hide from athletes' : 'Publish to athletes'}>
+                {it.is_published ? <Eye size={14} /> : <EyeOff size={14} />}
+              </button>
+              <button onClick={() => onEdit(it)}
+                className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100" title="Edit">
+                <Pencil size={14} />
+              </button>
+              <button onClick={() => onRemove(it)}
+                className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -433,9 +384,32 @@ function Editor({ draft: initial, onSave, onCancel }) {
             </label>
           </div>
 
+          {/* ── Files: PDF + cover image — drag-and-drop or click ──── */}
+          <div className="grid grid-cols-2 gap-3">
+            <FileDropZone
+              label="PDF Document"
+              accept="application/pdf"
+              icon={FileText}
+              currentUrl={draft.file_url}
+              currentName={draft.file_name}
+              previewKind="pdf"
+              onUpload={(file) => uploadAndSet(file, 'pdf', set, draft)}
+              onClear={() => set({ file_url: null, file_name: null })}
+            />
+            <FileDropZone
+              label="Cover Image"
+              accept="image/png,image/jpeg,image/webp"
+              icon={ImageIcon}
+              currentUrl={draft.cover_image_url}
+              previewKind="image"
+              onUpload={(file) => uploadAndSet(file, 'cover', set, draft)}
+              onClear={() => set({ cover_image_url: null })}
+            />
+          </div>
+
           {/* Blocks */}
           <div className="space-y-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Content blocks</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Content blocks (optional)</p>
             {draft.content.map((b, i) => (
               <BlockEditor
                 key={i}
@@ -575,6 +549,123 @@ function CardGroupEditor({ block, onChange }) {
         className="text-xs font-semibold text-gray-700 px-3 py-1.5 border border-dashed border-gray-300 rounded hover:bg-gray-50 w-full">
         + Add Card
       </button>
+    </div>
+  );
+}
+
+// ─── File upload helpers ──────────────────────────────────────────────────
+async function uploadAndSet(file, kind, set, draft) {
+  if (!file) return;
+  try {
+    const ext  = (file.name.split('.').pop() || 'bin').toLowerCase();
+    const safe = (draft.title || 'resource').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'resource';
+    const path = `${kind}/${Date.now()}-${safe}.${ext}`;
+    const { error: upErr } = await supabase
+      .storage
+      .from('resources')
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (upErr) throw upErr;
+    const { data: pub } = supabase.storage.from('resources').getPublicUrl(path);
+    if (kind === 'pdf') {
+      set({ file_url: pub.publicUrl, file_name: file.name });
+    } else {
+      set({ cover_image_url: pub.publicUrl });
+    }
+  } catch (e) {
+    console.error('[Resources upload]', e);
+    alert(`Upload failed: ${e.message || e}`);
+  }
+}
+
+function FileDropZone({ label, accept, icon: Icon, currentUrl, currentName, previewKind, onUpload, onClear }) {
+  const [over, setOver]    = useState(false);
+  const [busy, setBusy]    = useState(false);
+  const inputRef = useRef(null);
+
+  const pick = (file) => {
+    if (!file) return;
+    setBusy(true);
+    Promise.resolve(onUpload(file)).finally(() => setBusy(false));
+  };
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) pick(f);
+      }}
+      className="relative bg-white rounded-lg border-2 border-dashed transition-colors p-3 flex flex-col"
+      style={{
+        borderColor: over ? GOLD : '#e5e7eb',
+        backgroundColor: over ? 'rgba(165,141,105,0.04)' : '#fff',
+        minHeight: 140,
+      }}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">{label}</p>
+
+      {currentUrl ? (
+        <div className="flex-1 flex flex-col">
+          {previewKind === 'image' ? (
+            <img src={currentUrl} alt="" className="rounded border border-gray-100 max-h-24 object-contain bg-ink-50/40" />
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-gray-700 mb-2">
+              <FileText size={14} style={{ color: GOLD }} />
+              <a href={currentUrl} target="_blank" rel="noopener noreferrer" className="truncate hover:underline">
+                {currentName || 'Open file'}
+              </a>
+            </div>
+          )}
+          <div className="mt-auto flex items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="text-[11px] font-semibold text-gray-600 hover:text-gold-700 transition-colors"
+            >
+              Replace
+            </button>
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-[11px] font-semibold text-gray-400 hover:text-red-600 transition-colors"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-gold-700 transition-colors"
+        >
+          {busy ? (
+            <span className="text-xs italic text-gray-400">Uploading…</span>
+          ) : (
+            <>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}>
+                {Icon ? <Icon size={16} style={{ color: GOLD }} /> : <Upload size={16} style={{ color: GOLD }} />}
+              </div>
+              <p className="text-[11px] font-semibold text-center leading-tight">
+                Drop file or click to upload
+              </p>
+              <p className="text-[10px] text-gray-400">{accept.replace(/application\/|image\//g, '').replace(/,/g, ' · ')}</p>
+            </>
+          )}
+        </button>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; pick(f); e.target.value = ''; }}
+      />
     </div>
   );
 }

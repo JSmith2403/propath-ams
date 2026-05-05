@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Apple, Brain, Flower, TrendingUp, ChevronLeft, FileText } from 'lucide-react';
+import { Apple, Brain, Flower, TrendingUp, ChevronLeft, FileText, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // Visual config per category. Coach-authored content (resource_items)
@@ -17,21 +17,17 @@ const CATEGORIES = [
 
 /**
  * ResourcesTab — three-level navigation:
- *   1. Category grid (4 tiles)
- *   2. Items list per category (cards titled by resource_item.title)
- *   3. Item detail page (renders structured content blocks)
- *
- * Content lives in public.resource_items (Supabase). RLS lets the
- * athlete app read published items via anon. Coaches author/edit
- * from the AMS-side Resources module.
+ *   1. Category grid (4 horizontal tiles). Empty categories render
+ *      with a "Coming Soon" overlay and aren't clickable.
+ *   2. Items list per category (tile grid).
+ *   3. Item detail — large PDF cover image + Open PDF button + any
+ *      structured content blocks the coach also added.
  */
 export default function ResourcesTab() {
   const [view, setView]     = useState({ kind: 'grid' }); // grid | list:catId | item:itemId
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all published items once. Categories with no rows simply show
-  // an empty-state in the list view.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -60,7 +56,6 @@ export default function ResourcesTab() {
     return m;
   }, [items]);
 
-  // ── Item detail view ───────────────────────────────────────────────────
   if (view.kind === 'item') {
     const it = items.find(x => x.id === view.itemId);
     if (!it) return null;
@@ -68,7 +63,6 @@ export default function ResourcesTab() {
     return <ItemDetail item={it} category={cat} onBack={() => setView({ kind: 'list', catId: it.category })} />;
   }
 
-  // ── Category list view ─────────────────────────────────────────────────
   if (view.kind === 'list') {
     const cat = CATEGORIES.find(c => c.id === view.catId);
     const list = itemsByCat[view.catId] || [];
@@ -76,7 +70,6 @@ export default function ResourcesTab() {
       onPick={(id) => setView({ kind: 'item', itemId: id })} />;
   }
 
-  // ── Top-level grid ─────────────────────────────────────────────────────
   return (
     <div className="px-4 py-4">
       <div className="mb-4">
@@ -86,18 +79,20 @@ export default function ResourcesTab() {
         </p>
       </div>
 
-      {/* Horizontal row of 4 category tiles. grid-cols-4 keeps them
-          equal-width on the 480px-max athlete-app shell. Tap a tile to
-          drill into that category's items. */}
+      {/* Horizontal row of 4 category tiles. Empty categories render
+          with a dark grey "Coming Soon" overlay so the surface still
+          looks balanced even when only some categories have content. */}
       <div className="grid grid-cols-4 gap-2">
         {CATEGORIES.map(c => {
           const Icon = c.icon;
-          const count = (itemsByCat[c.id] || []).length;
+          const list = itemsByCat[c.id] || [];
+          const empty = list.length === 0;
           return (
             <button
               key={c.id}
-              onClick={() => setView({ kind: 'list', catId: c.id })}
-              className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98]"
+              onClick={() => empty ? null : setView({ kind: 'list', catId: c.id })}
+              disabled={empty}
+              className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98] disabled:active:scale-100"
               style={{ aspectRatio: '3 / 4', background: c.gradient }}
             >
               <div className="absolute inset-0 flex items-center justify-center">
@@ -108,14 +103,6 @@ export default function ResourcesTab() {
                   <Icon size={18} className="text-white" strokeWidth={1.6} />
                 </div>
               </div>
-              {count > 0 && (
-                <span
-                  className="absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.92)', color: '#1C1C1C' }}
-                >
-                  {count}
-                </span>
-              )}
               <div
                 className="absolute left-0 right-0 bottom-0 px-1.5 py-2"
                 style={{
@@ -126,6 +113,21 @@ export default function ResourcesTab() {
                   {c.label}
                 </p>
               </div>
+
+              {/* Coming Soon overlay — dark grey wash that signals the
+                  category exists but has no content yet. */}
+              {empty && (
+                <div
+                  className="absolute inset-0 flex items-end justify-center pb-2"
+                  style={{ backgroundColor: 'rgba(28,28,28,0.78)' }}
+                >
+                  <span
+                    className="text-[9px] font-bold uppercase tracking-widest text-white/85"
+                  >
+                    Coming Soon
+                  </span>
+                </div>
+              )}
             </button>
           );
         })}
@@ -168,24 +170,22 @@ function CategoryList({ category, items, onBack, onPick }) {
         </div>
       </div>
 
-      {items.length === 0 ? (
-        <div className="bg-white rounded-xl border border-ink-100 shadow-card p-6 text-center">
-          <p className="text-meta text-ink-500">
-            No content here yet — your coach will add resources soon.
-          </p>
-        </div>
-      ) : (
-        // Tile layout for resource items inside a category — same look as
-        // the category tiles on the home view, just slightly larger so
-        // the title reads cleanly at 2-up width.
-        <div className="grid grid-cols-2 gap-3">
-          {items.map(it => (
-            <button
-              key={it.id}
-              onClick={() => onPick(it.id)}
-              className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98]"
-              style={{ aspectRatio: '3 / 4', background: category?.gradient }}
-            >
+      <div className="grid grid-cols-2 gap-3">
+        {items.map(it => (
+          <button
+            key={it.id}
+            onClick={() => onPick(it.id)}
+            className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98]"
+            style={{
+              aspectRatio: '3 / 4',
+              // Cover image fills the tile when present; falls back to
+              // the category gradient otherwise.
+              background: it.cover_image_url
+                ? `center/cover url(${it.cover_image_url})`
+                : category?.gradient,
+            }}
+          >
+            {!it.cover_image_url && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div
                   className="w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md"
@@ -194,29 +194,31 @@ function CategoryList({ category, items, onBack, onPick }) {
                   <FileText size={20} className="text-white" strokeWidth={1.6} />
                 </div>
               </div>
-              <div
-                className="absolute left-0 right-0 bottom-0 px-3 py-3"
-                style={{
-                  background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)',
-                }}
-              >
-                <p className="text-meta font-bold text-white leading-tight">{it.title}</p>
-                {it.summary && (
-                  <p className="text-[10px] text-white/75 mt-1 leading-snug line-clamp-2">{it.summary}</p>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+            )}
+            <div
+              className="absolute left-0 right-0 bottom-0 px-3 py-3"
+              style={{
+                background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.78) 100%)',
+              }}
+            >
+              <p className="text-meta font-bold text-white leading-tight">{it.title}</p>
+              {it.summary && (
+                <p className="text-[10px] text-white/75 mt-1 leading-snug line-clamp-2">{it.summary}</p>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Item detail — renders structured content blocks ──────────────────────
+// ─── Item detail — cover + Open PDF + structured blocks ───────────────────
 function ItemDetail({ item, category, onBack }) {
   const Icon = category?.icon;
   const blocks = Array.isArray(item.content) ? item.content : [];
+  const hasFile = !!item.file_url;
+  const hasCover = !!item.cover_image_url;
 
   return (
     <div className="px-4 py-4">
@@ -228,45 +230,63 @@ function ItemDetail({ item, category, onBack }) {
         {category?.label || 'Back'}
       </button>
 
-      {/* Hero */}
-      <div
-        className="rounded-xl overflow-hidden mb-5 p-5"
-        style={{ background: category?.gradient, minHeight: 160 }}
-      >
-        <div className="flex items-center gap-3 mb-3">
-          {Icon && (
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md"
-              style={{ backgroundColor: 'rgba(255,255,255,0.18)' }}
-            >
-              <Icon size={18} className="text-white" strokeWidth={1.8} />
-            </div>
-          )}
-          <p className="text-meta font-semibold uppercase tracking-widest text-white/75">
-            {category?.label}
-          </p>
-        </div>
-        <p className="text-h2 text-white font-bold leading-tight">{item.title}</p>
+      <div className="mb-3">
+        <p className="text-meta font-semibold uppercase tracking-widest text-ink-400 flex items-center gap-1.5">
+          {Icon && <Icon size={12} />}
+          {category?.label}
+        </p>
+        <p className="text-h2 text-ink-900 font-bold leading-tight mt-1">{item.title}</p>
         {item.summary && (
-          <p className="text-meta text-white/80 mt-2 leading-snug">{item.summary}</p>
+          <p className="text-meta text-ink-500 mt-2 leading-snug">{item.summary}</p>
         )}
       </div>
 
-      <div className="space-y-5">
-        {blocks.map((b, i) => <Block key={i} block={b} />)}
-      </div>
+      {/* PDF front cover preview — sized to feel like a magazine cover.
+          Falls back to a category-gradient hero card with title only. */}
+      {hasCover ? (
+        <div className="mb-4 rounded-xl overflow-hidden border border-ink-100 bg-ink-100">
+          <img src={item.cover_image_url} alt={`${item.title} cover`}
+            className="w-full h-auto block" />
+        </div>
+      ) : (
+        <div
+          className="mb-4 rounded-xl overflow-hidden p-8 flex items-center justify-center"
+          style={{ background: category?.gradient, minHeight: 220 }}
+        >
+          <p className="text-h2 font-bold text-white text-center">{item.title}</p>
+        </div>
+      )}
+
+      {hasFile && (
+        <a
+          href={item.file_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full text-center rounded-lg py-3 mb-5 text-body font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: '#A58D69' }}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Download size={14} />
+            Open {item.file_name || 'PDF'}
+          </span>
+        </a>
+      )}
+
+      {blocks.length > 0 && (
+        <div className="space-y-5">
+          {blocks.map((b, i) => <Block key={i} block={b} />)}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Block renderer ───────────────────────────────────────────────────────
+// ─── Block renderer (structured content support kept for legacy items) ────
 function Block({ block }) {
   if (!block || !block.type) return null;
 
   if (block.type === 'paragraph') {
-    return (
-      <p className="text-body text-ink-700 leading-relaxed">{block.text}</p>
-    );
+    return <p className="text-body text-ink-700 leading-relaxed">{block.text}</p>;
   }
 
   if (block.type === 'heading') {
@@ -322,6 +342,5 @@ function Block({ block }) {
     );
   }
 
-  // Unknown block type — soft fallback so authoring mistakes don't crash
   return null;
 }
