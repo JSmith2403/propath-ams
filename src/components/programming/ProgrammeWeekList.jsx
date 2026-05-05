@@ -145,51 +145,75 @@ export default function ProgrammeWeekList({
     );
   }
 
+  // Split weeks into three groups so the layout puts current first,
+  // upcoming next, then a "Completed weeks" divider with past weeks
+  // collapsed in reverse-chronological order at the bottom.
+  const currentWeeks  = weeks.filter(w => w === todayMonISO);
+  const upcomingWeeks = weeks.filter(w => w >  todayMonISO); // already asc
+  const pastWeeks     = weeks.filter(w => w <  todayMonISO).slice().reverse();
+
+  const renderWeek = (weekISO) => {
+    const state =
+      weekISO < todayMonISO ? 'past'
+      : weekISO === todayMonISO ? 'current'
+      : 'future';
+
+    // Within-7-days = next week's Monday at most.
+    const within7 = state === 'future'
+      && parseDate(weekISO) <= parseDate(addDaysISO(todayMonISO, 7));
+
+    // Past weeks default collapsed; current always expanded; upcoming
+    // weeks default collapsed unless they fall within the next 7 days.
+    const defaultOpen = state === 'current' || within7;
+    const isOpen = overrides[weekISO] ?? defaultOpen;
+
+    const all = plannedByWeek.get(weekISO) || [];
+    const visible = state === 'past'
+      ? all.filter(p => p.status !== 'completed')
+      : all;
+
+    // Sort by planned_date then session_order within the day
+    visible.sort((a, b) => {
+      if (a.planned_date !== b.planned_date) return a.planned_date.localeCompare(b.planned_date);
+      const ao = a.block_sessions?.session_order ?? 0;
+      const bo = b.block_sessions?.session_order ?? 0;
+      return ao - bo;
+    });
+
+    return (
+      <WeekTile
+        key={weekISO}
+        ref={(node) => { focusWeekRef.current[weekISO] = node; }}
+        athlete={athlete}
+        weekISO={weekISO}
+        state={state}
+        isOpen={isOpen}
+        onToggle={() => setOverrides(o => ({ ...o, [weekISO]: !isOpen }))}
+        visible={visible}
+        allCount={all.length}
+        blockById={blockById}
+        blockColourMap={blockColourMap}
+        onClickPlanned={onClickPlanned}
+      />
+    );
+  };
+
   return (
     <div className="space-y-3">
-      {weeks.map(weekISO => {
-        const state =
-          weekISO < todayMonISO ? 'past'
-          : weekISO === todayMonISO ? 'current'
-          : 'future';
+      {currentWeeks.map(renderWeek)}
+      {upcomingWeeks.map(renderWeek)}
 
-        // Within-7-days = next week's Monday at most.
-        const within7 = state === 'future'
-          && parseDate(weekISO) <= parseDate(addDaysISO(todayMonISO, 7));
+      {pastWeeks.length > 0 && (
+        <div className="flex items-center gap-3 pt-3 pb-1">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-[10px] uppercase tracking-widest font-semibold text-gray-400">
+            Completed weeks
+          </span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+      )}
 
-        const defaultOpen = state === 'current' || within7;
-        const isOpen = overrides[weekISO] ?? defaultOpen;
-
-        const all = plannedByWeek.get(weekISO) || [];
-        const visible = state === 'past'
-          ? all.filter(p => p.status !== 'completed')
-          : all;
-
-        // Sort by planned_date then session_order within the day
-        visible.sort((a, b) => {
-          if (a.planned_date !== b.planned_date) return a.planned_date.localeCompare(b.planned_date);
-          const ao = a.block_sessions?.session_order ?? 0;
-          const bo = b.block_sessions?.session_order ?? 0;
-          return ao - bo;
-        });
-
-        return (
-          <WeekTile
-            key={weekISO}
-            ref={(node) => { focusWeekRef.current[weekISO] = node; }}
-            athlete={athlete}
-            weekISO={weekISO}
-            state={state}
-            isOpen={isOpen}
-            onToggle={() => setOverrides(o => ({ ...o, [weekISO]: !isOpen }))}
-            visible={visible}
-            allCount={all.length}
-            blockById={blockById}
-            blockColourMap={blockColourMap}
-            onClickPlanned={onClickPlanned}
-          />
-        );
-      })}
+      {pastWeeks.map(renderWeek)}
     </div>
   );
 }
@@ -218,9 +242,12 @@ const WeekTile = forwardRef(function WeekTile({
       ref={ref}
       className="rounded-xl overflow-hidden"
       style={{
-        backgroundColor: '#fff',
+        // Past weeks get a subtle wash so the eye reads "history"
+        // without losing legibility on the date range.
+        backgroundColor: state === 'past' ? '#fafafa' : '#fff',
         border: '1px solid #e5e7eb',
         borderLeft: `3px solid ${stateAccent}`,
+        opacity: state === 'past' ? 0.92 : 1,
       }}
     >
       <button
