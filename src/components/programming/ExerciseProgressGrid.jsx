@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { computeExerciseSeries } from '../../utils/loadMetrics';
 
 const TEAL = '#437E8D';
@@ -13,6 +14,39 @@ function fmtNumber(v, dp = 0) {
     minimumFractionDigits: dp,
     maximumFractionDigits: dp,
   });
+}
+
+// Simple first-vs-latest % change. <2% counts as flat — coaches don't
+// need a trend arrow flickering on noise. Returns null if there's no
+// meaningful baseline (e.g. only one session logged).
+function progressTrend(points) {
+  if (!points || points.length < 2) return null;
+  const first = points[0].value;
+  const last  = points[points.length - 1].value;
+  if (first == null || first === 0) return null;
+  const pct = ((last - first) / first) * 100;
+  const direction = pct > 2 ? 'up' : pct < -2 ? 'down' : 'flat';
+  return { pct, direction };
+}
+
+function TrendBadge({ trend }) {
+  if (!trend) return null;
+  const conf = trend.direction === 'up'
+    ? { Icon: TrendingUp,   colour: '#15803d', label: 'Improving' }
+    : trend.direction === 'down'
+    ? { Icon: TrendingDown, colour: '#b91c1c', label: 'Declining' }
+    : { Icon: Minus,        colour: '#9ca3af', label: 'Holding'   };
+  const sign = trend.pct > 0 ? '+' : '';
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded"
+      style={{ color: conf.colour, backgroundColor: `${conf.colour}1A` }}
+      title={`${conf.label} · ${sign}${trend.pct.toFixed(1)}% over the window`}
+    >
+      <conf.Icon size={10} strokeWidth={2.4} />
+      {sign}{trend.pct.toFixed(0)}%
+    </span>
+  );
 }
 
 /**
@@ -114,6 +148,7 @@ export default function ExerciseProgressGrid({ sessions, weeks = 8 }) {
 
 function Mini({ series }) {
   const colour = series.metric === 'e1rm' ? TEAL : GOLD;
+  const trend  = progressTrend(series.points);
   return (
     <div className="rounded-lg border border-gray-100 p-3 bg-white"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -126,7 +161,10 @@ function Mini({ series }) {
       <div className="flex items-baseline gap-1.5 mb-1">
         <span className="text-lg font-bold text-gray-800">{series.latest}</span>
         <span className="text-xs text-gray-500">{series.unit === 'kg' ? 'kg' : 'reps'}</span>
-        <span className="ml-auto text-[10px] text-gray-400">latest</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          <TrendBadge trend={trend} />
+          <span className="text-[10px] text-gray-400">latest</span>
+        </span>
       </div>
       <ResponsiveContainer width="100%" height={120}>
         <LineChart data={series.points} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
@@ -160,6 +198,11 @@ function Mini({ series }) {
           />
         </LineChart>
       </ResponsiveContainer>
+      {series.metric === 'reps' && (
+        <p className="text-[9px] italic text-gray-400 mt-1 text-center">
+          Best programmed set — not a max-out test
+        </p>
+      )}
     </div>
   );
 }
