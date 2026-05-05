@@ -211,9 +211,23 @@ export default function AthleteWeekViewV2({
             height instead of stretching to the row's tallest cell.
             Empty columns therefore visually compress to just the
             faded day label while session columns expand for cards.
-          - Column widths still come from `grid-cols-7`, so the 7-day
-            structure and column alignment are preserved across weeks. */}
-      <div className="grid grid-cols-7 items-start" style={{ minHeight: 120 }}>
+          - Empty days get 0.5fr, training days get 1fr — so session
+            cards reclaim the breathing room empty days no longer need.
+            Column slots still cover Mon..Sun in order, so weekly
+            structure is preserved; the proportions just rebalance per
+            week based on which days actually have a session. */}
+      <div
+        className="grid items-start"
+        style={{
+          gridTemplateColumns: days
+            .map(dayISO => {
+              const isEmpty = !loading && (plannedByDate.get(dayISO) || []).length === 0;
+              return isEmpty ? '0.5fr' : '1fr';
+            })
+            .join(' '),
+          minHeight: 120,
+        }}
+      >
         {days.map((dayISO, i) => {
           const sessions = plannedByDate.get(dayISO) || [];
           const isToday = dayISO === todayISO;
