@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload,
   ChevronDown, ChevronUp, MoreVertical, Apple, Brain, Flower, TrendingUp, GripVertical,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+
+// Strip a Supabase Storage public URL down to the path inside the bucket.
+// Returns null if the URL doesn't look like one of our resources.
+function bucketPathFromUrl(url, bucket = 'resources') {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(new RegExp(`/storage/v1/object/public/${bucket}/(.+)$`));
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch { return null; }
+}
 
 /**
  * ResourcesAdminView — coach-side authoring for the athlete-app
@@ -136,7 +148,20 @@ export default function ResourcesAdminView() {
   };
 
   const remove = async (it) => {
-    if (!window.confirm(`Delete "${it.title}"? This removes it from every athlete's app.`)) return;
+    if (!window.confirm(`Delete "${it.title}"? This removes it from every athlete's app and deletes the uploaded files.`)) return;
+
+    // Best-effort cleanup of associated storage files. Failures here
+    // shouldn't block the row delete — orphan files are recoverable;
+    // a stuck row is more disruptive.
+    const paths = [
+      bucketPathFromUrl(it.file_url),
+      bucketPathFromUrl(it.cover_image_url),
+    ].filter(Boolean);
+    if (paths.length) {
+      const { error: stErr } = await supabase.storage.from('resources').remove(paths);
+      if (stErr) console.warn('[Resources] storage cleanup failed (continuing):', stErr);
+    }
+
     const { error } = await supabase.from('resource_items').delete().eq('id', it.id);
     if (error) {
       showToast(`Couldn't delete: ${error.message}`, 'error');
@@ -344,11 +369,24 @@ function CategoryCard({ cat, items, onTogglePublish, onEdit, onRemove, onAdd }) 
 }
 
 // ─── ResourceTile — one resource card inside a category's horizontal row ─
+// The menu is portalled to document.body so it can extend beyond the
+// tile's overflow-hidden image area + the row's overflow-x-auto scroll.
 function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemove }) {
+  const triggerRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
+
+  // Compute screen-space position of the menu when it opens.
+  useEffect(() => {
+    if (!menuOpen || !triggerRef.current) { setMenuPos(null); return; }
+    const r = triggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 4, left: Math.max(8, r.right - 180) });
+  }, [menuOpen]);
+
   return (
-    <div className="shrink-0 w-[220px] rounded-lg border border-gray-100 overflow-hidden bg-white">
+    <div className="shrink-0 w-[220px] rounded-lg border border-gray-100 bg-white">
+      {/* Cover area — overflow-hidden so the rounded corners + image clip */}
       <div
-        className="relative"
+        className="relative rounded-t-lg overflow-hidden"
         style={{
           aspectRatio: '4 / 3',
           background: item.cover_image_url
@@ -376,6 +414,8 @@ function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemov
           </span>
         )}
       </div>
+
+      {/* Footer — keep overflow visible so the dropdown trigger sits cleanly */}
       <div className="px-3 py-2.5 flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-gray-900 truncate">{item.title}</p>
@@ -383,36 +423,44 @@ function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemov
             <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.summary}</p>
           )}
         </div>
-        <div className="relative shrink-0">
-          <button
-            onClick={onMenu}
-            className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-            title="Actions"
-          >
-            <MoreVertical size={14} />
-          </button>
-          {menuOpen && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-30"
-              style={{ border: '1px solid #e5e7eb', minWidth: 160 }}
-            >
-              <button onClick={onEdit}
-                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
-                <Pencil size={11} /> Edit
-              </button>
-              <button onClick={onTogglePublish}
-                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
-                {item.is_published ? <><EyeOff size={11} /> Hide</> : <><Eye size={11} /> Publish</>}
-              </button>
-              <button onClick={onRemove}
-                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-red-50 text-red-600 flex items-center gap-1.5">
-                <Trash2 size={11} /> Delete
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          ref={triggerRef}
+          onClick={onMenu}
+          className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
+          title="Actions"
+        >
+          <MoreVertical size={14} />
+        </button>
       </div>
+
+      {/* Portalled menu — escapes tile + scroll container clipping */}
+      {menuOpen && menuPos && createPortal(
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="fixed bg-white rounded-md shadow-lg py-1"
+          style={{
+            top:    menuPos.top,
+            left:   menuPos.left,
+            width:  180,
+            border: '1px solid #e5e7eb',
+            zIndex: 100,
+          }}
+        >
+          <button onClick={onEdit}
+            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
+            <Pencil size={11} /> Edit
+          </button>
+          <button onClick={onTogglePublish}
+            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
+            {item.is_published ? <><EyeOff size={11} /> Hide</> : <><Eye size={11} /> Publish</>}
+          </button>
+          <button onClick={onRemove}
+            className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-red-50 text-red-600 flex items-center gap-1.5">
+            <Trash2 size={11} /> Delete permanently
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
