@@ -12,7 +12,7 @@ const LoggedSessionsTab     = lazy(() => import('./LoggedSessionsTab'));
 const SUBTABS = [
   { id: 'overview',  label: 'Overview'  },
   { id: 'programme', label: 'Programme' },
-  { id: 'logged',    label: 'Logged Sessions' },
+  { id: 'logged',    label: 'Progress'  },  // renamed — now hosts the Progress Dashboard above the session log
   { id: 'testing',   label: 'Testing'   },
 ];
 

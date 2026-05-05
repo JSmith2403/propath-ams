@@ -9,7 +9,6 @@ import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
 import ProgrammeWeekList from './ProgrammeWeekList';
-import ProgressDashboard from './ProgressDashboard';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
 import {
@@ -309,9 +308,6 @@ export default function ProgrammeView({
   // ── Active state — calendar only (no sidebar on Surface 1) ──────────────
   return (
     <div className="space-y-6">
-      {/* Progress Dashboard — KPIs, load charts, exercise 1RM trends. */}
-      <ProgressDashboard athlete={athlete} />
-
       {/* Block timeline above the calendar.
           Click block → session builder for that athlete's snapshot.
           Pencil hover-icon on block → block-details modal (name/dates). */}

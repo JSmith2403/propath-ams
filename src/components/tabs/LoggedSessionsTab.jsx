@@ -5,6 +5,7 @@ import {
 import { Clock, Dumbbell, Flame, Target, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAthleteLogs } from '../../hooks/useAthleteLogs';
 import { mayhew1RM, bestE1RM, roundKg } from '../../utils/strengthMath';
+import ProgressDashboard from '../programming/ProgressDashboard';
 
 const TEAL = '#437E8D';
 const GOLD = '#A58D69';
@@ -231,19 +232,28 @@ export default function LoggedSessionsTab({ athlete }) {
 
   if (!sessions.length) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-200 p-10 text-center bg-white">
-        <Dumbbell size={28} className="mx-auto mb-3 text-gray-300" />
-        <p className="text-sm font-semibold text-gray-700 mb-1">No logged sessions yet</p>
-        <p className="text-xs text-gray-400 max-w-sm mx-auto">
-          When this athlete logs a training session in the athlete app, the sets, durations, RPE, and
-          estimated 1RM trends will appear here automatically.
-        </p>
+      <div className="space-y-6">
+        {/* Dashboard still renders so coaches see compliance vs planned
+            even when no sessions have been logged yet. */}
+        <ProgressDashboard athlete={athlete} />
+
+        <div className="rounded-lg border border-dashed border-gray-200 p-10 text-center bg-white">
+          <Dumbbell size={28} className="mx-auto mb-3 text-gray-300" />
+          <p className="text-sm font-semibold text-gray-700 mb-1">No logged sessions yet</p>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto">
+            When this athlete logs a training session in the athlete app, the sets, durations, RPE, and
+            estimated 1RM trends will appear here automatically.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Progress Dashboard — KPIs, load + ACWR charts, exercise 1RM trends. */}
+      <ProgressDashboard athlete={athlete} />
+
       {/* Header stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat icon={Dumbbell} label="Sessions" value={stats.sessionCount} />
