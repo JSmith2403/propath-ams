@@ -10,7 +10,6 @@ import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
 import ProgrammeWeekList from './ProgrammeWeekList';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
-import BlockGridEditor   from './BlockGridEditor';
 import { buildBlockColourMap } from '../../utils/blockColours';
 import {
   loadAthleteBlock,
@@ -121,14 +120,6 @@ export default function ProgrammeView({
   const [builderState,   setBuilderState]   = useState(null);
   const [builderError,   setBuilderError]   = useState(null);
   const [confirmDelete,  setConfirmDelete]  = useState(null); // block from builder
-
-  // ── Block-grid session editor state (Part B) ────────────────────────────
-  // gridEditor = { block, blockSessionId } | null. Tapping a session card
-  // in ProgrammeWeekList opens this editor instead of the full block
-  // builder. The BlockBuilderModal is still reachable from the block
-  // timeline / block list when coaches need the wider editing surface.
-  const [gridEditor,   setGridEditor]   = useState(null);
-  const [gridSaveTick, setGridSaveTick] = useState(0); // bump after a save → re-mount the week list
 
   const openBlockBuilder = async (block, opts = {}) => {
     setBuilderError(null);
@@ -337,7 +328,6 @@ export default function ProgrammeView({
           Logged Sessions sub-tab; the current week shows them greyed +
           ticked; future weeks within 7 days expand by default. */}
       <ProgrammeWeekList
-        key={`pwl-${gridSaveTick}`}
         athlete={athlete}
         blocks={blocks}
         plannedRows={plannedRows}
@@ -347,10 +337,11 @@ export default function ProgrammeView({
         onClickPlanned={(planned) => {
           const target = blocks.find(b => b.id === planned.block_id);
           if (!target) return;
-          // Brief Part B: tapping a session card opens the block-grid
-          // editor (rows = exercises, columns = weeks). The original
-          // BlockBuilderModal stays reachable via the BlockTimelineBar.
-          setGridEditor({ block: target, blockSessionId: planned.block_session_id });
+          // Open the block builder focused on this specific session.
+          // Per-week exercise swaps and the scope dialog live inside
+          // SessionExerciseRow so the same flow works wherever the
+          // builder is opened from.
+          openBlockBuilder(target, { focusSessionTempId: `sess-${planned.block_session_id}` });
         }}
       />
 
@@ -393,15 +384,6 @@ export default function ProgrammeView({
           onDelete={blockModal.mode === 'edit' ? () => handleBlockDelete(blockModal.block) : null}
           onClose={closeBlock}
           saveError={blockSaveError}
-        />
-      )}
-
-      {gridEditor && (
-        <BlockGridEditor
-          block={gridEditor.block}
-          blockSessionId={gridEditor.blockSessionId}
-          onClose={() => setGridEditor(null)}
-          onSaved={() => setGridSaveTick(t => t + 1)}
         />
       )}
 

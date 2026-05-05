@@ -38,6 +38,11 @@ export default function SessionExerciseRow({
   exercise,
   accentColour,
   weeks,
+  // Athlete-mode only — when present, drives the scope dialog "this
+  // week" labels. Null when block dates aren't known (e.g. template
+  // builder), in which case the dialog falls back to a per-week
+  // checkbox picker.
+  currentWk = null,
   linkedToPrev = false,
   linkedToNext = false,
   onChange,
@@ -52,20 +57,113 @@ export default function SessionExerciseRow({
   const ptype = exercise.prescription_type || exercise.default_prescription_type || 'kg';
   const prescriptions = exercise.week_prescriptions || [];
   const wk1 = prescriptions.find(p => p.week_number === 1) || null;
-  const [replacing, setReplacing] = useState(false);
+  const [replacing,   setReplacing]   = useState(false);
+  const [pendingSwap, setPendingSwap] = useState(null); // { lib }
+
+  // ── Scope-aware swap ────────────────────────────────────────────────
+  // After the picker chooses a replacement, instead of immediately
+  // overwriting the row we ask "which weeks?". The chosen scope drives
+  // whether the row's exercise_id changes (entire block) or whether
+  // override_exercise_id is set on selected weeks (per-week swap).
 
   const handleReplaceSelect = (lib) => {
-    onChange({
-      exercise_id:               lib.id,
-      exercise_name:             lib.name,
-      category:                  lib.category,
-      bilateral_unilateral:      lib.bilateral_unilateral,
-      default_prescription_type: lib.default_prescription_type,
-      // Adopt the new exercise's prescription type by default — coach
-      // can change it back via the pill if they want.
-      prescription_type:         lib.default_prescription_type,
-    });
     setReplacing(false);
+    // Always go through the scope dialog so coaches don't accidentally
+    // wipe a multi-week progression with a one-click row replace.
+    setPendingSwap({ lib });
+  };
+
+  // Resolve the current effective exercise for a given week — override
+  // if set, otherwise the row's base exercise.
+  const baselineEffectiveFor = (week) => {
+    const wp = prescriptions.find(p => p.week_number === week);
+    return wp?.override_exercise_id || exercise.exercise_id;
+  };
+
+  const applySwapWithScope = (scope, customWeeks) => {
+    if (!pendingSwap) return;
+    const { lib } = pendingSwap;
+    setPendingSwap(null);
+
+    // Ensure every week 1..N has a prescription row so override writes
+    // have somewhere to land. Missing weeks get a sensible default.
+    const baseRows = Array.from({ length: weeks }, (_, i) => {
+      const wk = i + 1;
+      const existing = prescriptions.find(p => p.week_number === wk);
+      return existing || {
+        week_number: wk, sets: 3, reps: '8',
+        target_value: '', rest_seconds: null,
+        override_exercise_id: null, override_exercise_name: null,
+      };
+    });
+
+    // ── Entire block — replace row exercise, clear all overrides ──
+    if (scope === 'entire_block') {
+      const cleared = baseRows.map(p => ({
+        ...p,
+        override_exercise_id:   null,
+        override_exercise_name: null,
+      }));
+      onChange({
+        exercise_id:               lib.id,
+        exercise_name:             lib.name,
+        category:                  lib.category,
+        bilateral_unilateral:      lib.bilateral_unilateral,
+        default_prescription_type: lib.default_prescription_type,
+        prescription_type:         lib.default_prescription_type,
+        week_prescriptions:        cleared,
+      });
+      return;
+    }
+
+    // ── Per-week scope — set override on chosen weeks only ──
+    const clampedCurrent = currentWk && currentWk >= 1 && currentWk <= weeks
+      ? currentWk
+      : 1;
+
+    let weeksToTouch = [];
+    if (scope === 'just_current') {
+      weeksToTouch = [clampedCurrent];
+    } else if (scope === 'forward') {
+      for (let w = clampedCurrent; w <= weeks; w++) weeksToTouch.push(w);
+    } else if (scope === 'specific') {
+      weeksToTouch = (customWeeks || []).filter(w => w >= 1 && w <= weeks);
+    }
+
+    if (!weeksToTouch.length) return;
+
+    // Smart-overwrite — for "forward" only. Coach explicitly anchored
+    // on `clampedCurrent`; downstream weeks only get touched if they
+    // still match its baseline (so a previously-customised week is
+    // left alone). "just_current" is one week so no propagation issue;
+    // "specific" is deliberate so no skip.
+    const pivotBaseline = baselineEffectiveFor(clampedCurrent);
+    const next = baseRows.map(p => {
+      if (!weeksToTouch.includes(p.week_number)) return p;
+
+      if (scope === 'forward'
+          && p.week_number !== clampedCurrent
+          && baselineEffectiveFor(p.week_number) !== pivotBaseline) {
+        return p; // smart-overwrite skip
+      }
+
+      return {
+        ...p,
+        override_exercise_id:   lib.id,
+        override_exercise_name: lib.name,
+      };
+    });
+    onChange({ week_prescriptions: next });
+  };
+
+  // ✕ on a week cell — restore the row's base exercise for that week.
+  const clearOverrideForWeek = (weekNumber) => {
+    const next = prescriptions.map(p =>
+      p.week_number === weekNumber
+        ? { ...p, override_exercise_id: null, override_exercise_name: null }
+        : p
+    );
+    onChange({ week_prescriptions: next });
   };
 
   const updateWeek = (weekNumber, patch) => {
@@ -249,12 +347,173 @@ export default function SessionExerciseRow({
               prescriptionType={ptype}
               inherited={inherited}
               weekNumber={wk}
+              isCurrent={currentWk != null && wk === currentWk}
+              overrideExerciseName={wp.override_exercise_name || null}
+              onClearOverride={() => clearOverrideForWeek(wk)}
               onChange={(patch) => updateWeek(wk, patch)}
               width={WEEK_COL_WIDTH}
             />
           );
         })}
       </div>
+
+      {/* Scope dialog — gates every exercise replace so coaches don't
+          accidentally wipe a multi-week progression. */}
+      {pendingSwap && (
+        <ScopeDialog
+          fromName={exercise.exercise_name}
+          toName={pendingSwap.lib.name}
+          weeks={weeks}
+          currentWk={currentWk}
+          onCancel={() => setPendingSwap(null)}
+          onConfirm={applySwapWithScope}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── ScopeDialog ──────────────────────────────────────────────────────
+// Asks the coach which weeks the exercise replacement should land on.
+// Sits above the modal (z-[110]) and uses the same gold call-to-action
+// styling as the rest of the builder.
+function ScopeDialog({ fromName, toName, weeks, currentWk, onCancel, onConfirm }) {
+  // currentWk being non-null is our signal that we're in athlete mode
+  // (block dates known). Template mode skips per-week overrides because
+  // saveBlockTemplate doesn't round-trip override_exercise_id — so we
+  // hide the per-week scopes there to keep behaviour consistent.
+  const athleteMode = currentWk != null;
+  const clampedCurrent = currentWk && currentWk >= 1 && currentWk <= weeks
+    ? currentWk
+    : null;
+
+  // Default to "Entire block" — matches the builder's pre-existing
+  // behaviour so a coach who isn't paying attention gets no surprises.
+  const [scope, setScope] = useState('entire_block');
+  const [picked, setPicked] = useState(() => clampedCurrent ? new Set([clampedCurrent]) : new Set());
+
+  const togglePick = (w) => {
+    setPicked(prev => {
+      const next = new Set(prev);
+      if (next.has(w)) next.delete(w); else next.add(w);
+      return next;
+    });
+  };
+
+  const canConfirm = scope !== 'specific' || picked.size > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div className="bg-white rounded-xl w-[460px] max-w-[92vw] p-5 shadow-xl">
+        <p className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: '#9ca3af' }}>
+          Replace exercise · which weeks?
+        </p>
+        <h3 className="text-sm font-bold mb-4" style={{ color: '#1C1C1C' }}>
+          {fromName} → {toName}
+        </h3>
+
+        <div className="space-y-2 mb-4">
+          <ScopeRadio
+            label={`Entire block (Week 1–${weeks})`}
+            help="Replaces the row's base exercise. Clears any per-week overrides."
+            value="entire_block" current={scope} onChange={setScope}
+          />
+          <ScopeRadio
+            label={clampedCurrent
+              ? `Just this week (Week ${clampedCurrent})`
+              : 'Just this week'}
+            help={clampedCurrent
+              ? null
+              : 'Block dates not set — this week is unknown.'}
+            value="just_current" current={scope} onChange={setScope}
+            disabled={!clampedCurrent}
+          />
+          <ScopeRadio
+            label={clampedCurrent
+              ? `From this week to end (Week ${clampedCurrent}–${weeks})`
+              : 'From this week to end'}
+            help={clampedCurrent
+              ? 'Skips weeks already individually customised downstream.'
+              : 'Block dates not set — this week is unknown.'}
+            value="forward" current={scope} onChange={setScope}
+            disabled={!clampedCurrent}
+          />
+          <ScopeRadio
+            label="Specific weeks"
+            help={athleteMode ? null : 'Block dates not set — only available in athlete mode.'}
+            value="specific" current={scope} onChange={setScope}
+            disabled={!athleteMode}
+          />
+          {scope === 'specific' && (
+            <div className="pl-6 pt-1 grid grid-cols-6 gap-1">
+              {Array.from({ length: weeks }, (_, i) => i + 1).map(w => {
+                const on = picked.has(w);
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => togglePick(w)}
+                    className="text-[11px] font-semibold py-1 rounded border transition-colors"
+                    style={{
+                      borderColor: on ? '#A58D69' : '#e5e7eb',
+                      backgroundColor: on ? 'rgba(165,141,105,0.15)' : '#fff',
+                      color: on ? '#A58D69' : '#6b7280',
+                    }}
+                  >
+                    Wk {w}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-xs font-semibold px-3 py-1.5"
+            style={{ color: '#6b7280' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => onConfirm(scope, scope === 'specific' ? Array.from(picked) : null)}
+            className="text-xs font-semibold px-4 py-1.5 rounded text-white disabled:opacity-50"
+            style={{ backgroundColor: '#A58D69' }}
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScopeRadio({ label, help, value, current, onChange, disabled = false }) {
+  return (
+    <label
+      className={`flex flex-col gap-0.5 cursor-pointer ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+    >
+      <span className="flex items-center gap-2 text-xs font-medium" style={{ color: '#1C1C1C' }}>
+        <input
+          type="radio" disabled={disabled}
+          checked={current === value}
+          onChange={() => onChange(value)}
+        />
+        {label}
+      </span>
+      {help && (
+        <span className="text-[10px] italic pl-6" style={{ color: '#9ca3af' }}>
+          {help}
+        </span>
+      )}
+    </label>
   );
 }

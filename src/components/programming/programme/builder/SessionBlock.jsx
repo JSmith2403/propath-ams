@@ -20,6 +20,7 @@ export default function SessionBlock({
   index,
   totalSessions,
   weeks,
+  currentWk = null,           // 1-indexed week of the block today falls into
   isRecent = false,           // Phase 2: triggers a brief gold highlight
   onRenameSession,
   onUpdateNotes,
@@ -229,6 +230,7 @@ export default function SessionBlock({
                 section={sec}
                 accentColour={colourForSection(sec, session.sections)}
                 weeks={weeks}
+                currentWk={currentWk}
                 isFirst={i === 0}
                 onRenameSection={(name) => onRenameSection(sec.tempId, name)}
                 onDeleteSection={() => onDeleteSection(sec.tempId)}

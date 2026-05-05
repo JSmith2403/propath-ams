@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 const PLACEHOLDER = {
   kg:            '60kg',
   percent_1rm:   '70%',
@@ -40,6 +42,9 @@ export default function WeekCell({
   prescriptionType,
   inherited = false,
   weekNumber = 1,
+  isCurrent = false,
+  overrideExerciseName = null,
+  onClearOverride,
   onChange,
   width = 160,
 }) {
@@ -48,8 +53,16 @@ export default function WeekCell({
   const showTarget = ptype !== 'reps_only';
   const targetLabel = TARGET_LABEL[ptype] || 'Load';
   const isEvenWeek = weekNumber % 2 === 0;
+  const swapped = !!overrideExerciseName;
 
   const divider = <span className="text-[12px] select-none" style={{ color: '#e5e7eb' }}>│</span>;
+
+  // Cell background — swapped cells get a soft gold tint so the
+  // per-week override is unmistakable. Current week gets a faint
+  // gold underline accent on hover so coaches orient quickly.
+  const cellBg = swapped
+    ? 'rgba(165,141,105,0.10)'
+    : isEvenWeek ? '#FCFCFD' : '#fff';
 
   return (
     <div
@@ -58,13 +71,39 @@ export default function WeekCell({
         width,
         borderLeft: '1px solid #e5e7eb',
         borderBottom: '1px solid #f3f4f6',
-        backgroundColor: isEvenWeek ? '#FCFCFD' : '#fff',
-        opacity: inherited ? 0.65 : 1,
+        backgroundColor: cellBg,
+        boxShadow: isCurrent ? 'inset 0 -2px 0 rgba(165,141,105,0.55)' : 'none',
+        opacity: inherited && !swapped ? 0.65 : 1,
       }}
-      onMouseEnter={(e) => { if (inherited) e.currentTarget.style.opacity = 1; }}
-      onMouseLeave={(e) => { if (inherited) e.currentTarget.style.opacity = 0.65; }}
-      onFocus={(e) => { if (inherited) e.currentTarget.style.opacity = 1; }}
+      onMouseEnter={(e) => { if (inherited && !swapped) e.currentTarget.style.opacity = 1; }}
+      onMouseLeave={(e) => { if (inherited && !swapped) e.currentTarget.style.opacity = 0.65; }}
+      onFocus={(e) => { if (inherited && !swapped) e.currentTarget.style.opacity = 1; }}
     >
+      {/* Per-week swap indicator — only shown when override_exercise_id
+          is set on this week's prescription. Coach can ✕ to restore
+          the row's base exercise for this week alone. */}
+      {swapped && (
+        <div className="flex items-center gap-1 mb-1.5">
+          <span
+            className="inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded truncate"
+            style={{ color: '#A58D69', backgroundColor: 'rgba(165,141,105,0.20)' }}
+            title={`Swapped to ${overrideExerciseName}`}
+          >
+            Now: {overrideExerciseName}
+          </span>
+          {onClearOverride && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onClearOverride(); }}
+              className="ml-auto p-0.5 rounded hover:bg-white/70 shrink-0 transition-colors"
+              title="Restore the row's base exercise for this week"
+            >
+              <X size={10} style={{ color: '#A58D69' }} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Mini headers */}
       <div className="flex items-center justify-around text-[9px] font-semibold uppercase tracking-wider leading-none" style={{ color: '#b8b8b8' }}>
         <span className="w-9 text-center">Sets</span>

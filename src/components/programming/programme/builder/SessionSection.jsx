@@ -12,6 +12,7 @@ export default function SessionSection({
   section,
   accentColour,
   weeks,
+  currentWk = null,
   isFirst,
   onRenameSection,
   onDeleteSection,
@@ -155,6 +156,7 @@ export default function SessionSection({
                   exercise={step}
                   accentColour={accentColour}
                   weeks={weeks}
+                  currentWk={currentWk}
                   linkedToPrev={linkedToPrev}
                   linkedToNext={linkedToNext}
                   onChange={(patch) => onUpdateExercise(step.tempId, patch)}

@@ -27,17 +27,28 @@ function clampPositive(n, fallback = 1) {
 
 // Build a list of week_prescriptions rows for an exercise, coercing
 // invalid values so the DB CHECK constraints pass.
-function safeWeekRows(weekPrescriptions, parentIdField, parentId) {
-  return (weekPrescriptions || []).map(wp => ({
-    [parentIdField]: parentId,
-    week_number: clampPositive(wp.week_number, 1),
-    sets: clampPositive(wp.sets, 1),
-    reps: (wp.reps == null || wp.reps === '') ? '1' : String(wp.reps),
-    target_value: wp.target_value || null,
-    rest_seconds: (wp.rest_seconds == null || wp.rest_seconds === '')
-      ? null
-      : Math.max(0, Number(wp.rest_seconds)),
-  }));
+//
+// `includeOverride` — when true, propagates `override_exercise_id` from
+// the draft into the inserted row. The athlete-block save path passes
+// this so per-week exercise swaps survive the wipe-and-recreate save;
+// the template path leaves overrides off (templates have no swap concept).
+function safeWeekRows(weekPrescriptions, parentIdField, parentId, includeOverride = false) {
+  return (weekPrescriptions || []).map(wp => {
+    const row = {
+      [parentIdField]: parentId,
+      week_number: clampPositive(wp.week_number, 1),
+      sets: clampPositive(wp.sets, 1),
+      reps: (wp.reps == null || wp.reps === '') ? '1' : String(wp.reps),
+      target_value: wp.target_value || null,
+      rest_seconds: (wp.rest_seconds == null || wp.rest_seconds === '')
+        ? null
+        : Math.max(0, Number(wp.rest_seconds)),
+    };
+    if (includeOverride) {
+      row.override_exercise_id = wp.override_exercise_id || null;
+    }
+    return row;
+  });
 }
 
 // ─── SAVE ─────────────────────────────────────────────────────────────
@@ -445,15 +456,21 @@ export async function loadAthleteBlock(blockId) {
     if (exerciseRows.length) {
       const { data: wps, error: wpErr } = await supabase
         .from('exercise_week_prescriptions')
-        .select('session_exercise_id, week_number, sets, reps, target_value, rest_seconds')
+        .select('session_exercise_id, week_number, sets, reps, target_value, rest_seconds, override_exercise_id')
         .in('session_exercise_id', exerciseRows.map(e => e.id));
       if (wpErr) return { ok: false, error: wpErr };
       wpRows = wps || [];
     }
   }
 
-  // Library lookups for names/categories
-  const libIds = [...new Set(exerciseRows.map(e => e.exercise_id))];
+  // Library lookups for names/categories. Includes any per-week
+  // override_exercise_id values so the builder can render the swapped
+  // exercise's name on those week cells.
+  const overrideLibIds = [...new Set(wpRows.map(w => w.override_exercise_id).filter(Boolean))];
+  const libIds = [...new Set([
+    ...exerciseRows.map(e => e.exercise_id),
+    ...overrideLibIds,
+  ])];
   let libById = {};
   if (libIds.length) {
     const { data: lib, error } = await supabase
@@ -497,13 +514,24 @@ export async function loadAthleteBlock(blockId) {
             const wps = wpRows
               .filter(wp => wp.session_exercise_id === ex.id)
               .sort((a, b) => a.week_number - b.week_number)
-              .map(wp => ({
-                week_number:  wp.week_number,
-                sets:         wp.sets,
-                reps:         wp.reps,
-                target_value: wp.target_value || '',
-                rest_seconds: wp.rest_seconds,
-              }));
+              .map(wp => {
+                const overrideId = wp.override_exercise_id || null;
+                return {
+                  week_number:  wp.week_number,
+                  sets:         wp.sets,
+                  reps:         wp.reps,
+                  target_value: wp.target_value || '',
+                  rest_seconds: wp.rest_seconds,
+                  // Per-week exercise swap — null means "use the row's
+                  // base exercise". Resolved name is carried alongside
+                  // so WeekCell can render the chip without an extra
+                  // library lookup.
+                  override_exercise_id:   overrideId,
+                  override_exercise_name: overrideId
+                    ? (libById[overrideId]?.name || null)
+                    : null,
+                };
+              });
             return {
               tempId:                    `ex-${ex.id}`,
               _existingId:               ex.id,
@@ -531,6 +559,10 @@ export async function loadAthleteBlock(blockId) {
         id: tb.id,
         name: tb.block_name,
         duration_weeks: tb.duration_weeks,
+        // start_date / end_date are included so the builder can
+        // compute "current week" for scope-aware swaps.
+        start_date: tb.start_date,
+        end_date:   tb.end_date,
         description: tb.notes || '',
       },
       sessions: draftSessions,
@@ -697,7 +729,7 @@ export async function saveAthleteBlock(blockId, draft) {
             if (step.kind === 'note') continue;
             if (!step.exercise_id) continue;
             const inserted = insertedExs[cursor++];
-            wpRows.push(...safeWeekRows(step.week_prescriptions, 'session_exercise_id', inserted.id));
+            wpRows.push(...safeWeekRows(step.week_prescriptions, 'session_exercise_id', inserted.id, true));
           }
         }
         if (wpRows.length) {

@@ -5,6 +5,7 @@ import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import ConfirmDialog from '../../blocks/ConfirmDialog';
 import { useBlockTemplates } from '../../../../hooks/useBlockTemplates';
 import { loadBlockTemplate } from '../../../../utils/programmeTemplates';
+import { currentWeekNumber } from '../../../../utils/blockGrid';
 import ExercisePicker from './ExercisePicker';
 
 const MIN_WEEKS    = 1;
@@ -100,6 +101,16 @@ export default function BlockBuilderModal({
 
   const weeks = draft.block.duration_weeks;
   const totalWidth = ROW_STICKY_WIDTH + weeks * WEEK_COL_WIDTH;
+
+  // Athlete-mode only — drives the "this week" labels in the
+  // exercise-replace scope dialog. Null in template mode (no dates).
+  const currentWk = useMemo(() => {
+    if (draft.mode !== 'athlete') return null;
+    return currentWeekNumber({
+      start_date:     draft.block.start_date,
+      duration_weeks: draft.block.duration_weeks,
+    });
+  }, [draft.mode, draft.block.start_date, draft.block.duration_weeks]);
 
   // ── Block-level setters ─────────────────────────────────────────────────
   const setBlockName = (name) =>
@@ -628,6 +639,7 @@ export default function BlockBuilderModal({
               index={idx}
               totalSessions={draft.sessions.length}
               weeks={weeks}
+              currentWk={currentWk}
               defaultCollapsed={!!focusSessionTempId && sess.tempId !== focusSessionTempId}
               isRecent={recentSessionId === sess.tempId}
               onRenameSession={(name) => renameSession(idx, name)}
