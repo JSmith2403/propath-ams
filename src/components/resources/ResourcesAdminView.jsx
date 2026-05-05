@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload, Image as ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -384,29 +384,12 @@ function Editor({ draft: initial, onSave, onCancel }) {
             </label>
           </div>
 
-          {/* ── Files: PDF + cover image — drag-and-drop or click ──── */}
-          <div className="grid grid-cols-2 gap-3">
-            <FileDropZone
-              label="PDF Document"
-              accept="application/pdf,.pdf"
-              icon={FileText}
-              currentUrl={draft.file_url}
-              currentName={draft.file_name}
-              previewKind="pdf"
-              hint="Cover auto-extracts from page 1"
-              onUpload={(file) => uploadAndSet(file, 'pdf', set, draft)}
-              onClear={() => set({ file_url: null, file_name: null })}
-            />
-            <FileDropZone
-              label="Cover Image"
-              accept="image/png,image/jpeg,image/webp"
-              icon={ImageIcon}
-              currentUrl={draft.cover_image_url}
-              previewKind="image"
-              onUpload={(file) => uploadAndSet(file, 'cover', set, draft)}
-              onClear={() => set({ cover_image_url: null })}
-            />
-          </div>
+          {/* ── Single unified upload (PDF / PNG / JPG). Drop file → uploads
+                immediately → for PDFs auto-extracts page 1 as cover. */}
+          <UploadFile
+            draft={draft}
+            set={set}
+          />
 
           {/* Blocks */}
           <div className="space-y-3">
@@ -636,6 +619,194 @@ async function uploadAndSet(file, kind, set, draft) {
     console.error('[Resources upload]', e);
     alert(`Upload failed: ${e.message || e}`);
   }
+}
+
+// ─── UploadFile — single dropzone matching the coach mockup ──────────────
+// One area accepting PDF / PNG / JPG. Drop or click → immediate upload
+// + (for PDFs) auto-extract page 1 as cover. Inline error / status so
+// failures aren't hidden in console.
+function UploadFile({ draft, set }) {
+  const [over, setOver]      = useState(false);
+  const [busy, setBusy]      = useState(false);
+  const [stage, setStage]    = useState('');     // 'uploading' | 'extracting' | 'cover' | ''
+  const [error, setError]    = useState(null);
+  const inputRef = useRef(null);
+
+  const ACCEPT = '.pdf,application/pdf,image/png,image/jpeg,image/webp';
+
+  const handle = async (file) => {
+    if (!file) return;
+    setError(null);
+    setBusy(true);
+    setStage('uploading');
+    try {
+      const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+      const isPdf = file.type === 'application/pdf' || ext === 'pdf';
+      const isImg = (file.type || '').startsWith('image/') || ['png','jpg','jpeg','webp'].includes(ext);
+
+      if (!isPdf && !isImg) {
+        throw new Error(`Unsupported file type: ${file.type || ext}. Use PDF, PNG, JPG, or WebP.`);
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        throw new Error('File is too large (max 50 MB).');
+      }
+
+      const safe = (draft.title || 'resource').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'resource';
+      const path = `${isPdf ? 'pdf' : 'image'}/${Date.now()}-${safe}.${ext}`;
+      const contentType = isPdf ? 'application/pdf' : (file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`);
+
+      const { error: upErr } = await supabase
+        .storage
+        .from('resources')
+        .upload(path, file, { contentType, upsert: false });
+      if (upErr) throw new Error(upErr.message || 'Storage upload failed');
+
+      const { data: pub } = supabase.storage.from('resources').getPublicUrl(path);
+
+      if (isPdf) {
+        // PDF: file_url + auto-extract cover.
+        set({ file_url: pub.publicUrl, file_name: file.name });
+        setStage('extracting');
+        const png = await extractPdfFirstPagePng(file);
+        if (png) {
+          setStage('cover');
+          const coverPath = `cover/${Date.now()}-${safe}-auto.png`;
+          const { error: coverErr } = await supabase
+            .storage
+            .from('resources')
+            .upload(coverPath, png, { contentType: 'image/png', upsert: false });
+          if (!coverErr) {
+            const { data: coverPub } = supabase.storage.from('resources').getPublicUrl(coverPath);
+            set({ cover_image_url: coverPub.publicUrl });
+          } else {
+            console.warn('[Resources] cover upload failed (PDF still saved)', coverErr);
+          }
+        }
+      } else {
+        // Image: serves as both file (download) and cover.
+        set({ file_url: pub.publicUrl, file_name: file.name, cover_image_url: pub.publicUrl });
+      }
+    } catch (e) {
+      console.error('[Resources upload]', e);
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+      setStage('');
+    }
+  };
+
+  const onPickClick = () => inputRef.current?.click();
+
+  const hasFile = !!(draft.file_url || draft.cover_image_url);
+  const isPdfFile = (draft.file_name || '').toLowerCase().endsWith('.pdf');
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-card">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-bold text-gray-900">Upload file</p>
+        {hasFile && (
+          <button
+            type="button"
+            onClick={() => set({ file_url: null, file_name: null, cover_image_url: null })}
+            className="text-[11px] font-semibold text-gray-400 hover:text-red-600 transition-colors"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      <div
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) handle(f);
+        }}
+        className="relative rounded-lg border-2 border-dashed transition-colors"
+        style={{
+          borderColor: over ? '#2563eb' : '#cbd5e1',
+          backgroundColor: over ? '#eff6ff' : '#f8fafc',
+          minHeight: hasFile ? 220 : 200,
+        }}
+      >
+        {hasFile ? (
+          <div className="p-4 flex flex-col items-center justify-center gap-3" style={{ minHeight: 220 }}>
+            {draft.cover_image_url ? (
+              <img src={draft.cover_image_url} alt="" className="max-h-44 object-contain rounded shadow-sm" />
+            ) : (
+              <div className="w-16 h-16 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}>
+                <FileText size={28} style={{ color: GOLD }} />
+              </div>
+            )}
+            <div className="text-center">
+              <p className="text-xs font-semibold text-gray-700 truncate max-w-xs">
+                {draft.file_name || 'Uploaded file'}
+              </p>
+              {isPdfFile && draft.cover_image_url && (
+                <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                  ✓ Cover auto-extracted from page 1
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={onPickClick}
+                className="mt-2 text-[11px] font-semibold text-blue-600 hover:underline"
+              >
+                Replace file
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onPickClick}
+            disabled={busy}
+            className="w-full flex flex-col items-center justify-center gap-3 py-10 text-center"
+          >
+            <div className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: '#dbeafe' }}>
+              <Upload size={20} style={{ color: '#2563eb' }} strokeWidth={1.8} />
+            </div>
+            {busy ? (
+              <p className="text-sm font-semibold text-gray-700">
+                {stage === 'uploading' && 'Uploading…'}
+                {stage === 'extracting' && 'Extracting cover from PDF…'}
+                {stage === 'cover' && 'Saving cover image…'}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600">
+                Drag &amp; Drop your file or{' '}
+                <span className="text-blue-600 font-semibold underline">Browse</span>
+              </p>
+            )}
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mt-3 text-[11px] text-gray-500">
+        <span>Supported formats: PDF, PNG, JPG, WebP</span>
+        <span>Maximum size: 50&nbsp;MB</span>
+      </div>
+
+      {error && (
+        <div className="mt-3 px-3 py-2 rounded text-xs text-red-700"
+          style={{ backgroundColor: 'rgba(220,38,38,0.08)' }}>
+          {error}
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPT}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; handle(f); e.target.value = ''; }}
+      />
+    </div>
+  );
 }
 
 function FileDropZone({ label, accept, icon: Icon, currentUrl, currentName, previewKind, onUpload, onClear, hint }) {
