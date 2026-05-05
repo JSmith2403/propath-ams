@@ -1,6 +1,8 @@
 import { Dumbbell, TrendingUp, BookOpen } from 'lucide-react';
 
-// Wellness lives on the home (Training) screen; readiness deferred.
+// Resources isn't a top-level tab — it's a section at the bottom of
+// Training. The button here just signals 'scroll me down to it' (handled
+// by the parent), so we never mark it as active.
 const TABS = [
   { id: 'train',     label: 'Training',  icon: Dumbbell   },
   { id: 'progress',  label: 'Progress',  icon: TrendingUp },
@@ -18,7 +20,8 @@ export default function TabBar({ active, onChange }) {
       }}
     >
       {TABS.map(({ id, label, icon: Icon }) => {
-        const isActive = active === id;
+        // Resources is a scroll-shortcut, not a route — it never lights up.
+        const isActive = active === id && id !== 'resources';
         return (
           <button
             key={id}

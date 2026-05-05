@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
@@ -7,6 +7,7 @@ import SessionCard from './SessionCard';
 import SessionLogger from './SessionLogger';
 import WellnessInline from './WellnessInline';
 import MoveSessionModal from './MoveSessionModal';
+import ResourcesTab from './ResourcesTab';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -23,10 +24,21 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-export default function TrainingTab({ athleteId, athleteName }) {
+export default function TrainingTab({ athleteId, athleteName, scrollToResourcesNonce = 0 }) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedISO, setSelectedISO] = useState(toISO(today));
+  const resourcesRef = useRef(null);
+
+  // When the bottom-nav Resources button bumps the nonce, scroll the
+  // anchor into view. Skip on first mount (nonce starts at 0).
+  useEffect(() => {
+    if (!scrollToResourcesNonce) return;
+    const node = resourcesRef.current;
+    if (node && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [scrollToResourcesNonce]);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -231,6 +243,14 @@ export default function TrainingTab({ athleteId, athleteName }) {
           ))}
         </div>
       )}
+
+      {/* ── Resources section — anchor for the bottom-nav scroll shortcut.
+            Renders the same coach-authored content that used to live in
+            its own tab; embedding here keeps the athlete on the home
+            screen instead of losing the day they were looking at. */}
+      <div ref={resourcesRef} id="resources" className="-mx-4 mt-6 pt-2 border-t border-ink-100">
+        <ResourcesTab />
+      </div>
 
       {/* Session logger overlay */}
       {activeLogger && (

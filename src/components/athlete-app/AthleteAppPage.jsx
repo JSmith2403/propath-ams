@@ -6,10 +6,10 @@ import TabBar from './TabBar';
 import TrainingTab from './TrainingTab';
 import InstallPrompt from '../InstallPrompt';
 
-// Wellness + Readiness are no longer surfaced as tabs. Wellness lives
-// on the home (Training) screen; Readiness is deferred for v1.
+// Wellness lives on the Training screen, Resources lives at the bottom
+// of the Training screen as a section (the bottom-nav 'Resources' button
+// scroll-shortcuts to it). Readiness is deferred for v1.
 const ProgressTab  = lazy(() => import('./ProgressTab'));
-const ResourcesTab = lazy(() => import('./ResourcesTab'));
 
 function Loading() {
   return (
@@ -28,6 +28,21 @@ export default function AthleteAppPage() {
   const [status, setStatus]     = useState('loading'); // loading | invalid | ready
   const [athlete, setAthlete]   = useState(null);
   const [activeTab, setActive]  = useState('train');
+  // Bumped each time the user taps the bottom-nav Resources button so
+  // TrainingTab knows to scroll its #resources anchor into view.
+  const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
+
+  // Bottom-nav handler — Resources isn't a route, it's a scroll shortcut
+  // anchored inside the Training tab. Clicking it switches to Training
+  // (if elsewhere) and bumps the nonce so the embedded section scrolls.
+  const handleTabChange = (id) => {
+    if (id === 'resources') {
+      if (activeTab !== 'train') setActive('train');
+      setScrollToResourcesNonce(n => n + 1);
+      return;
+    }
+    setActive(id);
+  };
 
   // The PWA manifest <link> for athlete pages is set BEFORE React mounts,
   // by an inline script in index.html that detects /athlete/<token> in
@@ -129,15 +144,20 @@ export default function AthleteAppPage() {
 
         {/* Body */}
         <main className="flex-1 overflow-y-auto pb-24">
-          {activeTab === 'train' && <TrainingTab athleteId={athlete.id} athleteName={athlete.name} />}
+          {activeTab === 'train' && (
+            <TrainingTab
+              athleteId={athlete.id}
+              athleteName={athlete.name}
+              scrollToResourcesNonce={scrollToResourcesNonce}
+            />
+          )}
           <Suspense fallback={<Loading />}>
-            {activeTab === 'progress'  && <ProgressTab />}
-            {activeTab === 'resources' && <ResourcesTab />}
+            {activeTab === 'progress' && <ProgressTab />}
           </Suspense>
         </main>
 
         {/* Bottom tab bar */}
-        <TabBar active={activeTab} onChange={setActive} />
+        <TabBar active={activeTab} onChange={handleTabChange} />
       </div>
       <InstallPrompt />
     </div>
