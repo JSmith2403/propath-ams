@@ -15,6 +15,7 @@ import { useWellnessRoster } from './hooks/useWellnessRoster';
 import WellnessOverview from './components/WellnessOverview';
 import ProgrammeMasterView from './components/programming/ProgrammeMasterView';
 import ProgrammeModule    from './components/programming/ProgrammeModule';
+import ResourcesAdminView from './components/resources/ResourcesAdminView';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -71,7 +72,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   // Redirect non-admin/external users away from restricted views.
   useEffect(() => {
-    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users')) {
+    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users' || view === 'resources')) {
       setView('roster');
     }
     if (!isAdmin && view === 'users') {
@@ -91,7 +92,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const canDelete = !isExternal;
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar')) return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources')) return;
     if (!isAdmin && v === 'users') return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
@@ -221,6 +222,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
         {view === 'shared-calendar' && !isExternal && (
           <ProgrammeMasterView allAthletes={visibleAthletes} role={role} onSelectAthlete={handleSelectAthlete} />
+        )}
+
+        {view === 'resources' && !isExternal && (
+          <ResourcesAdminView />
         )}
 
         {view === 'users' && isAdmin && (
