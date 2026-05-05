@@ -9,6 +9,7 @@ import InstallPrompt from '../InstallPrompt';
 // Wellness + Readiness are no longer surfaced as tabs. Wellness lives
 // on the home (Training) screen; Readiness is deferred for v1.
 const ProgressTab  = lazy(() => import('./ProgressTab'));
+const ResourcesTab = lazy(() => import('./ResourcesTab'));
 
 function Loading() {
   return (
@@ -130,7 +131,8 @@ export default function AthleteAppPage() {
         <main className="flex-1 overflow-y-auto pb-24">
           {activeTab === 'train' && <TrainingTab athleteId={athlete.id} athleteName={athlete.name} />}
           <Suspense fallback={<Loading />}>
-            {activeTab === 'progress' && <ProgressTab />}
+            {activeTab === 'progress'  && <ProgressTab />}
+            {activeTab === 'resources' && <ResourcesTab />}
           </Suspense>
         </main>
 

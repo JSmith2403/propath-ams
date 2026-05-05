@@ -1,9 +1,10 @@
-import { Dumbbell, TrendingUp } from 'lucide-react';
+import { Dumbbell, TrendingUp, BookOpen } from 'lucide-react';
 
 // Wellness lives on the home (Training) screen; readiness deferred.
 const TABS = [
-  { id: 'train',    label: 'Training', icon: Dumbbell   },
-  { id: 'progress', label: 'Progress', icon: TrendingUp },
+  { id: 'train',     label: 'Training',  icon: Dumbbell   },
+  { id: 'progress',  label: 'Progress',  icon: TrendingUp },
+  { id: 'resources', label: 'Resources', icon: BookOpen   },
 ];
 
 export default function TabBar({ active, onChange }) {
