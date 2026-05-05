@@ -814,6 +814,96 @@ async function extractPdfFirstPagePng(file) {
   }
 }
 
+// Best-effort title + summary extraction from a PDF. Returns
+// { title, summary } — either field may be empty if extraction fails.
+//
+// Strategy:
+//   • Title — prefer the PDF's own metadata.Title; fall back to the
+//     largest text on page 1 (skipping page numbers and tiny labels).
+//     Convert SHOUTING titles to Title Case for readability.
+//   • Summary — first non-uppercase sentence of long-enough body text
+//     starting from page 1 (and rolling onto page 2 if needed). Capped
+//     at ~200 chars with an ellipsis.
+async function extractPdfMetadata(file) {
+  try {
+    const pdfjs     = await import('pdfjs-dist');
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data: buf }).promise;
+
+    // ── Title ────────────────────────────────────────────────────────
+    let title = '';
+    try {
+      const meta = await pdf.getMetadata();
+      const t = (meta?.info?.Title || '').trim();
+      if (t && !/^untitled/i.test(t)) title = t;
+    } catch (_) {}
+
+    if (!title) {
+      const page1 = await pdf.getPage(1);
+      const tc1   = await page1.getTextContent();
+      const items = tc1.items
+        .filter(i => i.str && i.str.trim().length >= 3)
+        .map(i => ({
+          str:  i.str.trim(),
+          size: Math.abs(i.transform?.[3] || 0),
+        }))
+        // Drop obvious junk lines (page numbers, brand wordmark).
+        .filter(i => !/^[\d\s\-_.]+$/.test(i.str));
+
+      if (items.length) {
+        const maxSize = Math.max(...items.map(i => i.size));
+        const topItems = items.filter(i => Math.abs(i.size - maxSize) < 0.5);
+        // Skip the first short label (e.g. "NUTRITION" subtitle) when a
+        // meatier title sits right after at the same size.
+        const meaningful = topItems.length > 1
+          ? topItems.filter(i => i.str.length >= 8)
+          : topItems;
+        const chosen = meaningful.length ? meaningful : topItems;
+        title = chosen.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      }
+
+      // SHOUTING → Title Case
+      if (title && title === title.toUpperCase() && title.length > 4) {
+        title = title.toLowerCase().replace(/\b(\w)/g, ch => ch.toUpperCase());
+        // Smart-quote nicety so 'athletes' renders as athlete's
+        title = title.replace(/(\w)'(\w)/g, "$1'$2");
+      }
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────
+    let summary = '';
+    const pagesToScan = Math.min(pdf.numPages, 3);
+    let combined = '';
+    for (let p = 1; p <= pagesToScan; p++) {
+      const pg = await pdf.getPage(p);
+      const tc = await pg.getTextContent();
+      // Group items into pseudo-lines using transform[5] (y position).
+      const text = tc.items.map(i => i.str).join(' ');
+      combined += ' ' + text;
+    }
+    combined = combined.replace(/\s+/g, ' ').trim();
+
+    // Find first sentence that's long enough and not all caps (skips headings).
+    const sentences = combined.split(/(?<=[.!?])\s+/);
+    for (const s of sentences) {
+      const trimmed = s.trim();
+      if (trimmed.length < 40) continue;
+      if (trimmed === trimmed.toUpperCase()) continue;
+      summary = trimmed;
+      break;
+    }
+    if (!summary) summary = combined.slice(0, 200);
+    if (summary.length > 200) summary = summary.slice(0, 197).trimEnd() + '…';
+
+    return { title, summary };
+  } catch (e) {
+    console.warn('[PDF metadata extract] failed:', e);
+    return { title: '', summary: '' };
+  }
+}
+
 async function uploadAndSet(file, kind, set, draft) {
   if (!file) return;
   try {
@@ -907,7 +997,7 @@ function UploadFile({ draft, set }) {
       const { data: pub } = supabase.storage.from('resources').getPublicUrl(path);
 
       if (isPdf) {
-        // PDF: file_url + auto-extract cover.
+        // PDF: file_url + auto-extract cover + auto-fill title/summary.
         set({ file_url: pub.publicUrl, file_name: file.name });
         setStage('extracting');
         const png = await extractPdfFirstPagePng(file);
@@ -925,6 +1015,14 @@ function UploadFile({ draft, set }) {
             console.warn('[Resources] cover upload failed (PDF still saved)', coverErr);
           }
         }
+        // Pull title + summary from the PDF — only fills empty fields
+        // so a coach who's already typed something never gets clobbered.
+        setStage('metadata');
+        const meta = await extractPdfMetadata(file);
+        const patch = {};
+        if (meta.title   && !(draft.title   || '').trim()) patch.title   = meta.title;
+        if (meta.summary && !(draft.summary || '').trim()) patch.summary = meta.summary;
+        if (Object.keys(patch).length) set(patch);
       } else {
         // Image: serves as both file (download) and cover.
         set({ file_url: pub.publicUrl, file_name: file.name, cover_image_url: pub.publicUrl });
@@ -1015,9 +1113,10 @@ function UploadFile({ draft, set }) {
             </div>
             {busy ? (
               <p className="text-sm font-semibold text-gray-700">
-                {stage === 'uploading' && 'Uploading…'}
+                {stage === 'uploading'  && 'Uploading…'}
                 {stage === 'extracting' && 'Extracting cover from PDF…'}
-                {stage === 'cover' && 'Saving cover image…'}
+                {stage === 'cover'      && 'Saving cover image…'}
+                {stage === 'metadata'   && 'Reading title + description…'}
               </p>
             ) : (
               <p className="text-sm text-gray-600">
