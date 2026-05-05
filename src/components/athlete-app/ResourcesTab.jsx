@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Apple, Brain, Flower, TrendingUp, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { Apple, Brain, Flower, TrendingUp, ChevronLeft, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // Visual config per category. Coach-authored content (resource_items)
@@ -86,7 +86,10 @@ export default function ResourcesTab() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Horizontal row of 4 category tiles. grid-cols-4 keeps them
+          equal-width on the 480px-max athlete-app shell. Tap a tile to
+          drill into that category's items. */}
+      <div className="grid grid-cols-4 gap-2">
         {CATEGORIES.map(c => {
           const Icon = c.icon;
           const count = (itemsByCat[c.id] || []).length;
@@ -99,27 +102,27 @@ export default function ResourcesTab() {
             >
               <div className="absolute inset-0 flex items-center justify-center">
                 <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md"
+                  className="w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md"
                   style={{ backgroundColor: 'rgba(255,255,255,0.16)' }}
                 >
-                  <Icon size={26} className="text-white" strokeWidth={1.6} />
+                  <Icon size={18} className="text-white" strokeWidth={1.6} />
                 </div>
               </div>
               {count > 0 && (
                 <span
-                  className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  className="absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                   style={{ backgroundColor: 'rgba(255,255,255,0.92)', color: '#1C1C1C' }}
                 >
                   {count}
                 </span>
               )}
               <div
-                className="absolute left-0 right-0 bottom-0 px-3 py-3"
+                className="absolute left-0 right-0 bottom-0 px-1.5 py-2"
                 style={{
-                  background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 100%)',
+                  background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.65) 100%)',
                 }}
               >
-                <p className="text-meta font-bold text-white text-center">
+                <p className="text-[10px] font-bold text-white text-center leading-tight">
                   {c.label}
                 </p>
               </div>
@@ -172,26 +175,36 @@ function CategoryList({ category, items, onBack, onPick }) {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        // Tile layout for resource items inside a category — same look as
+        // the category tiles on the home view, just slightly larger so
+        // the title reads cleanly at 2-up width.
+        <div className="grid grid-cols-2 gap-3">
           {items.map(it => (
             <button
               key={it.id}
               onClick={() => onPick(it.id)}
-              className="w-full bg-white rounded-xl border border-ink-100 shadow-card p-4 text-left transition-shadow active:shadow-raised flex items-start gap-3"
+              className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98]"
+              style={{ aspectRatio: '3 / 4', background: category?.gradient }}
             >
-              <div
-                className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}
-              >
-                <FileText size={16} style={{ color: '#A58D69' }} />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-md"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.16)' }}
+                >
+                  <FileText size={20} className="text-white" strokeWidth={1.6} />
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-body font-bold text-ink-900 leading-tight">{it.title}</p>
+              <div
+                className="absolute left-0 right-0 bottom-0 px-3 py-3"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)',
+                }}
+              >
+                <p className="text-meta font-bold text-white leading-tight">{it.title}</p>
                 {it.summary && (
-                  <p className="text-meta text-ink-500 mt-1 leading-snug">{it.summary}</p>
+                  <p className="text-[10px] text-white/75 mt-1 leading-snug line-clamp-2">{it.summary}</p>
                 )}
               </div>
-              <ChevronRight size={16} className="shrink-0 text-ink-300 mt-1" />
             </button>
           ))}
         </div>

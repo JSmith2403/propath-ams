@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, GripVertical } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -129,6 +129,29 @@ export default function ResourcesAdminView() {
     await fetchAll();
   };
 
+  // Persist a new order for one category. Optimistically updates the
+  // local items state and pushes display_order updates to Supabase.
+  const reorderCategory = async (catId, newOrderIds) => {
+    // Optimistic local state — apply new order before the network call.
+    setItems(prev => {
+      const inCat = prev.filter(p => p.category === catId);
+      const outCat = prev.filter(p => p.category !== catId);
+      const reordered = newOrderIds.map((id, i) => {
+        const found = inCat.find(p => p.id === id);
+        return found ? { ...found, display_order: i } : null;
+      }).filter(Boolean);
+      return [...outCat, ...reordered];
+    });
+    // Push the new ordering to the DB. One UPDATE per row keeps it
+    // simple; counts are tiny (handful per category).
+    for (let i = 0; i < newOrderIds.length; i++) {
+      await supabase
+        .from('resource_items')
+        .update({ display_order: i })
+        .eq('id', newOrderIds[i]);
+    }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────
   if (editing) {
     return (
@@ -165,71 +188,17 @@ export default function ResourcesAdminView() {
               style={{ borderColor: '#e5e7eb', borderTopColor: GOLD }} />
           </div>
         ) : (
-          CATEGORIES.map(cat => {
-            const list = grouped[cat.id] || [];
-            return (
-              <div key={cat.id}>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{cat.label}</h2>
-                  <span className="text-xs text-gray-400">
-                    {list.length} item{list.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                {list.length === 0 ? (
-                  <p className="text-xs text-gray-300 italic px-2">No resources in this category yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {list.map(it => (
-                      <div key={it.id} className="bg-white rounded-lg border border-gray-100 px-4 py-3 flex items-center gap-3"
-                        style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-                        <div
-                          className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
-                          style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}
-                        >
-                          <FileText size={16} style={{ color: GOLD }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
-                            {!it.is_published && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                                style={{ color: '#92400e', backgroundColor: '#fef3c7' }}>
-                                Hidden
-                              </span>
-                            )}
-                          </div>
-                          {it.summary && (
-                            <p className="text-xs text-gray-500 truncate mt-0.5">{it.summary}</p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => togglePublish(it)}
-                          className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                          title={it.is_published ? 'Hide from athletes' : 'Publish to athletes'}
-                        >
-                          {it.is_published ? <Eye size={14} /> : <EyeOff size={14} />}
-                        </button>
-                        <button
-                          onClick={() => setEditing(it)}
-                          className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          onClick={() => remove(it)}
-                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })
+          CATEGORIES.map(cat => (
+            <CategorySection
+              key={cat.id}
+              cat={cat}
+              items={grouped[cat.id] || []}
+              onTogglePublish={togglePublish}
+              onEdit={setEditing}
+              onRemove={remove}
+              onReorder={(newOrder) => reorderCategory(cat.id, newOrder)}
+            />
+          ))
         )}
       </div>
 
@@ -239,6 +208,128 @@ export default function ResourcesAdminView() {
           style={{ backgroundColor: toast.kind === 'error' ? '#dc2626' : '#1C1C1C' }}
         >
           {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Category section with HTML5 drag-and-drop reordering ───────────────
+function CategorySection({ cat, items, onTogglePublish, onEdit, onRemove, onReorder }) {
+  const [dragId, setDragId]   = useState(null);
+  const [overId, setOverId]   = useState(null);
+
+  // Move dragId before overId in the local array, then push to parent.
+  const commit = () => {
+    if (!dragId || !overId || dragId === overId) {
+      setDragId(null); setOverId(null);
+      return;
+    }
+    const ids = items.map(i => i.id);
+    const from = ids.indexOf(dragId);
+    const to   = ids.indexOf(overId);
+    if (from < 0 || to < 0) {
+      setDragId(null); setOverId(null);
+      return;
+    }
+    const next = ids.slice();
+    next.splice(from, 1);
+    next.splice(to, 0, dragId);
+    setDragId(null); setOverId(null);
+    onReorder(next);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{cat.label}</h2>
+        <span className="text-xs text-gray-400">
+          {items.length} item{items.length === 1 ? '' : 's'}
+          {items.length > 1 && <> · drag to reorder</>}
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-xs text-gray-300 italic px-2">No resources in this category yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map(it => {
+            const isDragging = dragId === it.id;
+            const isOver     = overId === it.id && dragId && dragId !== it.id;
+            return (
+              <div
+                key={it.id}
+                draggable
+                onDragStart={(e) => {
+                  setDragId(it.id);
+                  // Setting effectAllowed/dataTransfer makes the drag valid
+                  // on Chrome and Safari.
+                  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', it.id); } catch (_) {}
+                }}
+                onDragEnter={() => setOverId(it.id)}
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDragEnd={commit}
+                onDrop={(e) => { e.preventDefault(); commit(); }}
+                className="bg-white rounded-lg border border-gray-100 px-4 py-3 flex items-center gap-3 transition-all"
+                style={{
+                  boxShadow:    '0 1px 2px rgba(0,0,0,0.04)',
+                  opacity:      isDragging ? 0.4 : 1,
+                  borderTop:    isOver ? '2px solid #A58D69' : undefined,
+                  cursor:       isDragging ? 'grabbing' : 'default',
+                  borderColor:  isOver ? '#A58D69' : undefined,
+                }}
+              >
+                <span
+                  className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors"
+                  style={{ cursor: 'grab' }}
+                  title="Drag to reorder"
+                >
+                  <GripVertical size={14} />
+                </span>
+                <div
+                  className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: 'rgba(165,141,105,0.14)' }}
+                >
+                  <FileText size={16} style={{ color: GOLD }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-gray-900 truncate">{it.title}</p>
+                    {!it.is_published && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                        style={{ color: '#92400e', backgroundColor: '#fef3c7' }}>
+                        Hidden
+                      </span>
+                    )}
+                  </div>
+                  {it.summary && (
+                    <p className="text-xs text-gray-500 truncate mt-0.5">{it.summary}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => onTogglePublish(it)}
+                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title={it.is_published ? 'Hide from athletes' : 'Publish to athletes'}
+                >
+                  {it.is_published ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+                <button
+                  onClick={() => onEdit(it)}
+                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Edit"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => onRemove(it)}
+                  className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
