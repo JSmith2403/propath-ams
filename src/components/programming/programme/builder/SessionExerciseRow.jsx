@@ -116,37 +116,14 @@ export default function SessionExerciseRow({
       return;
     }
 
-    // ── Per-week scope — set override on chosen weeks only ──
-    const clampedCurrent = currentWk && currentWk >= 1 && currentWk <= weeks
-      ? currentWk
-      : 1;
-
-    let weeksToTouch = [];
-    if (scope === 'just_current') {
-      weeksToTouch = [clampedCurrent];
-    } else if (scope === 'forward') {
-      for (let w = clampedCurrent; w <= weeks; w++) weeksToTouch.push(w);
-    } else if (scope === 'specific') {
-      weeksToTouch = (customWeeks || []).filter(w => w >= 1 && w <= weeks);
-    }
-
+    // ── Specific-weeks scope — set override on chosen weeks only ──
+    // Coach explicitly checked the weeks they want, so we apply
+    // unconditionally (no smart-overwrite skip — they were deliberate).
+    const weeksToTouch = (customWeeks || []).filter(w => w >= 1 && w <= weeks);
     if (!weeksToTouch.length) return;
 
-    // Smart-overwrite — for "forward" only. Coach explicitly anchored
-    // on `clampedCurrent`; downstream weeks only get touched if they
-    // still match its baseline (so a previously-customised week is
-    // left alone). "just_current" is one week so no propagation issue;
-    // "specific" is deliberate so no skip.
-    const pivotBaseline = baselineEffectiveFor(clampedCurrent);
     const next = baseRows.map(p => {
       if (!weeksToTouch.includes(p.week_number)) return p;
-
-      if (scope === 'forward'
-          && p.week_number !== clampedCurrent
-          && baselineEffectiveFor(p.week_number) !== pivotBaseline) {
-        return p; // smart-overwrite skip
-      }
-
       return {
         ...p,
         override_exercise_id:   lib.id,
@@ -380,15 +357,14 @@ export default function SessionExerciseRow({
 function ScopeDialog({ fromName, toName, weeks, currentWk, onCancel, onConfirm }) {
   // currentWk being non-null is our signal that we're in athlete mode
   // (block dates known). Template mode skips per-week overrides because
-  // saveBlockTemplate doesn't round-trip override_exercise_id — so we
-  // hide the per-week scopes there to keep behaviour consistent.
+  // saveBlockTemplate doesn't round-trip override_exercise_id — so the
+  // Specific Weeks option hides there and we fall through to row-wide
+  // replace by default.
   const athleteMode = currentWk != null;
   const clampedCurrent = currentWk && currentWk >= 1 && currentWk <= weeks
     ? currentWk
     : null;
 
-  // Default to "Entire block" — matches the builder's pre-existing
-  // behaviour so a coach who isn't paying attention gets no surprises.
   const [scope, setScope] = useState('entire_block');
   const [picked, setPicked] = useState(() => clampedCurrent ? new Set([clampedCurrent]) : new Set());
 
@@ -423,26 +399,6 @@ function ScopeDialog({ fromName, toName, weeks, currentWk, onCancel, onConfirm }
             value="entire_block" current={scope} onChange={setScope}
           />
           <ScopeRadio
-            label={clampedCurrent
-              ? `Just this week (Week ${clampedCurrent})`
-              : 'Just this week'}
-            help={clampedCurrent
-              ? null
-              : 'Block dates not set — this week is unknown.'}
-            value="just_current" current={scope} onChange={setScope}
-            disabled={!clampedCurrent}
-          />
-          <ScopeRadio
-            label={clampedCurrent
-              ? `From this week to end (Week ${clampedCurrent}–${weeks})`
-              : 'From this week to end'}
-            help={clampedCurrent
-              ? 'Skips weeks already individually customised downstream.'
-              : 'Block dates not set — this week is unknown.'}
-            value="forward" current={scope} onChange={setScope}
-            disabled={!clampedCurrent}
-          />
-          <ScopeRadio
             label="Specific weeks"
             help={athleteMode ? null : 'Block dates not set — only available in athlete mode.'}
             value="specific" current={scope} onChange={setScope}
@@ -452,19 +408,21 @@ function ScopeDialog({ fromName, toName, weeks, currentWk, onCancel, onConfirm }
             <div className="pl-6 pt-1 grid grid-cols-6 gap-1">
               {Array.from({ length: weeks }, (_, i) => i + 1).map(w => {
                 const on = picked.has(w);
+                const isCurrent = w === clampedCurrent;
                 return (
                   <button
                     key={w}
                     type="button"
                     onClick={() => togglePick(w)}
-                    className="text-[11px] font-semibold py-1 rounded border transition-colors"
+                    className="text-[11px] font-semibold py-1 rounded border transition-colors relative"
                     style={{
                       borderColor: on ? '#A58D69' : '#e5e7eb',
                       backgroundColor: on ? 'rgba(165,141,105,0.15)' : '#fff',
                       color: on ? '#A58D69' : '#6b7280',
                     }}
+                    title={isCurrent ? 'Current week' : undefined}
                   >
-                    Wk {w}
+                    Wk {w}{isCurrent ? ' •' : ''}
                   </button>
                 );
               })}
