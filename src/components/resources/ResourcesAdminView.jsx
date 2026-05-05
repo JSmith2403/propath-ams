@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload } from 'lucide-react';
+import {
+  Plus, Pencil, Trash2, Eye, EyeOff, Save, X, ChevronLeft, FileText, Upload,
+  ChevronDown, ChevronUp, MoreVertical, Apple, Brain, Flower, TrendingUp, GripVertical,
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -20,10 +23,18 @@ import { supabase } from '../../lib/supabase';
  */
 
 const CATEGORIES = [
-  { id: 'nutrition',  label: 'Nutrition'           },
-  { id: 'psychology', label: 'Psychology'          },
-  { id: 'lifestyle',  label: 'Lifestyle'           },
-  { id: 'future',     label: 'Future Preparation'  },
+  { id: 'nutrition',  label: 'Nutrition',          icon: Apple,
+    description: 'Help athletes fuel, recover, and perform at their best.',
+    tintBg: '#fed7aa', tintFg: '#c2410c' },
+  { id: 'psychology', label: 'Psychology',         icon: Brain,
+    description: 'Build mental resilience and peak performance.',
+    tintBg: '#e9d5ff', tintFg: '#7e22ce' },
+  { id: 'lifestyle',  label: 'Lifestyle',          icon: Flower,
+    description: 'Daily habits that support long-term success.',
+    tintBg: '#bbf7d0', tintFg: '#15803d' },
+  { id: 'future',     label: 'Future Preparation', icon: TrendingUp,
+    description: 'Prepare today for opportunities tomorrow.',
+    tintBg: '#bfdbfe', tintFg: '#1d4ed8' },
 ];
 
 const GOLD = '#A58D69';
@@ -178,16 +189,24 @@ export default function ResourcesAdminView() {
             Coach-authored content delivered to every athlete's app.
           </p>
         </div>
-        <button
-          onClick={() => setEditing(blankItem())}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-opacity hover:opacity-90"
-          style={{ backgroundColor: GOLD }}
-        >
-          <Plus size={13} /> New Resource
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => showToast('Custom categories coming soon — using the four built-in categories for now.', 'info')}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Plus size={13} /> Create Category
+          </button>
+          <button
+            onClick={() => setEditing(blankItem())}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition-opacity hover:opacity-90"
+            style={{ backgroundColor: GOLD }}
+          >
+            <Plus size={13} /> New Resource
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-2 rounded-full animate-spin"
@@ -195,14 +214,14 @@ export default function ResourcesAdminView() {
           </div>
         ) : (
           CATEGORIES.map(cat => (
-            <CategorySection
+            <CategoryCard
               key={cat.id}
               cat={cat}
               items={grouped[cat.id] || []}
               onTogglePublish={togglePublish}
               onEdit={setEditing}
               onRemove={remove}
-              onReorder={(newOrder) => reorderCategory(cat.id, newOrder)}
+              onAdd={() => setEditing({ ...blankItem(), category: cat.id })}
             />
           ))
         )}
@@ -220,9 +239,185 @@ export default function ResourcesAdminView() {
   );
 }
 
-// ─── Category section — plain list (drag-and-drop is reserved for file
-// upload inside the Editor, per coach feedback). Reorder via the
-// Display Order field on the item.
+// ─── Category card — collapsible per-category card with horizontal tile row.
+// Header shows the category icon block + name + description + item count and
+// quick actions. Body is a horizontal scrolling row of resource tiles plus
+// an inline 'Add Resource' tile at the end.
+function CategoryCard({ cat, items, onTogglePublish, onEdit, onRemove, onAdd }) {
+  const [open, setOpen] = useState(true);
+  const [menuOpenId, setMenuOpenId] = useState(null);
+  const Icon = cat.icon;
+
+  // Close any open ⋮ menu when clicking elsewhere.
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const close = () => setMenuOpenId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [menuOpenId]);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4">
+        <div
+          className="shrink-0 w-12 h-12 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: cat.tintBg }}
+        >
+          {Icon && <Icon size={22} style={{ color: cat.tintFg }} strokeWidth={1.8} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold uppercase tracking-wider text-gray-900">{cat.label}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{cat.description}</p>
+        </div>
+        <span className="text-xs text-gray-400 shrink-0">
+          {items.length} item{items.length === 1 ? '' : 's'}
+        </span>
+        <button
+          onClick={() => onAdd()}
+          className="p-1.5 rounded text-gray-400 hover:text-gold-700 hover:bg-gray-100 transition-colors"
+          title="Quick-add a resource to this category"
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          className="p-1.5 rounded text-gray-300 cursor-grab"
+          title="Reorder categories — coming soon"
+        >
+          <GripVertical size={14} />
+        </button>
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          title={open ? 'Collapse' : 'Expand'}
+        >
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
+
+      {/* Body — horizontal tile row */}
+      {open && (
+        items.length === 0 ? (
+          <div className="border-t border-gray-100 px-5 pb-5">
+            <button
+              onClick={onAdd}
+              className="w-full rounded-lg border-2 border-dashed border-gray-200 hover:border-gold-300 hover:bg-gold-50/40 transition-colors py-6 flex flex-col items-center justify-center gap-1"
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+                <Plus size={14} /> Add your first {cat.label} resource
+              </div>
+              <p className="text-xs text-gray-400">
+                Visible to athletes under the {cat.label} section.
+              </p>
+            </button>
+          </div>
+        ) : (
+          <div className="border-t border-gray-100 px-5 pb-5">
+            <div className="flex gap-3 overflow-x-auto pt-4 scrollbar-thin">
+              {items.map(it => (
+                <ResourceTile
+                  key={it.id}
+                  item={it}
+                  menuOpen={menuOpenId === it.id}
+                  onMenu={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === it.id ? null : it.id); }}
+                  onEdit={() => { setMenuOpenId(null); onEdit(it); }}
+                  onTogglePublish={() => { setMenuOpenId(null); onTogglePublish(it); }}
+                  onRemove={() => { setMenuOpenId(null); onRemove(it); }}
+                />
+              ))}
+
+              {/* Inline Add Resource tile — last in the row */}
+              <button
+                onClick={onAdd}
+                className="shrink-0 w-[220px] rounded-lg border-2 border-dashed border-gray-200 hover:border-gold-300 hover:bg-gold-50/40 transition-colors flex flex-col items-center justify-center gap-2"
+                style={{ aspectRatio: '4 / 3', minHeight: 165 }}
+              >
+                <Plus size={18} className="text-gray-400" />
+                <span className="text-xs font-semibold text-gray-500">Add Resource</span>
+              </button>
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── ResourceTile — one resource card inside a category's horizontal row ─
+function ResourceTile({ item, menuOpen, onMenu, onEdit, onTogglePublish, onRemove }) {
+  return (
+    <div className="shrink-0 w-[220px] rounded-lg border border-gray-100 overflow-hidden bg-white">
+      <div
+        className="relative"
+        style={{
+          aspectRatio: '4 / 3',
+          background: item.cover_image_url
+            ? `center/cover url(${item.cover_image_url})`
+            : 'linear-gradient(135deg, #6b3a1a 0%, #1c1c1c 100%)',
+        }}
+      >
+        {!item.cover_image_url && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <FileText size={28} className="text-white/40" />
+          </div>
+        )}
+        <span
+          className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
+          style={{ backgroundColor: 'rgba(255,255,255,0.95)', color: '#1C1C1C' }}
+        >
+          Guide
+        </span>
+        {!item.is_published && (
+          <span
+            className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+            style={{ color: '#92400e', backgroundColor: '#fef3c7' }}
+          >
+            Hidden
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-2.5 flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-gray-900 truncate">{item.title}</p>
+          {item.summary && (
+            <p className="text-[11px] text-gray-500 truncate mt-0.5">{item.summary}</p>
+          )}
+        </div>
+        <div className="relative shrink-0">
+          <button
+            onClick={onMenu}
+            className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            title="Actions"
+          >
+            <MoreVertical size={14} />
+          </button>
+          {menuOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg py-1 z-30"
+              style={{ border: '1px solid #e5e7eb', minWidth: 160 }}
+            >
+              <button onClick={onEdit}
+                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
+                <Pencil size={11} /> Edit
+              </button>
+              <button onClick={onTogglePublish}
+                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-1.5">
+                {item.is_published ? <><EyeOff size={11} /> Hide</> : <><Eye size={11} /> Publish</>}
+              </button>
+              <button onClick={onRemove}
+                className="w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-red-50 text-red-600 flex items-center gap-1.5">
+                <Trash2 size={11} /> Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Legacy CategorySection kept as a stub until refactor lands fully ───
 function CategorySection({ cat, items, onTogglePublish, onEdit, onRemove }) {
   return (
     <div>

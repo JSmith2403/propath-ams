@@ -66,8 +66,21 @@ export default function ResourcesTab() {
   if (view.kind === 'list') {
     const cat = CATEGORIES.find(c => c.id === view.catId);
     const list = itemsByCat[view.catId] || [];
-    return <CategoryList category={cat} items={list} onBack={() => setView({ kind: 'grid' })}
-      onPick={(id) => setView({ kind: 'item', itemId: id })} />;
+    return <CategoryList
+      category={cat}
+      items={list}
+      onBack={() => setView({ kind: 'grid' })}
+      onPick={(item) => {
+        // Tapping a resource opens the file directly. Falls back to
+        // the structured-content detail view only for legacy items
+        // that were authored without a file (e.g. seeded blocks).
+        if (item.file_url) {
+          window.open(item.file_url, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        setView({ kind: 'item', itemId: item.id });
+      }}
+    />;
   }
 
   return (
@@ -174,7 +187,7 @@ function CategoryList({ category, items, onBack, onPick }) {
         {items.map(it => (
           <button
             key={it.id}
-            onClick={() => onPick(it.id)}
+            onClick={() => onPick(it)}
             className="relative rounded-xl overflow-hidden text-left transition-transform active:scale-[0.98]"
             style={{
               aspectRatio: '3 / 4',
