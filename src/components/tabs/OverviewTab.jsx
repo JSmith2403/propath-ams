@@ -7,6 +7,7 @@ import TabBar from '../ui/TabBar';
 import OverviewCalendar from './OverviewCalendar';
 import { SPORTS, COHORTS, GENDERS, MATURATION_STAGES, RAG_DOMAINS, RAG_CONFIG, COHORT_CONFIG } from '../../data/athletes';
 import { useAthleteApp } from '../../hooks/useAthleteApp';
+import { calculateAthleteMaturation } from '../../utils/maturation';
 
 const OVERVIEW_SUBTABS = [
   { id: 'general',  label: 'General'  },
@@ -444,6 +445,15 @@ export default function OverviewTab({
   };
 
   const cohortStyle = COHORT_CONFIG[localAthlete.cohort] || COHORT_CONFIG['Elite'];
+
+  // Derive Maturation Stage and PHV % directly from the athlete's
+  // maturation entries so the Overview header always matches what the
+  // Maturation tab shows. Read-only here — coaches edit the entries
+  // (height/weight/parents) on the Maturation tab and the calc updates
+  // here automatically.
+  const maturationCalc = calculateAthleteMaturation(localAthlete);
+  const derivedStage  = maturationCalc?.stage  || null;
+  const derivedPahPct = maturationCalc?.pahPct ?? null;
   const age = calculateAge(localAthlete.dob);
 
   return (
@@ -567,16 +577,16 @@ export default function OverviewTab({
                   <p className="text-body font-semibold text-ink-800">{age != null ? `${age} years` : '—'}</p>
                 ) },
               { label: 'Maturation Stage', node: (
-                  <InlineSelect value={localAthlete.maturationStage} onChange={v => set('maturationStage', v)} onBlur={save}
-                    options={MATURATION_STAGES} className="text-body font-semibold text-ink-800" />
+                  <p className="text-body font-semibold text-ink-800" title="Derived from the Maturation tab">
+                    {derivedStage || <span className="text-ink-400 font-normal italic">Not set</span>}
+                  </p>
                 ) },
-              { label: 'PHV %', node: (
-                  <div className="flex items-center gap-1">
-                    <input type="number" min="0" max="100" value={localAthlete.phvPercent}
-                      onChange={e => set('phvPercent', Number(e.target.value))} onBlur={save}
-                      className="text-body font-semibold text-ink-800 w-14 bg-transparent focus:outline-none" />
-                    <span className="text-body text-ink-400">%</span>
-                  </div>
+              { label: '% PAH', node: (
+                  <p className="text-body font-semibold text-ink-800" title="Derived from the Maturation tab">
+                    {derivedPahPct != null
+                      ? <>{derivedPahPct.toFixed(1)} <span className="text-body text-ink-400 font-normal">%</span></>
+                      : <span className="text-ink-400 font-normal italic">Not set</span>}
+                  </p>
                 ) },
             ].map(({ label, node }, i) => (
               <div key={label}
