@@ -24,7 +24,7 @@ const DEFAULTS = {
   // When true, days with no session render without a card / border /
   // "No session" text — see AthleteWeekViewV2.jsx. False keeps the
   // original AthleteWeekView rendering exactly as it was.
-  calendar_deemphasised_empty_days: false,
+  calendar_deemphasised_empty_days: true,
 };
 
 export function isFeatureOn(name) {
