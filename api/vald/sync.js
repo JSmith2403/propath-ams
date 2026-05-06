@@ -156,12 +156,34 @@ function trialToRow({ test, trial, profileId, defs }) {
   for (const [key, patterns] of Object.entries(METRIC_MATCHERS)) {
     surfaced[key] = pickFromEnriched(enriched, patterns);
   }
+
+  // Trial-level limb tag — for single-leg tests (SLHJ, SLDJ, single-leg
+  // CMJ etc.) each trial is one leg, but VALD's per-metric limb field
+  // is often null. The side lives on the trial object itself; field
+  // name varies across VALD endpoints so probe a few before giving up.
+  const trialLimbRaw = trial.limb || trial.side || trial.testedLeg || trial.limbTested || null;
+  // If still null but every metric on the trial agrees on a single
+  // non-Trial / non-Asym limb, infer from there as a fallback.
+  let trialLimb = trialLimbRaw;
+  if (!trialLimb) {
+    const limbs = new Set(enriched.map(r => r.limb).filter(l => l && l !== 'Trial' && l !== 'Asym'));
+    if (limbs.size === 1) trialLimb = Array.from(limbs)[0];
+  }
+  // Normalise to title case so the UI can compare freely.
+  if (typeof trialLimb === 'string') {
+    const lc = trialLimb.toLowerCase();
+    if (lc === 'left')  trialLimb = 'Left';
+    else if (lc === 'right') trialLimb = 'Right';
+    else if (lc === 'trial' || lc === 'bilateral') trialLimb = 'Trial';
+  }
+
   return {
     vald_test_id:    test.testId || test.id,
     vald_trial_id:   trial.trialId || trial.id || `${test.testId}-${trial.repeat ?? results[0]?.repeat ?? Math.random().toString(36).slice(2)}`,
     vald_profile_id: profileId,
     test_type:       test.testType || null,
     recorded_at:     test.recordedDateUtc || test.modifiedDateUtc || null,
+    trial_limb:      trialLimb,
     ...surfaced,
     raw_metrics:     enriched,
   };
