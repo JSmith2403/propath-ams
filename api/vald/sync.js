@@ -169,12 +169,16 @@ function trialToRow({ test, trial, profileId, defs }) {
     const limbs = new Set(enriched.map(r => r.limb).filter(l => l && l !== 'Trial' && l !== 'Asym'));
     if (limbs.size === 1) trialLimb = Array.from(limbs)[0];
   }
-  // Normalise to title case so the UI can compare freely.
+  // Normalise to title case so the UI can compare freely. 'Both' /
+  // 'bilateral' / 'trial' all collapse to null (bilateral is the
+  // "no leg distinction" default — the absence of a leg tag, not its
+  // own value). Anything we don't recognise also drops to null so
+  // the UI never has to guess at a stray vendor string.
   if (typeof trialLimb === 'string') {
     const lc = trialLimb.toLowerCase();
-    if (lc === 'left')  trialLimb = 'Left';
+    if      (lc === 'left')  trialLimb = 'Left';
     else if (lc === 'right') trialLimb = 'Right';
-    else if (lc === 'trial' || lc === 'bilateral') trialLimb = 'Trial';
+    else                     trialLimb = null;
   }
 
   return {

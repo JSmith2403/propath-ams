@@ -418,10 +418,11 @@ function SessionTable({ session, limbFilter, definitions = {} }) {
 
       // Display badge — for single-leg tests we override the 'Trial'
       // grouping with the actual leg from trial_limb so the badge
-      // shows LEFT / RIGHT, not TRIAL.
-      const labelLimb = (dataLimb === 'Trial' && trialLimb && trialLimb !== 'Trial')
-        ? trialLimb
-        : dataLimb;
+      // shows LEFT / RIGHT, not TRIAL. Only Left and Right qualify;
+      // anything else (Both, Trial, vendor strings) falls through to
+      // the data limb so we don't mislabel bilateral aggregates.
+      const isLegTag  = trialLimb === 'Left' || trialLimb === 'Right';
+      const labelLimb = (dataLimb === 'Trial' && isLegTag) ? trialLimb : dataLimb;
 
       const subRows = expandableMode
         ? present
