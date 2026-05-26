@@ -118,7 +118,7 @@ export function usePlannedWeekDetail(athleteId, fromISO, toISO, refreshTick = 0)
       if (libIds.length) {
         const { data: lib, error: lErr } = await supabase
           .from('exercise_library')
-          .select('id, name, category, bilateral_unilateral')
+          .select('id, name, category, bilateral_unilateral, demo_video_url')
           .in('id', libIds);
         if (lErr) {
           console.error('[PlannedWeekDetail] library fetch failed', lErr);

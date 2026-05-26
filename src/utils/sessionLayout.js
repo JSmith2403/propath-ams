@@ -56,6 +56,15 @@ export function buildSessionItems({ sessExs, sessNotes, sessSecs, wps, libById, 
       target_value: wp?.target_value ?? null,
       prescription_type: ex.prescription_type || null,
       session_exercise_id: ex.id,
+      // Effective exercise id (override-aware) — used by athlete-app
+      // session logger for set_logs.exercise_id and library lookups.
+      exercise_id: effectiveExerciseId,
+      // Shared id for supersetted exercises so consumers can render
+      // them grouped together (visual stacking with no gap).
+      superset_group_id: ex.superset_group_id || null,
+      // Optional video URL from exercise_library, surfaced as a
+      // "Watch demo" button on the athlete app.
+      demo_video_url: lib.demo_video_url || null,
       is_overridden: !!wp?.override_exercise_id,
       week_number: weekNumber,
       notes: ex.notes || null,

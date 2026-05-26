@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3 } from 'lucide-react';
+import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3, PlayCircle, CheckSquare } from 'lucide-react';
 import { useSessionLogger } from '../../hooks/useSessionLogger';
 import { tintForExercise } from '../../utils/letterTints';
 import { parsePrescription } from '../../utils/prescriptionRender';
@@ -187,6 +187,15 @@ export default function SessionLogger({ session, athleteId, onClose }) {
       <div className="px-4 py-4 space-y-4">
         {exercises.map((ex, idx) => {
           const next = exercises[idx + 1];
+          const prev = exercises[idx - 1];
+          // Superset chaining — two adjacent exercises share a
+          // superset_group_id. ExerciseLogger uses these to drop the
+          // gap between cards and run a gold spine down the left so
+          // the pair reads as one unit.
+          const linkedToPrev = !!(ex.superset_group_id
+            && prev?.superset_group_id === ex.superset_group_id);
+          const linkedToNext = !!(ex.superset_group_id
+            && next?.superset_group_id === ex.superset_group_id);
           return (
             <ExerciseLogger
               key={ex.session_exercise_id}
@@ -194,6 +203,8 @@ export default function SessionLogger({ session, athleteId, onClose }) {
               index={idx}
               upNext={next ? next.name : null}
               sets={sets.filter(s => s.session_exercise_id === ex.session_exercise_id)}
+              linkedToPrev={linkedToPrev}
+              linkedToNext={linkedToNext}
               onLog={logSet}
               onDelete={deleteSet}
             />
@@ -598,7 +609,11 @@ function rpeColour(rpe) {
   return '#ef4444';
 }
 
-function ExerciseLogger({ exercise, index, upNext, sets, onLog, onDelete }) {
+function ExerciseLogger({
+  exercise, index, upNext, sets, onLog, onDelete,
+  linkedToPrev = false,
+  linkedToNext = false,
+}) {
   const tint = tintForExercise({ letter: exercise.letter, isWarmUp: exercise.sectionIsWarmUp });
   const prescription = useMemo(() => parsePrescription(exercise), [exercise]);
 
@@ -630,11 +645,56 @@ function ExerciseLogger({ exercise, index, upNext, sets, onLog, onDelete }) {
     });
   };
 
+  // Quick-complete every prescribed set in one tap. Uses the prescribed
+  // reps as the logged value; weight stays null so the athlete still
+  // sees the placeholder and can fill it in afterwards if they want.
+  // No-op once everything's logged (button switches to "Clear all").
+  const handleCompleteAll = async () => {
+    if (!isComplete) {
+      for (let i = 1; i <= N; i++) {
+        if (loggedByNumber.has(i)) continue;
+        await onLog({
+          session_exercise_id: exercise.session_exercise_id,
+          exercise_id:         exercise.exercise_id,
+          set_number:          i,
+          reps: prescription.prescribedRepsLower ?? null,
+          weight_kg: null,
+          is_extra: false,
+        });
+      }
+    } else {
+      const ok = window.confirm(`Clear all ${N} logged sets for ${exercise.name}?`);
+      if (!ok) return;
+      for (const s of prescribedSets) {
+        await onDelete(s.id);
+      }
+    }
+  };
+
+  // Supersetted exercises render flush-stacked: no top radius when
+  // continuing a chain, no bottom radius when leading into the next,
+  // and -1.5rem vertical margin to crush the gap. The parent container
+  // already provides the rest of the spacing.
+  const radiusClass = `${linkedToPrev ? 'rounded-t-none' : 'rounded-t-xl'} ${linkedToNext ? 'rounded-b-none' : 'rounded-b-xl'}`;
+  const marginStyle = {
+    marginTop:    linkedToPrev ? '-1rem' : undefined,
+    marginBottom: linkedToNext ? '0'     : undefined,
+  };
+
   return (
-    <div className={`rounded-xl overflow-hidden bg-white shadow-card border ${
+    <div className={`${radiusClass} overflow-hidden bg-white shadow-card border ${
       isComplete ? 'border-gold-200' : 'border-ink-100'
     }`}
-      style={{ opacity: isComplete ? 0.94 : 1 }}>
+      style={{
+        opacity: isComplete ? 0.94 : 1,
+        // Gold spine on the left edge whenever this exercise is part
+        // of a superset — runs through every linked card so the pair
+        // reads as a single unit.
+        borderLeft: (linkedToPrev || linkedToNext)
+          ? `3px solid ${GOLD}`
+          : undefined,
+        ...marginStyle,
+      }}>
       {/* Header */}
       <div className="p-4">
         <div className="flex items-center gap-3">
@@ -664,6 +724,35 @@ function ExerciseLogger({ exercise, index, upNext, sets, onLog, onDelete }) {
             {completedCount}/{N}
           </span>
         </div>
+
+        {/* Watch demo + Complete all — actions row. Both hide themselves
+            when not applicable (no video link / no sets to complete). */}
+        {(exercise.demo_video_url || N > 0) && (
+          <div className="flex items-center gap-2 mt-3">
+            {exercise.demo_video_url && (
+              <a
+                href={exercise.demo_video_url}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-meta font-semibold text-gold-600 hover:text-gold-700 px-3 py-1.5 rounded-md border border-gold-200 hover:bg-gold-50 transition-colors active:scale-[0.99]"
+              >
+                <PlayCircle size={13} /> Watch demo
+              </a>
+            )}
+            {N > 0 && (
+              <button
+                onClick={handleCompleteAll}
+                className={`inline-flex items-center gap-1.5 text-meta font-semibold px-3 py-1.5 rounded-md border transition-colors active:scale-[0.99] ml-auto ${
+                  isComplete
+                    ? 'text-red-500 border-red-100 hover:bg-red-50'
+                    : 'text-gold-600 border-gold-200 hover:bg-gold-50'
+                }`}
+                title={isComplete ? 'Clear every logged set' : 'Quick-log every prescribed set'}
+              >
+                <CheckSquare size={13} /> {isComplete ? 'Clear all' : 'Complete all'}
+              </button>
+            )}
+          </div>
+        )}
 
         {exercise.notes && (
           <p className="text-meta mt-2 italic px-1 text-ink-500">
