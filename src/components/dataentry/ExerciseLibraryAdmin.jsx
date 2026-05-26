@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, X, PlayCircle, Pencil, EyeOff, Eye, FileUp, Activity } from 'lucide-react';
+import { Plus, Search, X, PlayCircle, Pencil, EyeOff, Eye, FileUp, FileDown, Activity } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const GOLD = '#A58D69';
@@ -139,6 +139,44 @@ export default function ExerciseLibraryAdmin() {
   const openEdit = (row) => setModal({ mode: 'edit', row: { ...row, movement_patterns: row.movement_patterns || [], equipment: row.equipment || [] } });
   const close    = () => setModal(null);
 
+  // Export the visible rows to a CSV the coach can open in Excel /
+  // Sheets, fill in URLs in the "New Demo URL" column, then paste
+  // straight back into the Bulk import modal (which auto-detects the
+  // header row + URL column). Respects the active filters so a coach
+  // can export "Missing demos, sorted by Used" and work that subset.
+  const exportCsv = () => {
+    const headers = ['Name', 'Category', 'Bilateral/Unilateral', 'Used', 'Current Demo URL', 'New Demo URL'];
+    const esc = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [
+      headers.join(','),
+      ...filtered.map(r => [
+        r.name,
+        r.category,
+        r.bilateral_unilateral,
+        r.usage_count || 0,
+        r.demo_video_url || '',
+        '', // blank — coach fills this column
+      ].map(esc).join(',')),
+    ];
+    const csv = lines.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    const tag = demoFilter === 'missing' ? 'missing-demos'
+              : demoFilter === 'has'     ? 'has-demos'
+              : 'all';
+    a.href = url;
+    a.download = `exercise-library-${tag}-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Bulk apply demo URLs from a paste buffer (TSV/CSV/pipe-separated,
   // one row per line: "Exercise name <separator> URL"). Used the same
   // fuzzy match the PDF importer uses so coaches can paste from a
@@ -256,6 +294,14 @@ export default function ExerciseLibraryAdmin() {
           ))}
         </div>
 
+        <button
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="text-xs font-semibold px-3 py-1.5 rounded border border-gray-200 text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 disabled:opacity-40"
+          title={`Download ${filtered.length} row${filtered.length === 1 ? '' : 's'} as CSV`}
+        >
+          <FileDown size={13} /> Export CSV
+        </button>
         <button
           onClick={() => setBulkOpen(true)}
           className="text-xs font-semibold px-3 py-1.5 rounded border border-gold-200 text-gold-600 hover:bg-gold-50 inline-flex items-center gap-1.5"
@@ -499,26 +545,91 @@ const normaliseName = (s) => String(s || '')
   .replace(/\s+/g, ' ')
   .trim();
 
-// Pull a URL out of a line and return [name, url]. Accepts tab,
-// pipe, or comma as separators; if the line ends with a URL we
-// auto-split there even without an explicit separator.
-function splitLine(line) {
-  const t = line.trim();
-  if (!t) return null;
-  // Explicit separators win
-  for (const sep of ['\t', '|']) {
-    if (t.includes(sep)) {
-      const idx = t.indexOf(sep);
-      return [t.slice(0, idx).trim(), t.slice(idx + 1).trim()];
+// CSV-aware row splitter — handles tab / pipe / quoted-comma fields so
+// the bulk import can swallow whatever the coach pastes (a TSV from
+// Sheets, a CSV from Excel, or a loose "name URL" line).
+function parseRow(line, sepHint) {
+  if (sepHint === '\t' || sepHint === '|') {
+    return line.split(sepHint).map(s => s.trim());
+  }
+  // CSV with optional quoted fields containing commas.
+  const out = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuote) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuote = false;
+      else cur += ch;
+    } else {
+      if (ch === '"') inQuote = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
     }
   }
-  // CSV (last comma before the URL)
-  const m = t.match(/^(.+?),\s*(https?:\/\/\S+)\s*$/i);
-  if (m) return [m[1].trim(), m[2].trim()];
-  // Space + URL at end (loose form)
-  const m2 = t.match(/^(.+?)\s+(https?:\/\/\S+)\s*$/i);
-  if (m2) return [m2[1].trim(), m2[2].trim()];
-  return null;
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// Detect the table separator from the first non-empty line. Tabs and
+// pipes are strong signals; otherwise default to comma.
+function detectSeparator(text) {
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (line.includes('\t')) return '\t';
+    if (line.includes('|'))  return '|';
+    return ',';
+  }
+  return ',';
+}
+
+// Header-aware column resolver: returns { nameIdx, urlIdx } or null
+// if the first row doesn't look like headers. Prefers a "new url"
+// column over a "current url" one so the round-trip CSV export
+// targets the right column on re-import.
+function resolveColumns(headerCells) {
+  const lower = headerCells.map(c => String(c || '').toLowerCase());
+  const looksLikeHeader =
+    lower.some(c => c === 'name' || c === 'exercise' || c === 'exercise name')
+    && lower.some(c => c.includes('url') || c.includes('link') || c.includes('demo') || c.includes('video'));
+  if (!looksLikeHeader) return null;
+
+  const nameIdx = lower.findIndex(c => c === 'name' || c === 'exercise' || c === 'exercise name');
+  // Prefer a "new" URL column; fall back to anything urly.
+  let urlIdx = lower.findIndex(c => /(new|updated)/.test(c) && /(url|link|demo|video)/.test(c));
+  if (urlIdx === -1) urlIdx = lower.findIndex(c => /(url|link|demo|video)/.test(c) && !/current/.test(c));
+  if (urlIdx === -1) urlIdx = lower.findIndex(c => /(url|link|demo|video)/.test(c));
+
+  if (nameIdx === -1 || urlIdx === -1) return null;
+  return { nameIdx, urlIdx };
+}
+
+// Top-level parser → array of { name, url } pairs (URL may be blank).
+// Falls back to loose "name URL" extraction for unquoted lines without
+// an obvious table structure.
+function parsePastedTable(text) {
+  const sep = detectSeparator(text);
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+
+  const firstCells = parseRow(lines[0], sep);
+  const cols = resolveColumns(firstCells);
+  if (cols) {
+    return lines.slice(1).map(line => {
+      const cells = parseRow(line, sep);
+      return { name: cells[cols.nameIdx] || '', url: cells[cols.urlIdx] || '' };
+    });
+  }
+  // No header — first two columns of every row are name, URL.
+  return lines.map(line => {
+    const cells = parseRow(line, sep);
+    if (cells.length >= 2) return { name: cells[0], url: cells[1] };
+    // Loose "<name> <url>" with no separator
+    const m = line.match(/^(.+?)\s+(https?:\/\/\S+)\s*$/i);
+    if (m) return { name: m[1].trim(), url: m[2].trim() };
+    return { name: line.trim(), url: '' };
+  });
 }
 
 function BulkImportModal({ libraryRows, onCancel, onApply }) {
@@ -534,28 +645,28 @@ function BulkImportModal({ libraryRows, onCancel, onApply }) {
 
   const matches = useMemo(() => {
     if (!text.trim()) return [];
-    return text.split(/\r?\n/).map((line, i) => {
-      const pair = splitLine(line);
-      if (!pair) return { line: line.trim(), error: 'Unrecognised line' };
-      const [name, url] = pair;
-      if (!url || !/^https?:\/\//i.test(url)) return { line: line.trim(), name, url, error: 'No URL' };
-      const key = normaliseName(name);
-      let row = libByNorm.get(key);
-      if (!row) {
-        // Loose fallback — name is a substring of a library row's name or vice versa.
-        const cand = libraryRows
-          .map(r => ({ r, n: normaliseName(r.name) }))
-          .filter(({ n }) => n.includes(key) || key.includes(n))
-          .sort((a, b) => a.n.length - b.n.length);
-        row = cand[0]?.r || null;
-      }
-      return {
-        line: line.trim(),
-        name, url, libraryRow: row,
-        error: row ? null : 'No library match',
-        overwrites: row?.demo_video_url ? true : false,
-      };
-    }).filter(m => m.line); // drop empty lines
+    return parsePastedTable(text)
+      .filter(p => p.name)
+      .map(({ name, url }) => {
+        const line = `${name}  →  ${url || '∅'}`;
+        if (!url) return { line, name, url, error: 'No URL' };
+        if (!/^https?:\/\//i.test(url)) return { line, name, url, error: 'Invalid URL' };
+        const key = normaliseName(name);
+        let row = libByNorm.get(key);
+        if (!row) {
+          // Loose fallback — name is a substring of a library row's name or vice versa.
+          const cand = libraryRows
+            .map(r => ({ r, n: normaliseName(r.name) }))
+            .filter(({ n }) => n.includes(key) || key.includes(n))
+            .sort((a, b) => a.n.length - b.n.length);
+          row = cand[0]?.r || null;
+        }
+        return {
+          line, name, url, libraryRow: row,
+          error: row ? null : 'No library match',
+          overwrites: row?.demo_video_url ? true : false,
+        };
+      });
   }, [text, libByNorm, libraryRows]);
 
   const matchCount  = matches.filter(m => m.libraryRow && m.url && !m.error).length;
@@ -572,9 +683,10 @@ function BulkImportModal({ libraryRows, onCancel, onApply }) {
         <div className="px-5 py-3 border-b border-gray-100">
           <h3 className="text-sm font-bold" style={{ color: '#1C1C1C' }}>Bulk import demo links</h3>
           <p className="text-[11px] mt-1" style={{ color: '#6b7280' }}>
-            Paste a two-column table from a spreadsheet — first the exercise name, then the URL.
-            Tabs, commas, pipes, or a plain space before the URL all work.
-            Matching is fuzzy so "Trap-Bar Deadlift" hits "Trap Bar Deadlift" cleanly.
+            Paste a table from a spreadsheet — minimum two columns (Name + URL),
+            but the full CSV exported from this view (with Category / Used / Current Demo URL / New Demo URL)
+            also round-trips cleanly. Tabs, commas, pipes, or a plain space before the URL all work.
+            Matching is fuzzy so "Trap-Bar Deadlift" hits "Trap Bar Deadlift".
           </p>
         </div>
 
