@@ -35,6 +35,54 @@ function cleanName(name) {
   return String(name).replace(/\s+[—–]\s+/g, ': ');
 }
 
+// Pull a YouTube video ID out of any common URL form (watch, youtu.be,
+// embed, shorts). Returns null for search URLs, playlists, channel
+// pages, non-YouTube hosts, or anything we can't identify with high
+// confidence — the caller treats null as "no playable demo yet".
+function extractYouTubeId(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'youtu.be') {
+      const id = u.pathname.replace(/^\//, '').split('/')[0];
+      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (u.pathname === '/watch') {
+        const id = u.searchParams.get('v');
+        return /^[A-Za-z0-9_-]{11}$/.test(id || '') ? id : null;
+      }
+      const m = u.pathname.match(/^\/(embed|shorts)\/([A-Za-z0-9_-]{11})/);
+      if (m) return m[2];
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Vimeo support — same idea, but Vimeo IDs are all digits in the path.
+function extractVimeoId(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes('vimeo.com')) return null;
+    const m = u.pathname.match(/\/(\d{6,})/);
+    return m ? m[1] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function videoEmbedUrl(url) {
+  const yt = extractYouTubeId(url);
+  if (yt) return `https://www.youtube.com/embed/${yt}?autoplay=1&rel=0&modestbranding=1`;
+  const vm = extractVimeoId(url);
+  if (vm) return `https://player.vimeo.com/video/${vm}?autoplay=1`;
+  return null;
+}
+
 // Compact relative date for the "Last week" strip — "Yesterday", "5d ago",
 // "3w ago" or an explicit "12 May" fallback for anything older than ~12wks.
 function fmtPreviousDate(iso) {
@@ -673,6 +721,16 @@ function ExerciseLogger({
     });
   };
 
+  // In-app demo player — opens a modal with an embedded iframe rather
+  // than punting the athlete out to YouTube/Vimeo in a browser tab.
+  // Falsy when the exercise has no playable URL (null, search URL,
+  // unknown host) — then the button greys out.
+  const embedUrl = useMemo(
+    () => videoEmbedUrl(exercise.demo_video_url),
+    [exercise.demo_video_url]
+  );
+  const [demoOpen, setDemoOpen] = useState(false);
+
   // Quick-complete every prescribed set in one tap. Uses the prescribed
   // reps as the logged value; weight stays null so the athlete still
   // sees the placeholder and can fill it in afterwards if they want.
@@ -753,34 +811,39 @@ function ExerciseLogger({
           </span>
         </div>
 
-        {/* Watch demo + Complete all — actions row. Both hide themselves
-            when not applicable (no video link / no sets to complete). */}
-        {(exercise.demo_video_url || N > 0) && (
-          <div className="flex items-center gap-2 mt-3">
-            {exercise.demo_video_url && (
-              <a
-                href={exercise.demo_video_url}
-                target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-meta font-semibold text-gold-600 hover:text-gold-700 px-3 py-1.5 rounded-md border border-gold-200 hover:bg-gold-50 transition-colors active:scale-[0.99]"
-              >
-                <PlayCircle size={13} /> Watch demo
-              </a>
-            )}
-            {N > 0 && (
-              <button
-                onClick={handleCompleteAll}
-                className={`inline-flex items-center gap-1.5 text-meta font-semibold px-3 py-1.5 rounded-md border transition-colors active:scale-[0.99] ml-auto ${
-                  isComplete
-                    ? 'text-red-500 border-red-100 hover:bg-red-50'
-                    : 'text-gold-600 border-gold-200 hover:bg-gold-50'
-                }`}
-                title={isComplete ? 'Clear every logged set' : 'Quick-log every prescribed set'}
-              >
-                <CheckSquare size={13} /> {isComplete ? 'Clear all' : 'Complete all'}
-              </button>
-            )}
-          </div>
-        )}
+        {/* Watch demo + Complete all — always-rendered actions row so the
+            card layout stays consistent across exercises. Demo button
+            greys out when there's no embeddable video link yet. */}
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => embedUrl && setDemoOpen(true)}
+            disabled={!embedUrl}
+            className={`inline-flex items-center gap-1.5 text-meta font-semibold px-3 py-1.5 rounded-md border transition-colors active:scale-[0.99] ${
+              embedUrl
+                ? 'text-gold-600 border-gold-200 hover:bg-gold-50'
+                : 'text-ink-300 border-ink-100 cursor-not-allowed bg-ink-50/40'
+            }`}
+            title={embedUrl
+              ? 'Play the exercise demo in-app'
+              : 'No demo video attached yet — coach can add one in the Exercise Library'}
+          >
+            <PlayCircle size={13} /> Watch demo
+          </button>
+          {N > 0 && (
+            <button
+              onClick={handleCompleteAll}
+              className={`inline-flex items-center gap-1.5 text-meta font-semibold px-3 py-1.5 rounded-md border transition-colors active:scale-[0.99] ml-auto ${
+                isComplete
+                  ? 'text-red-500 border-red-100 hover:bg-red-50'
+                  : 'text-gold-600 border-gold-200 hover:bg-gold-50'
+              }`}
+              title={isComplete ? 'Clear every logged set' : 'Quick-log every prescribed set'}
+            >
+              <CheckSquare size={13} /> {isComplete ? 'Clear all' : 'Complete all'}
+            </button>
+          )}
+        </div>
 
         {exercise.notes && (
           <p className="text-meta mt-2 italic px-1 text-ink-500">
@@ -872,6 +935,45 @@ function ExerciseLogger({
             Up next: <span className="text-ink-600 font-semibold">{upNext}</span>
           </p>
         )}
+      </div>
+
+      {demoOpen && embedUrl && (
+        <DemoModal title={exercise.name} embedUrl={embedUrl} onClose={() => setDemoOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// In-app video player. 16:9 iframe centred on a darkened backdrop;
+// tap outside to dismiss. Uses the platform's own embed URL so YouTube
+// branding / Vimeo controls stay intact.
+function DemoModal({ title, embedUrl, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center px-3"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-[480px] bg-white rounded-xl overflow-hidden shadow-2xl">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-ink-100">
+          <p className="text-meta font-semibold truncate text-ink-900">{title}</p>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-ink-50 transition-colors"
+            aria-label="Close demo"
+          >
+            <X size={16} className="text-ink-500" />
+          </button>
+        </div>
+        <div className="relative bg-black" style={{ paddingBottom: '56.25%' }}>
+          <iframe
+            title={`${title} demo`}
+            src={embedUrl}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            className="absolute inset-0 w-full h-full border-0"
+          />
+        </div>
       </div>
     </div>
   );
