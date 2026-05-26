@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3, PlayCircle, CheckSquare } from 'lucide-react';
 import { useSessionLogger } from '../../hooks/useSessionLogger';
+import { usePreviousExerciseSets } from '../../hooks/usePreviousExerciseSets';
 import { tintForExercise } from '../../utils/letterTints';
 import { parsePrescription } from '../../utils/prescriptionRender';
 import logoBlack from '../../assets/Propath_Primary Logo_Black.png';
@@ -34,6 +35,20 @@ function cleanName(name) {
   return String(name).replace(/\s+[—–]\s+/g, ': ');
 }
 
+// Compact relative date for the "Last week" strip — "Yesterday", "5d ago",
+// "3w ago" or an explicit "12 May" fallback for anything older than ~12wks.
+function fmtPreviousDate(iso) {
+  if (!iso) return '';
+  const d  = new Date(iso);
+  const ms = Date.now() - d.getTime();
+  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+  if (days < 1) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days}d ago`;
+  if (days < 84) return `${Math.floor(days / 7)}w ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
 export default function SessionLogger({ session, athleteId, onClose }) {
   const exercises = useMemo(
     () => session.items.filter(i => i.kind === 'exercise'),
@@ -46,6 +61,17 @@ export default function SessionLogger({ session, athleteId, onClose }) {
       plannedSessionId: session.id,
       blockSessionId:   session.block_session_id,
     });
+
+  // "Last week" reference data — every prior completed set, keyed by
+  // exercise_id (the effective one after any per-week swap). Excludes
+  // the in-progress log so the athlete sees their previous attempt,
+  // not what they just typed in five seconds ago.
+  const exerciseIds = useMemo(
+    () => [...new Set(exercises.map(e => e.exercise_id).filter(Boolean))],
+    [exercises]
+  );
+  const { byExercise: previousByExerciseId } =
+    usePreviousExerciseSets(athleteId, exerciseIds, sessionLog?.id || null);
 
   const [now, setNow]         = useState(Date.now());
   // 'logging' (default) → 'finishing' (RPE flow) → 'summary'
@@ -205,6 +231,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
               sets={sets.filter(s => s.session_exercise_id === ex.session_exercise_id)}
               linkedToPrev={linkedToPrev}
               linkedToNext={linkedToNext}
+              previous={previousByExerciseId.get(ex.exercise_id) || null}
               onLog={logSet}
               onDelete={deleteSet}
             />
@@ -613,6 +640,7 @@ function ExerciseLogger({
   exercise, index, upNext, sets, onLog, onDelete,
   linkedToPrev = false,
   linkedToNext = false,
+  previous = null,
 }) {
   const tint = tintForExercise({ letter: exercise.letter, isWarmUp: exercise.sectionIsWarmUp });
   const prescription = useMemo(() => parsePrescription(exercise), [exercise]);
@@ -762,6 +790,33 @@ function ExerciseLogger({
       </div>
 
       <div className="px-4 pb-4 border-t border-ink-100">
+        {/* "Last week" reference strip — only shows when there's a
+            prior completed log of this exercise. Compact chips, one
+            per set, plus a relative date so the athlete knows how
+            recent the comparison is. */}
+        {previous && previous.sets?.length > 0 && (
+          <div className="mt-3 mb-1 px-2 py-1.5 rounded-md bg-ink-50/60 border border-ink-100 flex items-center gap-2 flex-wrap">
+            <span className="text-[9px] uppercase tracking-widest font-bold text-ink-400 shrink-0">
+              Last · {fmtPreviousDate(previous.date)}
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {previous.sets.map(s => (
+                <span
+                  key={s.set_number}
+                  className="text-[10px] font-semibold tabular-nums text-ink-600"
+                  title={`Set ${s.set_number}`}
+                >
+                  {s.reps ?? '—'}{s.weight_kg != null ? ` × ${s.weight_kg}kg` : ''}
+                </span>
+              )).reduce((acc, el, i) => {
+                if (i === 0) return [el];
+                acc.push(<span key={`sep-${i}`} className="text-ink-300">·</span>, el);
+                return acc;
+              }, [])}
+            </div>
+          </div>
+        )}
+
         {prescription.mode !== 'tick_only' && (
           <div className="grid grid-cols-12 gap-2 px-1 mt-3 mb-1.5">
             <p className="col-span-1 text-[9px] uppercase tracking-widest font-bold text-ink-400">Set</p>

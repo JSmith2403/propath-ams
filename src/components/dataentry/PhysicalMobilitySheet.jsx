@@ -9,6 +9,7 @@ import SessionTable      from './SessionTable';
 import SessionLog        from './SessionLog';
 import DataStorageTable  from './DataStorageTable';
 import VALDDataStorage   from './VALDDataStorage';
+import ExerciseLibraryAdmin from './ExerciseLibraryAdmin';
 
 // Inner tab pair that lives inside the "Data Storage" sub-tab of the
 // Data Management page. Splits the existing manual storage view from
@@ -18,7 +19,11 @@ function DataStorageView({ athletes, customMetrics, updateEntryById, onUpdateAth
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-1 px-4 pt-2 pb-0 bg-white border-b border-gray-200 shrink-0">
-        {[{ key: 'manual', label: 'Manual Entry' }, { key: 'vald', label: 'VALD API' }].map(t => (
+        {[
+          { key: 'manual',   label: 'Manual Entry' },
+          { key: 'vald',     label: 'VALD API' },
+          { key: 'library',  label: 'Exercise Library' },
+        ].map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -42,6 +47,9 @@ function DataStorageView({ athletes, customMetrics, updateEntryById, onUpdateAth
         )}
         {tab === 'vald' && (
           <VALDDataStorage athletes={athletes} />
+        )}
+        {tab === 'library' && (
+          <ExerciseLibraryAdmin />
         )}
       </div>
     </div>
