@@ -1,6 +1,18 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Camera, Image, Loader2 } from 'lucide-react';
 import { useNutritionSettings } from '../../hooks/useNutritionSettings';
+
+// Food Diary view is lazy — only loaded when the coach clicks the
+// sub-tab, since the meal data fetch + signed URL plumbing is heavier
+// than the simple focus-area cards on Overview.
+const FoodDiaryView = lazy(() => import('../nutrition/FoodDiaryView'));
+
+const SUB_TABS = [
+  { id: 'overview',    label: 'Overview'    },
+  { id: 'food_diary',  label: 'Food Diary'  },
+  { id: 'meal_plans',  label: 'Meal Plans'  },
+  { id: 'analytics',   label: 'Analytics'   },
+];
 
 // Coach-controlled meal-logging settings panel. Sits at the top of the
 // Nutritional tab so the nutritionist can flip Snap-and-Send on / off
@@ -129,7 +141,8 @@ function WorkingOnCard({ card, onChange, onSave, isDirty }) {
   );
 }
 
-export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkingOn, athleteId }) {
+export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkingOn, athleteId, athleteName }) {
+  const [subTab, setSubTab] = useState('overview');
   const [cards, setCards] = useState(() => {
     const src = initialWorkingOn || [];
     return [0, 1, 2].map(i => ({
@@ -152,20 +165,58 @@ export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkin
     cards[i].description !== savedCards[i].description;
 
   return (
-    <div>
-      <MealLoggingSettings athleteId={athleteId} />
-      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {cards.map((card, i) => (
-          <WorkingOnCard
-            key={i}
-            card={card}
-            onChange={(field, val) => updateCard(i, field, val)}
-            onSave={saveCard}
-            isDirty={isCardDirty(i)}
-          />
-        ))}
+    <div className="space-y-4">
+      {/* Sub-tab row — Overview / Food Diary / Meal Plans / Analytics.
+          Only Overview and Food Diary are wired; the others render a
+          polite placeholder until those modules ship. */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {SUB_TABS.map(t => {
+          const active = subTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setSubTab(t.id)}
+              className="px-3 py-1.5 text-xs font-semibold transition-colors border-b-2"
+              style={active
+                ? { color: '#A58D69', borderColor: '#A58D69' }
+                : { color: '#6b7280', borderColor: 'transparent' }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
+
+      {subTab === 'overview' && (
+        <>
+          <MealLoggingSettings athleteId={athleteId} />
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {cards.map((card, i) => (
+              <WorkingOnCard
+                key={i}
+                card={card}
+                onChange={(field, val) => updateCard(i, field, val)}
+                onSave={saveCard}
+                isDirty={isCardDirty(i)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {subTab === 'food_diary' && (
+        <Suspense fallback={<div className="text-xs italic text-gray-400 px-1">Loading Food Diary…</div>}>
+          <FoodDiaryView athleteId={athleteId} athleteName={athleteName} />
+        </Suspense>
+      )}
+
+      {(subTab === 'meal_plans' || subTab === 'analytics') && (
+        <div className="rounded-xl bg-white border border-gray-100 p-6 text-xs italic text-gray-400 text-center"
+             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          {subTab === 'meal_plans' ? 'Meal Plans' : 'Analytics'} — coming in a later phase.
+        </div>
+      )}
     </div>
   );
 }

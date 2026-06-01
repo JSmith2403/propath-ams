@@ -298,6 +298,7 @@ export default function AthleteProfile({
         preContent = (
           <NutritionTab
             athleteId={athlete.id}
+            athleteName={athlete.name}
             workingOn={p2.nutrition?.workingOn || [
               { title: '', description: '' },
               { title: '', description: '' },
