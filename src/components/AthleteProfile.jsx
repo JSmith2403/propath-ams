@@ -297,6 +297,7 @@ export default function AthleteProfile({
       } else if (domain === 'nutrition') {
         preContent = (
           <NutritionTab
+            athleteId={athlete.id}
             workingOn={p2.nutrition?.workingOn || [
               { title: '', description: '' },
               { title: '', description: '' },
