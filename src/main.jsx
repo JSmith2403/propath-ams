@@ -1,8 +1,14 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import App from './App.jsx'
 import './index.css'
+
+// The coach App is now lazy too. Athletes loading /athlete/:token used
+// to pay for the entire coach surface (AthleteProfile, DataEntryView,
+// ProgrammeMasterView, ResourcesAdminView…) on first paint even though
+// they never see any of it. Lazy splitting drops the athlete first-
+// paint bundle by hundreds of kilobytes.
+const App = lazy(() => import('./App.jsx'))
 
 // ── PWA athlete-app launch shortcut ──────────────────────────────────────────
 // The web manifest's start_url is "/" so any home-screen launch lands at
@@ -45,7 +51,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             </Suspense>
           }
         />
-        <Route path="/*" element={<App />} />
+        <Route
+          path="/*"
+          element={
+            <Suspense fallback={null}>
+              <App />
+            </Suspense>
+          }
+        />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

@@ -1,13 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import { getDailyQuote } from '../../utils/dailyQuote';
 import SessionCard from './SessionCard';
-import SessionLogger from './SessionLogger';
 import WellnessInline from './WellnessInline';
-import MoveSessionModal from './MoveSessionModal';
-import ResourcesTab from './ResourcesTab';
+
+// Lazy splits — none of these render on the athlete's first paint.
+//   SessionLogger     → only when they tap into a session.
+//   MoveSessionModal  → only when they reschedule.
+//   ResourcesTab      → below the fold, scroll-shortcut from the
+//                       bottom nav; first paint doesn't need it.
+// Each chunk shaves real weight off the initial download so the
+// week view renders faster, especially on slower mobile networks.
+const SessionLogger     = lazy(() => import('./SessionLogger'));
+const MoveSessionModal  = lazy(() => import('./MoveSessionModal'));
+const ResourcesTab      = lazy(() => import('./ResourcesTab'));
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -249,29 +257,35 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
             its own tab; embedding here keeps the athlete on the home
             screen instead of losing the day they were looking at. */}
       <div ref={resourcesRef} id="resources" className="-mx-4 mt-6 pt-2 border-t border-ink-100">
-        <ResourcesTab />
+        <Suspense fallback={null}>
+          <ResourcesTab />
+        </Suspense>
       </div>
 
       {/* Session logger overlay */}
       {activeLogger && (
-        <SessionLogger
-          session={activeLogger}
-          athleteId={athleteId}
-          onClose={(didFinish) => {
-            setActiveLogger(null);
-            if (didFinish) setLogTick(t => t + 1);
-          }}
-        />
+        <Suspense fallback={null}>
+          <SessionLogger
+            session={activeLogger}
+            athleteId={athleteId}
+            onClose={(didFinish) => {
+              setActiveLogger(null);
+              if (didFinish) setLogTick(t => t + 1);
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Move-to-today confirmation */}
       {pendingMove && (
-        <MoveSessionModal
-          session={pendingMove}
-          submitting={moveSubmitting}
-          onConfirm={handleConfirmMove}
-          onCancel={() => setPendingMove(null)}
-        />
+        <Suspense fallback={null}>
+          <MoveSessionModal
+            session={pendingMove}
+            submitting={moveSubmitting}
+            onConfirm={handleConfirmMove}
+            onCancel={() => setPendingMove(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
