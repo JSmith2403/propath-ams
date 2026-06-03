@@ -1,9 +1,10 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { Apple, Check, Moon, Plus, Sun } from 'lucide-react';
+import { Apple, ChefHat, Check, Moon, Plus, Sun } from 'lucide-react';
 import { useNutritionSettings } from '../../hooks/useNutritionSettings';
 import { useMealEntries, nextSnackSlot } from '../../hooks/useMealEntries';
 
 const MealCaptureSheet = lazy(() => import('./MealCaptureSheet'));
+const RecipesBrowser   = lazy(() => import('./RecipesBrowser'));
 
 const GOLD = '#A58D69';
 
@@ -27,7 +28,8 @@ export default function AthleteNutritionTab({ athleteId }) {
   const { settings, loading: settingsLoading } = useNutritionSettings(athleteId);
   const { entries, refresh } = useMealEntries(athleteId, logDate);
 
-  const [capturing, setCapturing] = useState(null); // mealKey or null
+  const [capturing,    setCapturing]    = useState(null); // mealKey or null
+  const [recipesOpen,  setRecipesOpen]  = useState(false);
 
   // Count of submissions per card key so we can show a tick / count.
   const filled = useMemo(() => {
@@ -51,7 +53,7 @@ export default function AthleteNutritionTab({ athleteId }) {
       <h2 className="text-base font-bold text-ink-900 mb-4">Nutrition</h2>
 
       {/* Recommended food structure hero — always visible per brief. */}
-      <div className="rounded-xl bg-gold-50 p-5 mb-6 border border-gold-100" style={{ backgroundColor: 'rgba(165,141,105,0.10)' }}>
+      <div className="rounded-xl bg-gold-50 p-5 mb-3 border border-gold-100" style={{ backgroundColor: 'rgba(165,141,105,0.10)' }}>
         <p className="text-base font-bold text-ink-900 mb-1">View your recommended food structure</p>
         <p className="text-meta text-ink-600 mb-3">
           Simple guidance on how to structure your meals today for optimal performance.
@@ -64,6 +66,26 @@ export default function AthleteNutritionTab({ athleteId }) {
           View recommended food
         </button>
       </div>
+
+      {/* "Needing inspiration?" — opens the recipe library full-screen. */}
+      <button
+        type="button"
+        onClick={() => setRecipesOpen(true)}
+        className="w-full rounded-xl bg-white border border-ink-100 p-4 mb-6 flex items-center gap-3 text-left active:bg-ink-50 transition-colors"
+        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+      >
+        <div
+          className="shrink-0 w-11 h-11 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(165,141,105,0.12)', color: GOLD }}
+        >
+          <ChefHat size={20} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-ink-900">Needing inspiration?</p>
+          <p className="text-meta text-ink-500">Check out our recipes — filter by breakfast, lunch, snack or dinner.</p>
+        </div>
+        <span className="text-xs font-semibold" style={{ color: GOLD }}>Browse →</span>
+      </button>
 
       {/* Meal cards — only when the nutritionist has switched logging on. */}
       {allowed ? (
@@ -111,6 +133,13 @@ export default function AthleteNutritionTab({ athleteId }) {
         <p className="text-xs italic text-ink-400 px-1">
           Your coach hasn't enabled meal logging yet.
         </p>
+      )}
+
+      {/* Recipe browser — full-screen overlay, lazy. */}
+      {recipesOpen && (
+        <Suspense fallback={null}>
+          <RecipesBrowser onClose={() => setRecipesOpen(false)} />
+        </Suspense>
       )}
 
       {/* Capture sheet — lazy chunk, mounts on first tap. */}

@@ -6,12 +6,14 @@ import { Camera, Image, Loader2 } from 'lucide-react';
 // Lazy-load heavy children to keep the tab swap snappy.
 const PillarTab     = lazy(() => import('./PillarTab'));
 const NutritionTab  = lazy(() => import('./NutritionTab'));
-const FoodDiaryView = lazy(() => import('../nutrition/FoodDiaryView'));
+const FoodDiaryView     = lazy(() => import('../nutrition/FoodDiaryView'));
+const RecipesAdminView  = lazy(() => import('../nutrition/RecipesAdminView'));
 
 const SUBTABS = [
   { id: 'overview',    label: 'Overview'                  },
   { id: 'food_diary',  label: 'Food Diary'                },
   { id: 'guidance',    label: 'Meal Structure & Guidance' },
+  { id: 'recipes',     label: 'Recipes'                   },
 ];
 
 const GOLD = '#A58D69';
@@ -102,6 +104,10 @@ export default function NutritionDomainTab({
 
         {active === 'guidance' && (
           <GuidancePlaceholder />
+        )}
+
+        {active === 'recipes' && (
+          <RecipesAdminView />
         )}
       </Suspense>
     </div>
