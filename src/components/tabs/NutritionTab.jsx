@@ -158,7 +158,14 @@ function WorkingOnCard({ card, onChange, onSave, isDirty }) {
   );
 }
 
-export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkingOn, athleteId, athleteName }) {
+export default function NutritionTab({
+  workingOn: initialWorkingOn, onSaveWorkingOn,
+  athleteId, athleteName,
+  // hideSubTabs — when NutritionDomainTab is the wrapper, it owns the
+  // sub-tab nav and we just render the Overview content (settings +
+  // focus cards). Defaults false so the legacy mount path still works.
+  hideSubTabs = false,
+}) {
   const [subTab, setSubTab] = useState('overview');
   const [cards, setCards] = useState(() => {
     const src = initialWorkingOn || [];
@@ -181,11 +188,35 @@ export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkin
     cards[i].title !== savedCards[i].title ||
     cards[i].description !== savedCards[i].description;
 
+  // Overview content — settings panel + Currently-Working-On cards.
+  // When NutritionDomainTab is the wrapper, hideSubTabs is true and we
+  // render only this content (the wrapper owns the sub-tab nav).
+  const overview = (
+    <>
+      <MealLoggingSettings athleteId={athleteId} />
+      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {cards.map((card, i) => (
+          <WorkingOnCard
+            key={i}
+            card={card}
+            onChange={(field, val) => updateCard(i, field, val)}
+            onSave={saveCard}
+            isDirty={isCardDirty(i)}
+          />
+        ))}
+      </div>
+    </>
+  );
+
+  if (hideSubTabs) {
+    return overview;
+  }
+
+  // Legacy mount path (no wrapper) — keep the local sub-tab nav so the
+  // file stays useful if it gets rendered standalone elsewhere.
   return (
     <div className="space-y-4">
-      {/* Sub-tab row — Overview / Food Diary / Meal Plans / Analytics.
-          Only Overview and Food Diary are wired; the others render a
-          polite placeholder until those modules ship. */}
       <div className="flex items-center gap-1 border-b border-gray-200">
         {SUB_TABS.map(t => {
           const active = subTab === t.id;
@@ -204,23 +235,7 @@ export default function NutritionTab({ workingOn: initialWorkingOn, onSaveWorkin
         })}
       </div>
 
-      {subTab === 'overview' && (
-        <>
-          <MealLoggingSettings athleteId={athleteId} />
-          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {cards.map((card, i) => (
-              <WorkingOnCard
-                key={i}
-                card={card}
-                onChange={(field, val) => updateCard(i, field, val)}
-                onSave={saveCard}
-                isDirty={isCardDirty(i)}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      {subTab === 'overview' && overview}
 
       {subTab === 'food_diary' && (
         <Suspense fallback={<div className="text-xs italic text-gray-400 px-1">Loading Food Diary…</div>}>
