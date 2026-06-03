@@ -21,6 +21,15 @@ const SUB_TABS = [
 // row exists for the athlete.
 function MealLoggingSettings({ athleteId }) {
   const { settings, loading, updating, update } = useNutritionSettings(athleteId);
+  const [errMsg, setErrMsg] = useState(null);
+
+  const handleUpdate = async (patch) => {
+    setErrMsg(null);
+    const res = await update(patch);
+    if (!res?.ok) {
+      setErrMsg(res?.error?.message || 'Failed to save. Try again.');
+    }
+  };
 
   if (loading || !settings) {
     return (
@@ -55,7 +64,7 @@ function MealLoggingSettings({ athleteId }) {
             <Toggle
               on={enabled}
               busy={updating}
-              onChange={(next) => update({ meal_logging_enabled: next })}
+              onChange={(next) => handleUpdate({ meal_logging_enabled: next })}
             />
           </div>
 
@@ -68,9 +77,17 @@ function MealLoggingSettings({ athleteId }) {
               <Toggle
                 on={requirePhoto}
                 busy={updating}
-                onChange={(next) => update({ require_photo: next })}
+                onChange={(next) => handleUpdate({ require_photo: next })}
                 small
               />
+            </div>
+          )}
+
+          {errMsg && (
+            <div className="mt-3 pt-3 border-t border-red-100">
+              <p className="text-[11px] font-semibold text-red-600">
+                Couldn't save: {errMsg}
+              </p>
             </div>
           )}
         </div>
