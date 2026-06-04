@@ -1,13 +1,17 @@
-import { Dumbbell, TrendingUp, Apple, BookOpen } from 'lucide-react';
+import { Dumbbell, TrendingUp, Apple, BookOpen, Brain } from 'lucide-react';
 
 // Resources isn't a top-level tab — it's a section at the bottom of
 // Training. The button here just signals 'scroll me down to it' (handled
 // by the parent), so we never mark it as active.
+//
+// Order: Training, Nutrition, Mental Skills, Progress, Resources.
+// Mental Skills is auto-available to every athlete — no toggle.
 const TABS = [
-  { id: 'train',     label: 'Training',  icon: Dumbbell   },
-  { id: 'progress',  label: 'Progress',  icon: TrendingUp },
-  { id: 'nutrition', label: 'Nutrition', icon: Apple      },
-  { id: 'resources', label: 'Resources', icon: BookOpen   },
+  { id: 'train',     label: 'Training',      icon: Dumbbell   },
+  { id: 'nutrition', label: 'Nutrition',     icon: Apple      },
+  { id: 'mental',    label: 'Mental Skills', icon: Brain      },
+  { id: 'progress',  label: 'Progress',      icon: TrendingUp },
+  { id: 'resources', label: 'Resources',     icon: BookOpen   },
 ];
 
 export default function TabBar({ active, onChange }) {
@@ -30,8 +34,8 @@ export default function TabBar({ active, onChange }) {
             className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors"
             style={{ color: isActive ? '#A58D69' : '#9ca3af' }}
           >
-            <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
-            <span className="text-[10px] font-semibold tracking-wide uppercase">{label}</span>
+            <Icon size={18} strokeWidth={isActive ? 2.4 : 1.8} />
+            <span className="text-[9px] font-semibold tracking-wide uppercase leading-none mt-0.5 whitespace-nowrap">{label}</span>
           </button>
         );
       })}
