@@ -9,7 +9,8 @@ import InstallPrompt from '../InstallPrompt';
 // Wellness lives on the Training screen, Resources lives at the bottom
 // of the Training screen as a section (the bottom-nav 'Resources' button
 // scroll-shortcuts to it). Readiness is deferred for v1.
-const ProgressTab  = lazy(() => import('./ProgressTab'));
+const ProgressTab   = lazy(() => import('./ProgressTab'));
+const NutritionTab  = lazy(() => import('./NutritionTab'));
 
 function Loading() {
   return (
@@ -152,7 +153,8 @@ export default function AthleteAppPage() {
             />
           )}
           <Suspense fallback={<Loading />}>
-            {activeTab === 'progress' && <ProgressTab />}
+            {activeTab === 'progress'  && <ProgressTab />}
+            {activeTab === 'nutrition' && <NutritionTab athleteId={athlete.id} />}
           </Suspense>
         </main>
 

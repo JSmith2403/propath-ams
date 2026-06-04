@@ -1,4 +1,4 @@
-import { Dumbbell, TrendingUp, BookOpen } from 'lucide-react';
+import { Dumbbell, TrendingUp, Apple, BookOpen } from 'lucide-react';
 
 // Resources isn't a top-level tab — it's a section at the bottom of
 // Training. The button here just signals 'scroll me down to it' (handled
@@ -6,6 +6,7 @@ import { Dumbbell, TrendingUp, BookOpen } from 'lucide-react';
 const TABS = [
   { id: 'train',     label: 'Training',  icon: Dumbbell   },
   { id: 'progress',  label: 'Progress',  icon: TrendingUp },
+  { id: 'nutrition', label: 'Nutrition', icon: Apple      },
   { id: 'resources', label: 'Resources', icon: BookOpen   },
 ];
 

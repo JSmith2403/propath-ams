@@ -11,6 +11,7 @@ const MobilityTab             = lazy(() => import('./tabs/MobilityTab'));
 const PhysicalDevelopmentTab  = lazy(() => import('./tabs/PhysicalDevelopmentTab'));
 const PhysioTab               = lazy(() => import('./tabs/PhysioTab'));
 const NutritionTab            = lazy(() => import('./tabs/NutritionTab'));
+const NutritionDomainTab      = lazy(() => import('./tabs/NutritionDomainTab'));
 const PsychTab                = lazy(() => import('./tabs/PsychTab'));
 const ReportTab               = lazy(() => import('./tabs/ReportTab'));
 const WellnessTab             = lazy(() => import('./tabs/WellnessTab'));
@@ -268,6 +269,34 @@ export default function AthleteProfile({
       const domain = activeTab.slice(4); // strip 'rag-'
       const domainMeta = RAG_DOMAINS.find(d => d.key === domain);
 
+      // Nutrition is its own wrapper (sub-tabs at the very top, same
+      // pattern as Physical Development) so the Food Diary + Meal
+      // Structure & Guidance modules sit alongside Overview rather
+      // than buried inside it. NutritionDomainTab hosts PillarTab
+      // inside its Overview sub-tab so the RAG status + log are
+      // preserved exactly as before.
+      if (domain === 'nutrition') {
+        return (
+          <NutritionDomainTab
+            athleteId={athlete.id}
+            athleteName={athlete.name}
+            workingOn={p2.nutrition?.workingOn || [
+              { title: '', description: '' },
+              { title: '', description: '' },
+              { title: '', description: '' },
+            ]}
+            onSaveWorkingOn={handleSaveNutritionWorkingOn}
+            ragStatus={localAthlete.rag?.nutrition || 'grey'}
+            ragLogEntries={localAthlete.ragLog?.nutrition || []}
+            highlightEntryId={highlightEntry?.domain === 'nutrition' ? highlightEntry.entryId : null}
+            onStatusChange={status => handleStatusChange('nutrition', status)}
+            onAddRagEntry={data => handleAddRagEntry('nutrition', data)}
+            onDeleteRagEntry={entryId => handleDeleteRagEntry('nutrition', entryId)}
+            onClearHighlight={() => setHighlightEntry(null)}
+          />
+        );
+      }
+
       let extraContent    = null;
       let preContent      = null;
       let pillarEntryTypes = undefined;
@@ -294,17 +323,6 @@ export default function AthleteProfile({
             onAddAcsi28={entry => onAddAcsi28Entry(localAthlete.id, entry)}
           />
         );
-      } else if (domain === 'nutrition') {
-        preContent = (
-          <NutritionTab
-            workingOn={p2.nutrition?.workingOn || [
-              { title: '', description: '' },
-              { title: '', description: '' },
-              { title: '', description: '' },
-            ]}
-            onSaveWorkingOn={handleSaveNutritionWorkingOn}
-          />
-        );
       } else if (domain === 'lifestyle') {
         preContent = (
           <WorkingOnSection
@@ -328,7 +346,7 @@ export default function AthleteProfile({
           preContent={preContent}
           extraContent={extraContent}
           entryTypes={pillarEntryTypes}
-          noteFormFirst={domain === 'psych' || domain === 'nutrition' || domain === 'lifestyle'}
+          noteFormFirst={domain === 'psych' || domain === 'lifestyle'}
         />
       );
     }
