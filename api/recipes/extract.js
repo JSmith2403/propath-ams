@@ -18,7 +18,10 @@
 // can guide the coach.
 
 const ANTHROPIC_API_URL  = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_MODEL    = process.env.ANTHROPIC_RECIPE_MODEL || 'claude-3-5-sonnet-20241022';
+// Current Sonnet model — override per-deploy via ANTHROPIC_RECIPE_MODEL.
+// Earlier versions of this file pinned claude-3-5-sonnet-20241022, which
+// Anthropic later retired, causing the /v1/messages route to return 404.
+const ANTHROPIC_MODEL    = process.env.ANTHROPIC_RECIPE_MODEL || 'claude-sonnet-4-5';
 const MAX_INPUT_CHARS    = 150_000;   // budget; truncate larger PDFs
 
 const SYSTEM_PROMPT = `You read pages of recipe content (cookbook scans, handouts, sports
@@ -107,7 +110,17 @@ export default async function handler(req, res) {
     if (!ai.ok) {
       const detail = await ai.text();
       console.error('[recipes/extract] Anthropic call failed', ai.status, detail);
-      res.status(502).json({ ok: false, error: `AI call failed (${ai.status})` });
+      // Try to pull a human message out of the upstream error envelope
+      // so the UI can show "model not_found" instead of "(404)".
+      let upstream = detail;
+      try {
+        const j = JSON.parse(detail);
+        if (j?.error?.message) upstream = j.error.message;
+      } catch (_) { /* leave as raw */ }
+      res.status(502).json({
+        ok: false,
+        error: `AI call failed (${ai.status}): ${String(upstream).slice(0, 240)}`,
+      });
       return;
     }
 
