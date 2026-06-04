@@ -677,29 +677,51 @@ function Field({ label, children }) {
 }
 
 // ─── AI PDF import modal ────────────────────────────────────────────
+// Page-count thresholds tuned against the server's char limits
+// (~4-5K chars per dense recipe page). The hard limit refuses upfront
+// instead of letting the user wait for a server 413; the soft limit
+// triggers a longer-wait warning during extraction.
+const HARD_PAGE_LIMIT  = 45;   // refuse before sending
+const SOFT_PAGE_LIMIT  = 25;   // show "this'll take a while" copy
+
 function PdfImportModal({ onCancel, onImported }) {
-  const [phase,    setPhase]    = useState('drop'); // drop | extracting | review | saving | done
-  const [error,    setError]    = useState(null);
-  const [fileName, setFileName] = useState(null);
-  const [draft,    setDraft]    = useState([]);   // [{ ...recipe, _checked }]
+  const [phase,     setPhase]     = useState('drop'); // drop | extracting | review | saving | done
+  const [error,     setError]     = useState(null);
+  const [fileName,  setFileName]  = useState(null);
+  const [pageCount, setPageCount] = useState(0);
+  const [draft,     setDraft]     = useState([]);   // [{ ...recipe, _checked }]
   const inputRef = useRef(null);
 
   const onPdf = async (file) => {
     setError(null);
     setFileName(file.name);
+    setPageCount(0);
     setPhase('extracting');
     try {
       // Extract text client-side with pdfjs (already a dep). Lazy
       // import keeps the bundle off the critical path; we also point
       // GlobalWorkerOptions.workerSrc at the bundled worker so PDF.js
       // doesn't throw "No 'GlobalWorkerOptions.workerSrc' specified".
-      // Matches the pattern already used by ResourcesAdminView.
       const pdfjs    = await import('pdfjs-dist');
       const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
       const arrayBuf = await file.arrayBuffer();
       const doc = await pdfjs.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+      setPageCount(doc.numPages);
+
+      // Bail early on documents that will almost certainly time out
+      // server-side — coaches get a clear "split the PDF" message
+      // before they sit through a long extraction.
+      if (doc.numPages > HARD_PAGE_LIMIT) {
+        setError(
+          `This PDF is ${doc.numPages} pages — too large for one AI pass. `
+          + `Please split it into smaller files of around 20-30 pages each and import them separately.`
+        );
+        setPhase('drop');
+        return;
+      }
+
       const pages = [];
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
@@ -717,7 +739,7 @@ function PdfImportModal({ onCancel, onImported }) {
       const res = await fetch('/api/recipes/extract', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, max_recipes: 40 }),
+        body: JSON.stringify({ text, max_recipes: 60 }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -778,17 +800,36 @@ function PdfImportModal({ onCancel, onImported }) {
             >
               <FileUp size={28} style={{ color: GOLD }} />
               <p className="text-sm font-semibold text-gray-700 mt-2">Drop a PDF or click to pick</p>
-              <p className="text-[11px] text-gray-400 mt-1">Up to ~150,000 chars. Image-only PDFs aren't supported yet.</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Up to <strong>{HARD_PAGE_LIMIT} pages</strong>. Image-only PDFs aren't supported yet.
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5 italic">
+                Larger documents — split into chunks of 20-30 pages and import each one.
+              </p>
               <input ref={inputRef} type="file" accept="application/pdf" className="hidden"
                      onChange={(e) => { const f = e.target.files?.[0]; if (f) onPdf(f); }} />
             </div>
           )}
 
           {phase === 'extracting' && (
-            <div className="flex flex-col items-center gap-3 py-12 text-xs text-gray-500">
+            <div className="flex flex-col items-center gap-3 py-12 text-xs text-gray-500 text-center">
               <Loader2 size={24} className="animate-spin" style={{ color: GOLD }} />
-              <p>Reading <strong>{fileName}</strong>…</p>
-              <p className="italic text-gray-400">AI extraction can take 10-30 seconds for a longer document.</p>
+              <p>Reading <strong>{fileName}</strong>{pageCount ? ` · ${pageCount} pages` : ''}…</p>
+              {pageCount > SOFT_PAGE_LIMIT ? (
+                <>
+                  <p className="text-gray-500 font-semibold">
+                    Larger PDF — the AI is processing this in chunks.
+                  </p>
+                  <p className="italic text-gray-400 max-w-sm">
+                    Please wait. This can take <strong>1-2 minutes</strong> for a 20-40 page document.
+                    Keep the tab open.
+                  </p>
+                </>
+              ) : (
+                <p className="italic text-gray-400">
+                  Typical extraction takes <strong>30-60 seconds</strong>. Please don't close the tab.
+                </p>
+              )}
             </div>
           )}
 

@@ -39,7 +39,8 @@ const ANTHROPIC_API_URL  = 'https://api.anthropic.com/v1/messages';
 // Current Sonnet model — override per-deploy via ANTHROPIC_RECIPE_MODEL.
 const ANTHROPIC_MODEL    = process.env.ANTHROPIC_RECIPE_MODEL || 'claude-sonnet-4-5';
 
-const MAX_INPUT_CHARS    = 300_000;   // total budget; truncate past this
+const MAX_INPUT_CHARS    = 220_000;   // hard refuse past this — ~45-50 dense pages
+const SOFT_LIMIT_CHARS   = 130_000;   // warn the client past this, still process
 const CHUNK_THRESHOLD    = 35_000;    // chunk inputs larger than this
 const CHUNK_SIZE         = 30_000;    // target chunk size (chars)
 const MAX_OUTPUT_TOKENS  = 16_384;    // per-call output budget
@@ -116,7 +117,21 @@ export default async function handler(req, res) {
     res.status(400).json({ ok: false, error: 'Empty PDF text' });
     return;
   }
-  if (text.length > MAX_INPUT_CHARS) text = text.slice(0, MAX_INPUT_CHARS);
+
+  // Refuse oversized PDFs outright instead of silently truncating —
+  // a 45-page cookbook can blow past Vercel's serverless timeout
+  // even with chunking. Coach gets a clear "split it up" message
+  // upfront rather than waiting two minutes for a timeout error.
+  if (text.length > MAX_INPUT_CHARS) {
+    const pages = Math.ceil(text.length / 4_500);  // ~4.5K chars per dense page
+    res.status(413).json({
+      ok: false,
+      error: `This PDF is too large for one AI pass (≈${pages} pages of text). Split it into smaller files of around 20–30 pages each and import them separately.`,
+      size_chars: text.length,
+      limit_chars: MAX_INPUT_CHARS,
+    });
+    return;
+  }
 
   const maxRecipes = Math.max(1, Math.min(80, Number(body?.max_recipes) || 60));
 
