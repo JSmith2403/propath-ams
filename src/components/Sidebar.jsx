@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, BookOpen } from 'lucide-react';
+import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, BookOpen, Brain } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -147,6 +147,13 @@ export default function Sidebar({
               label="Sessions"
               active={view === 'sessions'}
               onClick={() => onNavigate('sessions')}
+            />
+
+            <NavItem
+              icon={Brain}
+              label="Mental Skills"
+              active={view === 'mental-skills'}
+              onClick={() => onNavigate('mental-skills')}
             />
 
             <NavItem

@@ -16,6 +16,7 @@ import WellnessOverview from './components/WellnessOverview';
 import ProgrammeMasterView from './components/programming/ProgrammeMasterView';
 import ProgrammeModule    from './components/programming/ProgrammeModule';
 import ResourcesAdminView from './components/resources/ResourcesAdminView';
+import MentalSkillsCoachView from './components/mental-skills/MentalSkillsCoachView';
 
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
@@ -222,6 +223,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
         {view === 'shared-calendar' && !isExternal && (
           <ProgrammeMasterView allAthletes={visibleAthletes} role={role} onSelectAthlete={handleSelectAthlete} />
+        )}
+
+        {view === 'mental-skills' && !isExternal && (
+          <MentalSkillsCoachView allAthletes={visibleAthletes} />
         )}
 
         {view === 'resources' && !isExternal && (
