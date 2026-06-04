@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Search, X, FileUp, Pencil, Trash2,
-  Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon,
+  Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon, SlidersHorizontal,
 } from 'lucide-react';
 import { useRecipes } from '../../hooks/useRecipes';
 import { supabase } from '../../lib/supabase';
@@ -33,12 +33,29 @@ export const SNACK_TIMING_LABEL = {
   anytime:       'Anytime',
 };
 
+// Dietary classifications (mutually exclusive). Vegan is the strictest;
+// vegetarian / pescatarian / poultry expand outward from there.
+const DIET_TYPES = [
+  { id: 'all',         label: 'Any diet'    },
+  { id: 'poultry',     label: 'Poultry'     },
+  { id: 'pescatarian', label: 'Pescatarian' },
+  { id: 'vegetarian',  label: 'Vegetarian'  },
+  { id: 'vegan',       label: 'Vegan'       },
+];
+
+export const DIET_TYPE_LABEL = {
+  poultry:     'Poultry',
+  pescatarian: 'Pescatarian',
+  vegetarian:  'Vegetarian',
+  vegan:       'Vegan',
+};
+
 const empty = {
   title: '', meal_type: 'snack', description: '',
   ingredients: [], instructions: [],
   prep_time_min: '', cook_time_min: '', servings: '',
   tags: [], image_url: '', is_active: true, source: 'manual',
-  snack_timing: null,
+  snack_timing: null, diet_type: null,
 };
 
 /**
@@ -48,22 +65,47 @@ const empty = {
  * that lets the coach tick which extracted recipes to keep.
  */
 export default function RecipesAdminView() {
-  const [mealType, setMealType] = useState('all');
+  const [mealType,    setMealType]    = useState('all');
   const [snackTiming, setSnackTiming] = useState('all');
-  const [search,   setSearch]   = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [dietType,    setDietType]    = useState('all');
+  const [search,      setSearch]      = useState('');
+  const [showInactive,setShowInactive]= useState(false);
 
   const { recipes, loading, create, update, remove, bulkInsert } =
-    useRecipes({ mealType, snackTiming, activeOnly: !showInactive, search });
+    useRecipes({ mealType, snackTiming, dietType, activeOnly: !showInactive, search });
 
-  // Snack timing sub-pills only show when the primary filter is 'snack'
-  // (focused) or 'all' (browsing everything). Reset to 'all' when the
-  // user switches to a non-snack meal type so the filter doesn't carry
-  // an irrelevant constraint into the next view.
+  // Reset snack-timing when the meal-type leaves 'snack' / 'all' so the
+  // filter doesn't carry an irrelevant constraint into the next view.
   const showSnackTiming = mealType === 'snack' || mealType === 'all';
   useEffect(() => {
     if (!showSnackTiming) setSnackTiming('all');
   }, [showSnackTiming]);
+
+  // Count of active (non-default) filters — shown as a badge on the
+  // Filter button so the coach knows when they have an open filter set.
+  const activeFilterCount =
+    (mealType    !== 'all' ? 1 : 0) +
+    (snackTiming !== 'all' && showSnackTiming ? 1 : 0) +
+    (dietType    !== 'all' ? 1 : 0) +
+    (showInactive ? 1 : 0);
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef(null);
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDown = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [filterOpen]);
+
+  const resetFilters = () => {
+    setMealType('all');
+    setSnackTiming('all');
+    setDietType('all');
+    setShowInactive(false);
+  };
 
   const [editor, setEditor] = useState(null); // null | { mode, row }
   const [importOpen, setImportOpen] = useState(false);
@@ -108,7 +150,10 @@ export default function RecipesAdminView() {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* Toolbar — search + single Filter button + actions.
+          All filters (meal type, snack timing, dietary, active/inactive)
+          consolidate into the Filter popover; the toolbar only carries
+          the persistent search box and the primary actions. */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -120,29 +165,36 @@ export default function RecipesAdminView() {
           />
         </div>
 
-        <div className="inline-flex items-center rounded border border-gray-200 overflow-hidden">
-          {MEAL_TYPES.map(m => (
-            <button
-              key={m.id}
-              onClick={() => setMealType(m.id)}
-              className="text-xs font-semibold px-2.5 py-1.5 transition-colors"
-              style={{
-                color:           mealType === m.id ? '#fff' : '#6b7280',
-                backgroundColor: mealType === m.id ? GOLD : 'transparent',
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <div ref={filterRef} className="relative">
+          <button
+            onClick={() => setFilterOpen(o => !o)}
+            className="text-xs font-semibold px-3 py-1.5 rounded border border-gray-200 hover:bg-gray-50 inline-flex items-center gap-1.5"
+            style={{ color: activeFilterCount > 0 ? GOLD : '#6b7280' }}
+          >
+            <SlidersHorizontal size={12} />
+            Filter
+            {activeFilterCount > 0 && (
+              <span
+                className="inline-flex items-center justify-center text-[10px] font-bold text-white rounded-full"
+                style={{ backgroundColor: GOLD, width: 16, height: 16 }}
+              >
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
 
-        <button
-          onClick={() => setShowInactive(s => !s)}
-          className="text-xs font-semibold px-2 py-1.5 rounded border border-gray-200"
-          style={{ color: showInactive ? GOLD : '#6b7280' }}
-        >
-          {showInactive ? 'Inactive shown' : 'Active only'}
-        </button>
+          {filterOpen && (
+            <FilterPanel
+              mealType={mealType}        setMealType={setMealType}
+              snackTiming={snackTiming}  setSnackTiming={setSnackTiming}
+              dietType={dietType}        setDietType={setDietType}
+              showInactive={showInactive} setShowInactive={setShowInactive}
+              showSnackTiming={showSnackTiming}
+              onReset={resetFilters}
+              onDone={() => setFilterOpen(false)}
+            />
+          )}
+        </div>
 
         <button
           onClick={() => setImportOpen(true)}
@@ -160,31 +212,6 @@ export default function RecipesAdminView() {
           <Plus size={13} /> New recipe
         </button>
       </div>
-
-      {/* Snack-timing sub-filter — appears only when meal_type = 'snack'
-          or 'all' so the row doesn't take space when it would do nothing. */}
-      {showSnackTiming && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] uppercase tracking-widest font-semibold text-gray-400">
-            Snack timing
-          </span>
-          <div className="inline-flex items-center rounded border border-gray-200 overflow-hidden">
-            {SNACK_TIMINGS.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setSnackTiming(t.id)}
-                className="text-xs font-semibold px-2.5 py-1.5 transition-colors"
-                style={{
-                  color:           snackTiming === t.id ? '#fff' : '#6b7280',
-                  backgroundColor: snackTiming === t.id ? GOLD : 'transparent',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Grid of cards */}
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
@@ -228,6 +255,100 @@ export default function RecipesAdminView() {
   );
 }
 
+// ─── Filter popover ──────────────────────────────────────────────────
+// Single dropdown surface for every non-search filter. Sits in a small
+// shadowed card anchored under the Filter button.
+function FilterPanel({
+  mealType, setMealType, snackTiming, setSnackTiming,
+  dietType, setDietType, showInactive, setShowInactive,
+  showSnackTiming, onReset, onDone,
+}) {
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg z-30 w-[300px] max-w-[92vw]"
+      style={{ border: '1px solid #e5e7eb' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-xs font-bold text-gray-900">Filters</p>
+        <button onClick={onReset}
+                className="text-[11px] font-semibold text-gray-500 hover:text-gray-700">
+          Reset
+        </button>
+      </div>
+
+      <div className="px-4 py-3 space-y-3">
+        <FilterGroup label="Meal type">
+          <Segments options={MEAL_TYPES} value={mealType} onChange={setMealType} />
+        </FilterGroup>
+
+        {showSnackTiming && (
+          <FilterGroup label="Snack timing">
+            <Segments options={SNACK_TIMINGS} value={snackTiming} onChange={setSnackTiming} />
+          </FilterGroup>
+        )}
+
+        <FilterGroup label="Dietary">
+          <Segments options={DIET_TYPES} value={dietType} onChange={setDietType} />
+        </FilterGroup>
+
+        <label className="flex items-center gap-2 text-xs font-medium pt-1 border-t border-gray-100 mt-2"
+               style={{ color: '#1C1C1C' }}>
+          <input type="checkbox" checked={showInactive}
+                 onChange={(e) => setShowInactive(e.target.checked)} />
+          Show inactive recipes
+        </label>
+      </div>
+
+      <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
+        <button onClick={onDone}
+                className="text-[11px] font-bold uppercase tracking-widest px-3 py-1.5 rounded text-white"
+                style={{ backgroundColor: GOLD }}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterGroup({ label, children }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// Compact wrap-friendly chip set for option groups — uses pill buttons
+// instead of a segmented control so longer label sets wrap cleanly.
+function Segments({ options, value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map(o => {
+        const on = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className="text-[11px] font-semibold px-2 py-1 rounded-full border transition-colors"
+            style={{
+              color:           on ? '#fff' : '#6b7280',
+              backgroundColor: on ? GOLD : '#fff',
+              borderColor:     on ? GOLD : '#e5e7eb',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Recipe card ─────────────────────────────────────────────────────
 function RecipeCard({ recipe, onEdit, onDelete }) {
   return (
@@ -251,6 +372,12 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
               <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
                     style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.12)' }}>
                 {SNACK_TIMING_LABEL[recipe.snack_timing]}
+              </span>
+            )}
+            {recipe.diet_type && (
+              <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                    style={{ color: '#0f766e', backgroundColor: 'rgba(15,118,110,0.12)' }}>
+                {DIET_TYPE_LABEL[recipe.diet_type]}
               </span>
             )}
           </div>
@@ -434,6 +561,21 @@ function RecipeEditor({ mode, initial, onCancel, onSave }) {
               </select>
             </Field>
           )}
+
+          {/* Dietary classification — applies to any meal type. */}
+          <Field label="Dietary">
+            <select
+              value={d.diet_type || ''}
+              onChange={(e) => set('diet_type', e.target.value || null)}
+              className="w-full px-2 py-1.5 text-xs rounded border border-gray-200 cursor-pointer"
+            >
+              <option value="">— No dietary classification —</option>
+              <option value="poultry">Poultry</option>
+              <option value="pescatarian">Pescatarian</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="vegan">Vegan</option>
+            </select>
+          </Field>
 
           <Field label="Description (optional)">
             <textarea value={d.description || ''} onChange={(e) => set('description', e.target.value)} rows={2}

@@ -13,7 +13,13 @@ import { supabase } from '../lib/supabase';
  *   remove(id)   — DELETE + refresh
  *   refresh()    — re-fetch
  */
-export function useRecipes({ mealType = 'all', snackTiming = 'all', activeOnly = true, search = '' } = {}) {
+export function useRecipes({
+  mealType    = 'all',
+  snackTiming = 'all',
+  dietType    = 'all',
+  activeOnly  = true,
+  search      = '',
+} = {}) {
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tick,    setTick]    = useState(0);
@@ -45,12 +51,22 @@ export function useRecipes({ mealType = 'all', snackTiming = 'all', activeOnly =
         if (snackTiming && snackTiming !== 'all') {
           rows = rows.filter(r => r.snack_timing === snackTiming);
         }
+        // diet_type filter — vegan implicitly includes vegetarian;
+        // matching is exact otherwise.
+        if (dietType && dietType !== 'all') {
+          rows = rows.filter(r => {
+            if (r.diet_type === dietType) return true;
+            // Vegan is a stricter subset of vegetarian; a vegan-only
+            // filter should NOT include vegetarian recipes.
+            return false;
+          });
+        }
         setRecipes(rows);
       }
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [mealType, snackTiming, activeOnly, search, tick]);
+  }, [mealType, snackTiming, dietType, activeOnly, search, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
@@ -124,5 +140,11 @@ function sanitise(row) {
   if (Array.isArray(row.instructions)) out.instructions = row.instructions.map(s => String(s).trim()).filter(Boolean);
   if (Array.isArray(row.tags))         out.tags         = row.tags.map(s => String(s).trim()).filter(Boolean);
   if (typeof row.is_active === 'boolean') out.is_active = row.is_active;
+  // diet_type — only the four documented values pass through; anything
+  // else (including empty string from a "no diet" select) saves as NULL.
+  if ('diet_type' in row) {
+    const t = String(row.diet_type || '').trim();
+    out.diet_type = (t === 'poultry' || t === 'pescatarian' || t === 'vegetarian' || t === 'vegan') ? t : null;
+  }
   return out;
 }
