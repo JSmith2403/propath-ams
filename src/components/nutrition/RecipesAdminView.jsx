@@ -470,10 +470,16 @@ function PdfImportModal({ onCancel, onImported }) {
     setPhase('extracting');
     try {
       // Extract text client-side with pdfjs (already a dep). Lazy
-      // import keeps the bundle off the critical path.
-      const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      // import keeps the bundle off the critical path; we also point
+      // GlobalWorkerOptions.workerSrc at the bundled worker so PDF.js
+      // doesn't throw "No 'GlobalWorkerOptions.workerSrc' specified".
+      // Matches the pattern already used by ResourcesAdminView.
+      const pdfjs    = await import('pdfjs-dist');
+      const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
       const arrayBuf = await file.arrayBuffer();
-      const doc = await getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
       const pages = [];
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
