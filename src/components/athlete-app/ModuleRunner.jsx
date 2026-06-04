@@ -268,7 +268,9 @@ function InteractionStep({ step, value, onChange }) {
 }
 
 function GapFillStep({ content, value, onChange }) {
-  const correct = value === content.answer;
+  // No correctness reveal during selection — the Next button gates on
+  // the right answer (see isStepComplete). Selected state shows in
+  // gold so the athlete still sees what they've chosen.
   const parts = (content.sentence || '').split('___');
   return (
     <div className="space-y-4">
@@ -277,9 +279,9 @@ function GapFillStep({ content, value, onChange }) {
         <span
           className="inline-flex items-center justify-center min-w-[80px] px-3 py-0.5 rounded-md mx-1 align-middle font-bold"
           style={{
-            backgroundColor: value ? (correct ? 'rgba(22,163,74,0.10)' : 'rgba(165,141,105,0.10)') : 'rgba(165,141,105,0.06)',
-            color:           value ? (correct ? '#15803d' : GOLD) : '#9ca3af',
-            border: `1px dashed ${value ? (correct ? '#15803d' : GOLD) : '#d1d5db'}`,
+            backgroundColor: value ? 'rgba(165,141,105,0.10)' : 'rgba(165,141,105,0.06)',
+            color:           value ? GOLD : '#9ca3af',
+            border: `1px dashed ${value ? GOLD : '#d1d5db'}`,
           }}
         >
           {value || '____'}
@@ -305,35 +307,30 @@ function GapFillStep({ content, value, onChange }) {
           );
         })}
       </div>
-      {value && !correct && (
-        <p className="text-[11px] italic text-ink-500">Try another word from the bank.</p>
-      )}
-      {value && correct && (
-        <p className="text-[11px] italic font-bold" style={{ color: '#15803d' }}>Got it.</p>
-      )}
     </div>
   );
 }
 
 function TapSelectStep({ content, value, onChange }) {
+  // No correctness reveal during selection — selected option shows in
+  // gold regardless of whether it's right. Next button stays disabled
+  // until the right answer is chosen, so the athlete still gets
+  // immediate-but-implicit feedback through the footer.
   const selected = value;
-  const correct = selected === content.answer;
   return (
     <div className="space-y-4">
       <h3 className="text-base font-bold text-ink-900">{content.prompt}</h3>
       <ul className="space-y-2">
         {(content.options || []).map((opt, i) => {
           const isOn = selected === i;
-          const isRight = i === content.answer;
-          const shouldHighlight = selected != null && (isOn || isRight);
           return (
             <li key={i}>
               <button
                 onClick={() => onChange(i)}
                 className="w-full text-left px-4 py-3 rounded-lg border transition-all"
                 style={{
-                  backgroundColor: isOn ? (correct ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.06)') : '#fff',
-                  borderColor:     isOn ? (correct ? '#15803d'             : '#dc2626')             : (shouldHighlight && isRight ? '#15803d' : '#e5e7eb'),
+                  backgroundColor: isOn ? 'rgba(165,141,105,0.10)' : '#fff',
+                  borderColor:     isOn ? GOLD                    : '#e5e7eb',
                   color: '#1C1C1C',
                 }}
               >
@@ -343,9 +340,6 @@ function TapSelectStep({ content, value, onChange }) {
           );
         })}
       </ul>
-      {selected != null && !correct && (
-        <p className="text-[11px] italic text-ink-500">Not quite — try again.</p>
-      )}
     </div>
   );
 }
@@ -361,9 +355,8 @@ function ReorderStep({ content, value, onChange }) {
     [next[i], next[j]] = [next[j], next[i]];
     onChange(next);
   };
-  const expected = content.answer || [];
-  const correct = list.length === expected.length && list.every((v, i) => v === expected[i]);
-
+  // No correctness reveal — Next button enables when the order matches
+  // the expected sequence, which is the implicit "got it" signal.
   return (
     <div className="space-y-4">
       <h3 className="text-base font-bold text-ink-900">{content.prompt}</h3>
@@ -388,9 +381,6 @@ function ReorderStep({ content, value, onChange }) {
           </li>
         ))}
       </ul>
-      {correct && (
-        <p className="text-[11px] italic font-bold" style={{ color: '#15803d' }}>That's it.</p>
-      )}
     </div>
   );
 }
