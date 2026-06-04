@@ -2,9 +2,11 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { Apple, ChefHat, Check, Moon, Plus, Sun } from 'lucide-react';
 import { useNutritionSettings } from '../../hooks/useNutritionSettings';
 import { useMealEntries, nextSnackSlot } from '../../hooks/useMealEntries';
+import { useRecipes } from '../../hooks/useRecipes';
 
 const MealCaptureSheet = lazy(() => import('./MealCaptureSheet'));
 const RecipesBrowser   = lazy(() => import('./RecipesBrowser'));
+const GuidanceSheet    = lazy(() => import('./GuidanceSheet'));
 
 const GOLD = '#A58D69';
 
@@ -30,6 +32,16 @@ export default function AthleteNutritionTab({ athleteId }) {
 
   const [capturing,    setCapturing]    = useState(null); // mealKey or null
   const [recipesOpen,  setRecipesOpen]  = useState(false);
+  const [guidanceOpen, setGuidanceOpen] = useState(false);
+
+  // Pull a couple of recipes with images so the "Needing inspiration?"
+  // card has a real hero photo behind it. Falls back to a clean
+  // gradient when nothing is uploaded yet.
+  const { recipes: imageRecipes } = useRecipes({ mealType: 'all', activeOnly: true });
+  const heroImage = useMemo(() => {
+    const withPhoto = imageRecipes.find(r => r.image_url);
+    return withPhoto?.image_url || null;
+  }, [imageRecipes]);
 
   // Count of submissions per card key so we can show a tick / count.
   const filled = useMemo(() => {
@@ -60,6 +72,7 @@ export default function AthleteNutritionTab({ athleteId }) {
         </p>
         <button
           type="button"
+          onClick={() => setGuidanceOpen(true)}
           className="text-xs font-bold text-white px-4 py-2 rounded-lg"
           style={{ backgroundColor: GOLD }}
         >
@@ -67,24 +80,46 @@ export default function AthleteNutritionTab({ athleteId }) {
         </button>
       </div>
 
-      {/* "Needing inspiration?" — opens the recipe library full-screen. */}
+      {/* "Needing inspiration?" — image-led tile with text overlay.
+          Uses the first recipe image we can find; falls back to a
+          tonal gradient when the library is image-less. */}
       <button
         type="button"
         onClick={() => setRecipesOpen(true)}
-        className="w-full rounded-xl bg-white border border-ink-100 p-4 mb-6 flex items-center gap-3 text-left active:bg-ink-50 transition-colors"
-        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+        className="w-full rounded-xl mb-6 relative overflow-hidden text-left active:scale-[0.99] transition-all"
+        style={{
+          aspectRatio: '16 / 9',
+          backgroundImage: heroImage
+            ? `url("${heroImage}")`
+            : 'linear-gradient(135deg, #A58D69 0%, #6b5b48 100%)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.10)',
+        }}
       >
+        {/* Dark gradient overlay for legible text */}
         <div
-          className="shrink-0 w-11 h-11 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(165,141,105,0.12)', color: GOLD }}
-        >
-          <ChefHat size={20} />
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.30) 100%)' }}
+        />
+
+        {/* Top chip */}
+        <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+             style={{ backgroundColor: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
+          <ChefHat size={11} className="text-white" />
+          <span className="text-[10px] uppercase tracking-widest font-bold text-white">Recipes</span>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-ink-900">Needing inspiration?</p>
-          <p className="text-meta text-ink-500">Check out our recipes — filter by breakfast, lunch, snack or dinner.</p>
+
+        {/* Title block */}
+        <div className="absolute bottom-0 left-0 right-0 p-4">
+          <p className="text-lg font-bold text-white leading-tight drop-shadow">Needing inspiration?</p>
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <p className="text-meta text-white/85">
+              Check out our recipes — breakfast, lunch, snack or dinner.
+            </p>
+            <span className="text-xs font-bold text-white shrink-0">Browse →</span>
+          </div>
         </div>
-        <span className="text-xs font-semibold" style={{ color: GOLD }}>Browse →</span>
       </button>
 
       {/* Meal cards — only when the nutritionist has switched logging on. */}
@@ -139,6 +174,14 @@ export default function AthleteNutritionTab({ athleteId }) {
       {recipesOpen && (
         <Suspense fallback={null}>
           <RecipesBrowser onClose={() => setRecipesOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* Guidance sheet — recommended-plate content written by the
+          nutritionist in the Meal Structure & Guidance sub-tab. */}
+      {guidanceOpen && (
+        <Suspense fallback={null}>
+          <GuidanceSheet athleteId={athleteId} onClose={() => setGuidanceOpen(false)} />
         </Suspense>
       )}
 

@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   Plus, Search, X, FileUp, Pencil, Trash2,
-  Sparkles, Loader2, ChevronRight, Check,
+  Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon,
 } from 'lucide-react';
 import { useRecipes } from '../../hooks/useRecipes';
+import { supabase } from '../../lib/supabase';
+import { compressImage } from '../../utils/imageCompress';
 
 const GOLD = '#A58D69';
 
@@ -181,6 +183,11 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
       className="rounded-xl bg-white border border-gray-100 overflow-hidden flex flex-col"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)', opacity: recipe.is_active ? 1 : 0.55 }}
     >
+      {recipe.image_url && (
+        <div className="aspect-[16/9] bg-gray-50 overflow-hidden">
+          <img src={recipe.image_url} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-900 truncate">{recipe.title}</p>
@@ -230,6 +237,35 @@ function RecipeEditor({ mode, initial, onCancel, onSave }) {
   const [d, setD] = useState(initial);
   const set = (k, v) => setD(prev => ({ ...prev, [k]: v }));
 
+  // Image upload — compress client-side, push to the public recipe-images
+  // bucket, store the public URL in image_url. Coaches can swap photos
+  // without leaving the editor.
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const onPickImage = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const blob = await compressImage(file, { maxEdge: 1400, quality: 0.82 });
+      const ext  = 'jpg';
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('recipe-images')
+        .upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false });
+      if (upErr) {
+        console.error('[RecipeEditor] upload failed', upErr);
+        setUploading(false);
+        return;
+      }
+      const { data } = supabase.storage.from('recipe-images').getPublicUrl(path);
+      set('image_url', data.publicUrl);
+    } catch (e) {
+      console.error('[RecipeEditor] compress/upload threw', e);
+    }
+    setUploading(false);
+  };
+
   const setLine = (key, idx, val) =>
     setD(prev => ({ ...prev, [key]: prev[key].map((s, i) => i === idx ? val : s) }));
   const addLine = (key) =>
@@ -252,6 +288,49 @@ function RecipeEditor({ mode, initial, onCancel, onSave }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Hero image — drives the athlete card thumbnail. */}
+          <div>
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-gray-500 block mb-1.5">
+              Photo
+            </span>
+            <div
+              className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 cursor-pointer"
+              style={{ aspectRatio: '16 / 9' }}
+              onClick={() => !uploading && fileRef.current?.click()}
+            >
+              {d.image_url ? (
+                <img src={d.image_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                  <ImageIcon size={28} />
+                  <span className="text-[11px] mt-1.5">Click to upload a photo</span>
+                </div>
+              )}
+              {uploading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/70">
+                  <Loader2 size={20} className="animate-spin" style={{ color: GOLD }} />
+                </div>
+              )}
+              {d.image_url && !uploading && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); set('image_url', ''); }}
+                  className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white"
+                  title="Remove image"
+                >
+                  <X size={11} />
+                </button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onPickImage(e.target.files?.[0])}
+              />
+            </div>
+          </div>
+
           <Field label="Title">
             <input value={d.title} onChange={(e) => set('title', e.target.value)}
               className="w-full px-3 py-1.5 text-sm rounded border border-gray-200 focus:outline-none focus:border-gold-400" />

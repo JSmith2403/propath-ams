@@ -1,13 +1,13 @@
 import { lazy, Suspense, useState } from 'react';
 import { TabBar } from '../ui';
-import { useNutritionSettings } from '../../hooks/useNutritionSettings';
-import { Camera, Image, Loader2 } from 'lucide-react';
+// No icon imports needed — sub-component children own their visuals.
 
 // Lazy-load heavy children to keep the tab swap snappy.
 const PillarTab     = lazy(() => import('./PillarTab'));
 const NutritionTab  = lazy(() => import('./NutritionTab'));
 const FoodDiaryView     = lazy(() => import('../nutrition/FoodDiaryView'));
 const RecipesAdminView  = lazy(() => import('../nutrition/RecipesAdminView'));
+const GuidanceEditor    = lazy(() => import('../nutrition/GuidanceEditor'));
 
 const SUBTABS = [
   { id: 'overview',    label: 'Overview'                  },
@@ -103,7 +103,7 @@ export default function NutritionDomainTab({
         )}
 
         {active === 'guidance' && (
-          <GuidancePlaceholder />
+          <GuidanceEditor athleteId={athleteId} athleteName={athleteName} />
         )}
 
         {active === 'recipes' && (
@@ -114,21 +114,4 @@ export default function NutritionDomainTab({
   );
 }
 
-function GuidancePlaceholder() {
-  return (
-    <div className="rounded-xl bg-white border border-gray-100 p-8 text-center"
-         style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-      <div
-        className="mx-auto w-12 h-12 rounded-xl flex items-center justify-center mb-3"
-        style={{ backgroundColor: 'rgba(165,141,105,0.10)', color: GOLD }}
-      >
-        <Image size={22} />
-      </div>
-      <p className="text-sm font-bold text-gray-900 mb-1">Meal Structure &amp; Guidance</p>
-      <p className="text-xs text-gray-500 max-w-md mx-auto">
-        This is where the recommended-plate guidance and athlete-facing meal structure
-        cards will live. Coming in the next phase.
-      </p>
-    </div>
-  );
-}
+// GuidancePlaceholder removed — GuidanceEditor now mounts here.
