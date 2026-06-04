@@ -3,42 +3,47 @@
 // client-side with pdfjs (already a dep) and POSTs it here.
 //
 //   POST /api/recipes/extract
-//   body: { text: '...full pdf text...', max_recipes?: 40 }
+//   body: { text: '...full pdf text...', max_recipes?: 60 }
 //
-//   success: { ok: true, recipes: [{ title, meal_type, description,
-//                                     ingredients[], instructions[],
-//                                     prep_time_min, cook_time_min,
-//                                     servings, tags[] }, ...] }
+//   success: { ok: true, recipes: [...], chunks: number }
 //   failure: { ok: false, error: 'human message' }
 //
 // Reliability strategy
-//   The first version of this route asked the model to "please return
-//   strict JSON" and parsed the text response. It intermittently failed
-//   because the model sometimes wrapped JSON in prose, added trailing
-//   commentary, or got truncated mid-array — producing the
-//   "AI returned unparseable output" toast.
+//   v1 prompted for JSON in prose → frequently wrapped output in
+//   commentary → "AI returned unparseable output".
 //
-//   This version uses Anthropic tool_use with a strict JSON schema:
+//   v2 switched to Anthropic tool_use with a strict JSON schema and
+//   forced tool_choice so the model couldn't answer in plain text.
+//   Reliable on small PDFs, but recipe-heavy documents (20+ recipes
+//   with detailed instructions) blew through the 8K output-token
+//   budget mid-array → "stop_reason: max_tokens".
 //
-//     - tool_choice forces the model to call our extract_recipes tool,
-//       so it cannot answer with plain text at all.
-//     - The schema enforces the shape — every recipe is guaranteed to
-//       carry title + meal_type + ingredients + instructions before
-//       the handler ever sees it.
-//     - max_tokens is generous (8192) so long cookbook PDFs don't get
-//       truncated mid-array.
-//     - When something does fail, the upstream Anthropic error message
-//       is bubbled into the response so the UI surfaces something
-//       actionable, not just "(500)".
+//   v3 (this version) layers in two more fixes:
+//     - Raise the per-call output budget to 16K tokens (Sonnet 4.5
+//       supports plenty more, but 16K keeps latency reasonable).
+//     - Auto-chunk large inputs: if the extracted PDF text is bigger
+//       than CHUNK_THRESHOLD we split at paragraph boundaries, call
+//       the model on each chunk sequentially, and merge the results.
+//       That means a 90-recipe cookbook now fans out across 3 calls
+//       instead of cramming into one and getting truncated.
 //
 // Setup: add ANTHROPIC_API_KEY to Vercel project env vars. Without it
 // the route returns a clear 503 with guidance.
 
+// Tell Vercel this route may run longer than the default 10s — chunked
+// extractions take ~12-15s per chunk, so 8 chunks worst case = ~2 min.
+// Vercel Pro plan supports up to 300s; on free/hobby this caps at 60.
+export const config = { maxDuration: 300 };
+
 const ANTHROPIC_API_URL  = 'https://api.anthropic.com/v1/messages';
 // Current Sonnet model — override per-deploy via ANTHROPIC_RECIPE_MODEL.
 const ANTHROPIC_MODEL    = process.env.ANTHROPIC_RECIPE_MODEL || 'claude-sonnet-4-5';
-const MAX_INPUT_CHARS    = 150_000;   // budget; truncate larger PDFs
-const MAX_OUTPUT_TOKENS  = 8192;      // enough for ~30-40 typical recipes
+
+const MAX_INPUT_CHARS    = 300_000;   // total budget; truncate past this
+const CHUNK_THRESHOLD    = 35_000;    // chunk inputs larger than this
+const CHUNK_SIZE         = 30_000;    // target chunk size (chars)
+const MAX_OUTPUT_TOKENS  = 16_384;    // per-call output budget
+const MAX_CHUNKS         = 8;         // safety cap on serial AI calls
 
 const SYSTEM_PROMPT = `You read pages of recipe content (cookbook scans,
 handouts, sports nutrition PDFs) and call the extract_recipes tool with
@@ -113,93 +118,165 @@ export default async function handler(req, res) {
   }
   if (text.length > MAX_INPUT_CHARS) text = text.slice(0, MAX_INPUT_CHARS);
 
-  const maxRecipes = Math.max(1, Math.min(60, Number(body?.max_recipes) || 40));
+  const maxRecipes = Math.max(1, Math.min(80, Number(body?.max_recipes) || 60));
+
+  // Decide whether to chunk. Small inputs go straight through.
+  const chunks = text.length > CHUNK_THRESHOLD
+    ? splitIntoChunks(text, CHUNK_SIZE).slice(0, MAX_CHUNKS)
+    : [text];
+
+  // Spread the recipe budget across chunks so the model doesn't
+  // over-emit on the first one and starve the rest.
+  const perChunkMax = Math.max(8, Math.ceil(maxRecipes / chunks.length));
 
   try {
-    const ai = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key':         process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json',
-      },
-      body: JSON.stringify({
-        model:       ANTHROPIC_MODEL,
-        max_tokens:  MAX_OUTPUT_TOKENS,
-        system:      SYSTEM_PROMPT,
-        tools:       [RECIPE_TOOL],
-        // Force the model to call our extractor — it cannot answer
-        // with plain text. This is the single biggest reliability
-        // upgrade vs the earlier prose-prompt-for-JSON approach.
-        tool_choice: { type: 'tool', name: 'extract_recipes' },
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Extract up to ${maxRecipes} recipes from this PDF text and call the extract_recipes tool.\n\nPDF TEXT:\n${text}`,
-              },
-            ],
-          },
-        ],
-      }),
-    });
+    const allRecipes = [];
+    const errors = [];
 
-    if (!ai.ok) {
-      const detail = await ai.text();
-      console.error('[recipes/extract] Anthropic call failed', ai.status, detail);
-      let upstream = detail;
-      try {
-        const j = JSON.parse(detail);
-        if (j?.error?.message) upstream = j.error.message;
-      } catch (_) { /* leave as raw */ }
-      res.status(502).json({
-        ok: false,
-        error: `AI call failed (${ai.status}): ${String(upstream).slice(0, 240)}`,
-      });
-      return;
+    // Serial calls — keeps us inside Anthropic's per-key concurrency
+    // limit and makes failures easy to diagnose. With Sonnet 4.5 each
+    // chunk completes in ~10-15s, so 8 chunks max ≈ 2 minutes worst
+    // case (still inside Vercel's 5-minute function timeout).
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkResult = await extractFromChunk(chunks[i], perChunkMax, i + 1, chunks.length);
+      if (chunkResult.error) {
+        errors.push(chunkResult.error);
+        continue;
+      }
+      allRecipes.push(...chunkResult.recipes);
     }
 
-    const json = await ai.json();
-
-    // With forced tool_choice the response is guaranteed to be a
-    // tool_use block. We still defend against the rare edge case
-    // where the model halts before calling the tool (e.g. content
-    // moderation refusal) and surface a clear message.
-    const toolUse = json?.content?.find(c => c.type === 'tool_use' && c.name === 'extract_recipes');
-    const recipes = toolUse?.input?.recipes;
-
-    if (!Array.isArray(recipes)) {
-      const stopReason   = json?.stop_reason || 'unknown';
-      const fallbackText = json?.content?.find(c => c.type === 'text')?.text || '';
-      console.error('[recipes/extract] No tool_use in response', { stopReason, fallbackText });
-      res.status(502).json({
-        ok: false,
-        error: `AI did not call the extractor (stop_reason: ${stopReason}). ${
-          fallbackText ? 'Message: ' + fallbackText.slice(0, 200) : 'Try a different PDF.'
-        }`,
-      });
-      return;
-    }
-
-    const cleaned = recipes
+    const cleaned = allRecipes
       .map(normaliseRecipe)
       .filter(r => r.title && Array.isArray(r.ingredients) && r.ingredients.length);
 
-    if (!cleaned.length) {
+    // De-duplicate by normalised title — the chunk boundary can land
+    // mid-recipe and produce two near-identical entries.
+    const deduped = dedupeByTitle(cleaned);
+
+    if (!deduped.length) {
       res.status(200).json({
         ok: false,
-        error: 'The AI processed the PDF but did not find any complete recipes (title + ingredients + steps).',
+        error: errors[0]
+          || 'The AI processed the PDF but did not find any complete recipes (title + ingredients + steps).',
       });
       return;
     }
 
-    res.status(200).json({ ok: true, recipes: cleaned });
+    res.status(200).json({
+      ok: true,
+      recipes: deduped,
+      chunks: chunks.length,
+      ...(errors.length ? { warning: `${errors.length} chunk${errors.length === 1 ? '' : 's'} partially failed; partial results returned.` } : {}),
+    });
   } catch (e) {
     console.error('[recipes/extract] handler crash', e);
     res.status(500).json({ ok: false, error: e?.message || 'Unknown error' });
   }
+}
+
+// ─── One AI call for one chunk of text ────────────────────────────────
+async function extractFromChunk(chunkText, maxRecipes, chunkNum, totalChunks) {
+  const ai = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: {
+      'x-api-key':         process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type':      'application/json',
+    },
+    body: JSON.stringify({
+      model:       ANTHROPIC_MODEL,
+      max_tokens:  MAX_OUTPUT_TOKENS,
+      system:      SYSTEM_PROMPT,
+      tools:       [RECIPE_TOOL],
+      tool_choice: { type: 'tool', name: 'extract_recipes' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: totalChunks > 1
+                ? `This is chunk ${chunkNum} of ${totalChunks} from a larger document. Extract up to ${maxRecipes} complete recipes you find in this chunk and call the extract_recipes tool. Skip anything that's only a fragment.\n\nPDF TEXT:\n${chunkText}`
+                : `Extract up to ${maxRecipes} recipes from this PDF text and call the extract_recipes tool.\n\nPDF TEXT:\n${chunkText}`,
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!ai.ok) {
+    const detail = await ai.text();
+    console.error('[recipes/extract] Anthropic call failed', ai.status, detail);
+    let upstream = detail;
+    try {
+      const j = JSON.parse(detail);
+      if (j?.error?.message) upstream = j.error.message;
+    } catch (_) { /* leave as raw */ }
+    return { error: `AI call failed (${ai.status}): ${String(upstream).slice(0, 240)}` };
+  }
+
+  const json = await ai.json();
+  const toolUse = json?.content?.find(c => c.type === 'tool_use' && c.name === 'extract_recipes');
+  const recipes = toolUse?.input?.recipes;
+
+  if (!Array.isArray(recipes)) {
+    const stopReason   = json?.stop_reason || 'unknown';
+    const fallbackText = json?.content?.find(c => c.type === 'text')?.text || '';
+    console.error('[recipes/extract] No tool_use in chunk', { chunkNum, stopReason, fallbackText });
+
+    if (stopReason === 'max_tokens') {
+      return {
+        error: totalChunks > 1
+          ? `Chunk ${chunkNum} produced too many recipes for one response. Some may be missing.`
+          : 'This PDF has too many or too detailed recipes for a single AI pass. Try uploading fewer pages at a time.',
+      };
+    }
+    return {
+      error: `AI did not call the extractor (stop_reason: ${stopReason}).${
+        fallbackText ? ' Message: ' + fallbackText.slice(0, 160) : ''
+      }`,
+    };
+  }
+
+  return { recipes };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────
+
+// Split text into chunks of roughly `targetSize` characters, preferring
+// to break at paragraph boundaries so we don't slice a recipe in half.
+function splitIntoChunks(text, targetSize) {
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + targetSize, text.length);
+    if (end < text.length) {
+      // Walk back to the nearest paragraph break within ~2K chars.
+      const window = text.slice(i + Math.max(0, targetSize - 2000), end);
+      const lastBreak = window.lastIndexOf('\n\n');
+      if (lastBreak > 0) {
+        end = i + Math.max(0, targetSize - 2000) + lastBreak + 2;
+      }
+    }
+    const piece = text.slice(i, end).trim();
+    if (piece) out.push(piece);
+    i = end;
+  }
+  return out;
+}
+
+function dedupeByTitle(recipes) {
+  const seen = new Set();
+  const out = [];
+  for (const r of recipes) {
+    const key = String(r.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
 }
 
 function normaliseRecipe(r) {
