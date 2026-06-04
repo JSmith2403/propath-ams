@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Clock, Users, X } from 'lucide-react';
 import { useRecipes } from '../../hooks/useRecipes';
 
@@ -12,6 +12,22 @@ const FILTERS = [
   { id: 'dinner',    label: 'Dinner'    },
 ];
 
+// Sub-filter for snacks — appears only when the primary filter is
+// 'snack' or 'all' so the row doesn't take vertical space when it
+// would do nothing.
+const SNACK_TIMINGS = [
+  { id: 'all',           label: 'Any time'     },
+  { id: 'pre_training',  label: 'Pre-Training'  },
+  { id: 'post_training', label: 'Post-Training' },
+  { id: 'anytime',       label: 'Anytime'       },
+];
+
+const SNACK_TIMING_LABEL = {
+  pre_training:  'Pre-Training',
+  post_training: 'Post-Training',
+  anytime:       'Anytime',
+};
+
 /**
  * RecipesBrowser — full-screen athlete-facing recipe list. Filter
  * pills along the top, grid of cards, click a card to open the
@@ -19,9 +35,20 @@ const FILTERS = [
  * useRecipes hook the coach admin uses, activeOnly=true.
  */
 export default function RecipesBrowser({ onClose }) {
-  const [filter, setFilter] = useState('all');
-  const { recipes, loading } = useRecipes({ mealType: filter, activeOnly: true });
+  const [filter,      setFilter]      = useState('all');
+  const [snackTiming, setSnackTiming] = useState('all');
+  const { recipes, loading } = useRecipes({
+    mealType: filter, snackTiming, activeOnly: true,
+  });
   const [open, setOpen] = useState(null); // open recipe
+
+  // Snack-timing pills only show when "Snack" or "All" is selected.
+  // When the athlete switches to a non-snack meal type, reset so the
+  // filter doesn't keep an irrelevant constraint on the next view.
+  const showSnackTiming = filter === 'snack' || filter === 'all';
+  useEffect(() => {
+    if (!showSnackTiming) setSnackTiming('all');
+  }, [showSnackTiming]);
 
   const grouped = useMemo(() => recipes, [recipes]);
 
@@ -56,6 +83,30 @@ export default function RecipesBrowser({ onClose }) {
           })}
         </div>
 
+        {/* Snack-timing sub-pills — narrower visual weight to make
+            their secondary role obvious. */}
+        {showSnackTiming && (
+          <div className="px-4 pt-2 flex items-center gap-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            {SNACK_TIMINGS.map(t => {
+              const on = snackTiming === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSnackTiming(t.id)}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap transition-colors"
+                  style={{
+                    color:           on ? GOLD : '#9ca3af',
+                    backgroundColor: on ? 'rgba(165,141,105,0.10)' : '#fff',
+                    borderColor:     on ? GOLD : '#e5e7eb',
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Grid */}
         <div className="px-4 py-4 grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
           {loading ? (
@@ -78,6 +129,12 @@ export default function RecipesBrowser({ onClose }) {
               </div>
               <div className="p-3">
                 <p className="text-xs font-bold text-ink-900 line-clamp-2 leading-snug">{r.title}</p>
+                {r.meal_type === 'snack' && r.snack_timing && (
+                  <span className="inline-block mt-1 text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                        style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.12)' }}>
+                    {SNACK_TIMING_LABEL[r.snack_timing]}
+                  </span>
+                )}
                 <div className="flex items-center gap-2 mt-1.5 text-[10px] text-ink-500">
                   {r.prep_time_min != null && <span className="inline-flex items-center gap-0.5"><Clock size={9} /> {r.prep_time_min + (r.cook_time_min || 0)}m</span>}
                   {r.servings != null && <span className="inline-flex items-center gap-0.5"><Users size={9} /> {r.servings}</span>}
@@ -118,6 +175,12 @@ function RecipeSheet({ recipe, onClose }) {
                   style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.10)' }}>
               {recipe.meal_type}
             </span>
+            {recipe.meal_type === 'snack' && recipe.snack_timing && (
+              <span className="text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full"
+                    style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.18)' }}>
+                {SNACK_TIMING_LABEL[recipe.snack_timing]}
+              </span>
+            )}
             {recipe.prep_time_min != null && (
               <span className="inline-flex items-center gap-1 text-[11px] text-ink-500">
                 <Clock size={10} /> {recipe.prep_time_min}m prep

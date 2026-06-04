@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Search, X, FileUp, Pencil, Trash2,
   Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon,
@@ -17,11 +17,28 @@ const MEAL_TYPES = [
   { id: 'snack',     label: 'Snack'      },
 ];
 
+// Snack-only timing sub-filter. Only relevant when the meal-type
+// filter is 'snack' or 'all' — the pill row hides otherwise.
+const SNACK_TIMINGS = [
+  { id: 'all',           label: 'Any timing'  },
+  { id: 'pre_training',  label: 'Pre-Training'  },
+  { id: 'post_training', label: 'Post-Training' },
+  { id: 'anytime',       label: 'Anytime'       },
+];
+
+// Lookup so cards / dropdowns render the human label.
+export const SNACK_TIMING_LABEL = {
+  pre_training:  'Pre-Training',
+  post_training: 'Post-Training',
+  anytime:       'Anytime',
+};
+
 const empty = {
   title: '', meal_type: 'snack', description: '',
   ingredients: [], instructions: [],
   prep_time_min: '', cook_time_min: '', servings: '',
   tags: [], image_url: '', is_active: true, source: 'manual',
+  snack_timing: null,
 };
 
 /**
@@ -32,11 +49,21 @@ const empty = {
  */
 export default function RecipesAdminView() {
   const [mealType, setMealType] = useState('all');
+  const [snackTiming, setSnackTiming] = useState('all');
   const [search,   setSearch]   = useState('');
   const [showInactive, setShowInactive] = useState(false);
 
   const { recipes, loading, create, update, remove, bulkInsert } =
-    useRecipes({ mealType, activeOnly: !showInactive, search });
+    useRecipes({ mealType, snackTiming, activeOnly: !showInactive, search });
+
+  // Snack timing sub-pills only show when the primary filter is 'snack'
+  // (focused) or 'all' (browsing everything). Reset to 'all' when the
+  // user switches to a non-snack meal type so the filter doesn't carry
+  // an irrelevant constraint into the next view.
+  const showSnackTiming = mealType === 'snack' || mealType === 'all';
+  useEffect(() => {
+    if (!showSnackTiming) setSnackTiming('all');
+  }, [showSnackTiming]);
 
   const [editor, setEditor] = useState(null); // null | { mode, row }
   const [importOpen, setImportOpen] = useState(false);
@@ -134,6 +161,31 @@ export default function RecipesAdminView() {
         </button>
       </div>
 
+      {/* Snack-timing sub-filter — appears only when meal_type = 'snack'
+          or 'all' so the row doesn't take space when it would do nothing. */}
+      {showSnackTiming && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] uppercase tracking-widest font-semibold text-gray-400">
+            Snack timing
+          </span>
+          <div className="inline-flex items-center rounded border border-gray-200 overflow-hidden">
+            {SNACK_TIMINGS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSnackTiming(t.id)}
+                className="text-xs font-semibold px-2.5 py-1.5 transition-colors"
+                style={{
+                  color:           snackTiming === t.id ? '#fff' : '#6b7280',
+                  backgroundColor: snackTiming === t.id ? GOLD : 'transparent',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Grid of cards */}
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
         {loading ? (
@@ -191,9 +243,17 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-900 truncate">{recipe.title}</p>
-          <p className="text-[10px] uppercase tracking-widest font-bold mt-0.5" style={{ color: GOLD }}>
-            {recipe.meal_type}
-          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: GOLD }}>
+              {recipe.meal_type}
+            </p>
+            {recipe.meal_type === 'snack' && recipe.snack_timing && (
+              <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                    style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.12)' }}>
+                {SNACK_TIMING_LABEL[recipe.snack_timing]}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => onEdit(recipe)}
@@ -356,6 +416,24 @@ function RecipeEditor({ mode, initial, onCancel, onSave }) {
                 className="w-full px-2 py-1.5 text-xs rounded border border-gray-200" />
             </Field>
           </div>
+
+          {/* Snack timing — only relevant when meal_type is 'snack'.
+              For other meal types the field is hidden AND cleared on
+              save (sanitise() ignores it when not applicable). */}
+          {d.meal_type === 'snack' && (
+            <Field label="Snack timing">
+              <select
+                value={d.snack_timing || ''}
+                onChange={(e) => set('snack_timing', e.target.value || null)}
+                className="w-full px-2 py-1.5 text-xs rounded border border-gray-200 cursor-pointer"
+              >
+                <option value="">— No timing set —</option>
+                <option value="pre_training">Pre-Training</option>
+                <option value="post_training">Post-Training</option>
+                <option value="anytime">Anytime</option>
+              </select>
+            </Field>
+          )}
 
           <Field label="Description (optional)">
             <textarea value={d.description || ''} onChange={(e) => set('description', e.target.value)} rows={2}

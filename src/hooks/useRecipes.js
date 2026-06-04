@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabase';
  *   remove(id)   — DELETE + refresh
  *   refresh()    — re-fetch
  */
-export function useRecipes({ mealType = 'all', activeOnly = true, search = '' } = {}) {
+export function useRecipes({ mealType = 'all', snackTiming = 'all', activeOnly = true, search = '' } = {}) {
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tick,    setTick]    = useState(0);
@@ -39,12 +39,18 @@ export function useRecipes({ mealType = 'all', activeOnly = true, search = '' } 
           const s = search.trim().toLowerCase();
           rows = rows.filter(r => (r.title || '').toLowerCase().includes(s));
         }
+        // snack_timing filter — only meaningful when the meal-type
+        // filter is 'snack' or 'all'. Applied client-side so the
+        // primary indexed meal_type filter stays simple.
+        if (snackTiming && snackTiming !== 'all') {
+          rows = rows.filter(r => r.snack_timing === snackTiming);
+        }
         setRecipes(rows);
       }
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [mealType, activeOnly, search, tick]);
+  }, [mealType, snackTiming, activeOnly, search, tick]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
@@ -98,6 +104,18 @@ function sanitise(row) {
   const out = {};
   for (const k of ['title','meal_type','description','image_url','source']) {
     if (row[k] != null) out[k] = String(row[k]).trim() || null;
+  }
+  // snack_timing — only kept when the recipe is actually a snack;
+  // clears to NULL otherwise so a meal-type swap leaves no stale
+  // value behind.
+  if ('snack_timing' in row || 'meal_type' in row) {
+    const isSnack = (out.meal_type ?? row.meal_type) === 'snack';
+    if (!isSnack) {
+      out.snack_timing = null;
+    } else {
+      const t = String(row.snack_timing || '').trim();
+      out.snack_timing = (t === 'pre_training' || t === 'post_training' || t === 'anytime') ? t : null;
+    }
   }
   for (const k of ['prep_time_min','cook_time_min','servings']) {
     if (row[k] != null && row[k] !== '') out[k] = Number(row[k]);
