@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Search, X, FileUp, Pencil, Trash2,
-  Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon,
+  Sparkles, Loader2, ChevronRight, Check, Image as ImageIcon, SlidersHorizontal,
 } from 'lucide-react';
 import { useRecipes } from '../../hooks/useRecipes';
 import { supabase } from '../../lib/supabase';
@@ -17,11 +17,45 @@ const MEAL_TYPES = [
   { id: 'snack',     label: 'Snack'      },
 ];
 
+// Snack-only timing sub-filter. Only relevant when the meal-type
+// filter is 'snack' or 'all' — the pill row hides otherwise.
+const SNACK_TIMINGS = [
+  { id: 'all',           label: 'Any timing'  },
+  { id: 'pre_training',  label: 'Pre-Training'  },
+  { id: 'post_training', label: 'Post-Training' },
+  { id: 'anytime',       label: 'Anytime'       },
+];
+
+// Lookup so cards / dropdowns render the human label.
+export const SNACK_TIMING_LABEL = {
+  pre_training:  'Pre-Training',
+  post_training: 'Post-Training',
+  anytime:       'Anytime',
+};
+
+// Dietary classifications (mutually exclusive). Vegan is the strictest;
+// vegetarian / pescatarian / poultry expand outward from there.
+const DIET_TYPES = [
+  { id: 'all',         label: 'Any diet'    },
+  { id: 'poultry',     label: 'Poultry'     },
+  { id: 'pescatarian', label: 'Pescatarian' },
+  { id: 'vegetarian',  label: 'Vegetarian'  },
+  { id: 'vegan',       label: 'Vegan'       },
+];
+
+export const DIET_TYPE_LABEL = {
+  poultry:     'Poultry',
+  pescatarian: 'Pescatarian',
+  vegetarian:  'Vegetarian',
+  vegan:       'Vegan',
+};
+
 const empty = {
   title: '', meal_type: 'snack', description: '',
   ingredients: [], instructions: [],
   prep_time_min: '', cook_time_min: '', servings: '',
   tags: [], image_url: '', is_active: true, source: 'manual',
+  snack_timing: null, diet_type: null,
 };
 
 /**
@@ -31,12 +65,47 @@ const empty = {
  * that lets the coach tick which extracted recipes to keep.
  */
 export default function RecipesAdminView() {
-  const [mealType, setMealType] = useState('all');
-  const [search,   setSearch]   = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [mealType,    setMealType]    = useState('all');
+  const [snackTiming, setSnackTiming] = useState('all');
+  const [dietType,    setDietType]    = useState('all');
+  const [search,      setSearch]      = useState('');
+  const [showInactive,setShowInactive]= useState(false);
 
   const { recipes, loading, create, update, remove, bulkInsert } =
-    useRecipes({ mealType, activeOnly: !showInactive, search });
+    useRecipes({ mealType, snackTiming, dietType, activeOnly: !showInactive, search });
+
+  // Reset snack-timing when the meal-type leaves 'snack' / 'all' so the
+  // filter doesn't carry an irrelevant constraint into the next view.
+  const showSnackTiming = mealType === 'snack' || mealType === 'all';
+  useEffect(() => {
+    if (!showSnackTiming) setSnackTiming('all');
+  }, [showSnackTiming]);
+
+  // Count of active (non-default) filters — shown as a badge on the
+  // Filter button so the coach knows when they have an open filter set.
+  const activeFilterCount =
+    (mealType    !== 'all' ? 1 : 0) +
+    (snackTiming !== 'all' && showSnackTiming ? 1 : 0) +
+    (dietType    !== 'all' ? 1 : 0) +
+    (showInactive ? 1 : 0);
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef(null);
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDown = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [filterOpen]);
+
+  const resetFilters = () => {
+    setMealType('all');
+    setSnackTiming('all');
+    setDietType('all');
+    setShowInactive(false);
+  };
 
   const [editor, setEditor] = useState(null); // null | { mode, row }
   const [importOpen, setImportOpen] = useState(false);
@@ -81,7 +150,10 @@ export default function RecipesAdminView() {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* Toolbar — search + single Filter button + actions.
+          All filters (meal type, snack timing, dietary, active/inactive)
+          consolidate into the Filter popover; the toolbar only carries
+          the persistent search box and the primary actions. */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -93,29 +165,36 @@ export default function RecipesAdminView() {
           />
         </div>
 
-        <div className="inline-flex items-center rounded border border-gray-200 overflow-hidden">
-          {MEAL_TYPES.map(m => (
-            <button
-              key={m.id}
-              onClick={() => setMealType(m.id)}
-              className="text-xs font-semibold px-2.5 py-1.5 transition-colors"
-              style={{
-                color:           mealType === m.id ? '#fff' : '#6b7280',
-                backgroundColor: mealType === m.id ? GOLD : 'transparent',
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+        <div ref={filterRef} className="relative">
+          <button
+            onClick={() => setFilterOpen(o => !o)}
+            className="text-xs font-semibold px-3 py-1.5 rounded border border-gray-200 hover:bg-gray-50 inline-flex items-center gap-1.5"
+            style={{ color: activeFilterCount > 0 ? GOLD : '#6b7280' }}
+          >
+            <SlidersHorizontal size={12} />
+            Filter
+            {activeFilterCount > 0 && (
+              <span
+                className="inline-flex items-center justify-center text-[10px] font-bold text-white rounded-full"
+                style={{ backgroundColor: GOLD, width: 16, height: 16 }}
+              >
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
 
-        <button
-          onClick={() => setShowInactive(s => !s)}
-          className="text-xs font-semibold px-2 py-1.5 rounded border border-gray-200"
-          style={{ color: showInactive ? GOLD : '#6b7280' }}
-        >
-          {showInactive ? 'Inactive shown' : 'Active only'}
-        </button>
+          {filterOpen && (
+            <FilterPanel
+              mealType={mealType}        setMealType={setMealType}
+              snackTiming={snackTiming}  setSnackTiming={setSnackTiming}
+              dietType={dietType}        setDietType={setDietType}
+              showInactive={showInactive} setShowInactive={setShowInactive}
+              showSnackTiming={showSnackTiming}
+              onReset={resetFilters}
+              onDone={() => setFilterOpen(false)}
+            />
+          )}
+        </div>
 
         <button
           onClick={() => setImportOpen(true)}
@@ -176,6 +255,100 @@ export default function RecipesAdminView() {
   );
 }
 
+// ─── Filter popover ──────────────────────────────────────────────────
+// Single dropdown surface for every non-search filter. Sits in a small
+// shadowed card anchored under the Filter button.
+function FilterPanel({
+  mealType, setMealType, snackTiming, setSnackTiming,
+  dietType, setDietType, showInactive, setShowInactive,
+  showSnackTiming, onReset, onDone,
+}) {
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg z-30 w-[300px] max-w-[92vw]"
+      style={{ border: '1px solid #e5e7eb' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-xs font-bold text-gray-900">Filters</p>
+        <button onClick={onReset}
+                className="text-[11px] font-semibold text-gray-500 hover:text-gray-700">
+          Reset
+        </button>
+      </div>
+
+      <div className="px-4 py-3 space-y-3">
+        <FilterGroup label="Meal type">
+          <Segments options={MEAL_TYPES} value={mealType} onChange={setMealType} />
+        </FilterGroup>
+
+        {showSnackTiming && (
+          <FilterGroup label="Snack timing">
+            <Segments options={SNACK_TIMINGS} value={snackTiming} onChange={setSnackTiming} />
+          </FilterGroup>
+        )}
+
+        <FilterGroup label="Dietary">
+          <Segments options={DIET_TYPES} value={dietType} onChange={setDietType} />
+        </FilterGroup>
+
+        <label className="flex items-center gap-2 text-xs font-medium pt-1 border-t border-gray-100 mt-2"
+               style={{ color: '#1C1C1C' }}>
+          <input type="checkbox" checked={showInactive}
+                 onChange={(e) => setShowInactive(e.target.checked)} />
+          Show inactive recipes
+        </label>
+      </div>
+
+      <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
+        <button onClick={onDone}
+                className="text-[11px] font-bold uppercase tracking-widest px-3 py-1.5 rounded text-white"
+                style={{ backgroundColor: GOLD }}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterGroup({ label, children }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// Compact wrap-friendly chip set for option groups — uses pill buttons
+// instead of a segmented control so longer label sets wrap cleanly.
+function Segments({ options, value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map(o => {
+        const on = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className="text-[11px] font-semibold px-2 py-1 rounded-full border transition-colors"
+            style={{
+              color:           on ? '#fff' : '#6b7280',
+              backgroundColor: on ? GOLD : '#fff',
+              borderColor:     on ? GOLD : '#e5e7eb',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Recipe card ─────────────────────────────────────────────────────
 function RecipeCard({ recipe, onEdit, onDelete }) {
   return (
@@ -191,9 +364,23 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-gray-900 truncate">{recipe.title}</p>
-          <p className="text-[10px] uppercase tracking-widest font-bold mt-0.5" style={{ color: GOLD }}>
-            {recipe.meal_type}
-          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: GOLD }}>
+              {recipe.meal_type}
+            </p>
+            {recipe.meal_type === 'snack' && recipe.snack_timing && (
+              <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                    style={{ color: GOLD, backgroundColor: 'rgba(165,141,105,0.12)' }}>
+                {SNACK_TIMING_LABEL[recipe.snack_timing]}
+              </span>
+            )}
+            {recipe.diet_type && (
+              <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                    style={{ color: '#0f766e', backgroundColor: 'rgba(15,118,110,0.12)' }}>
+                {DIET_TYPE_LABEL[recipe.diet_type]}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => onEdit(recipe)}
@@ -357,6 +544,39 @@ function RecipeEditor({ mode, initial, onCancel, onSave }) {
             </Field>
           </div>
 
+          {/* Snack timing — only relevant when meal_type is 'snack'.
+              For other meal types the field is hidden AND cleared on
+              save (sanitise() ignores it when not applicable). */}
+          {d.meal_type === 'snack' && (
+            <Field label="Snack timing">
+              <select
+                value={d.snack_timing || ''}
+                onChange={(e) => set('snack_timing', e.target.value || null)}
+                className="w-full px-2 py-1.5 text-xs rounded border border-gray-200 cursor-pointer"
+              >
+                <option value="">— No timing set —</option>
+                <option value="pre_training">Pre-Training</option>
+                <option value="post_training">Post-Training</option>
+                <option value="anytime">Anytime</option>
+              </select>
+            </Field>
+          )}
+
+          {/* Dietary classification — applies to any meal type. */}
+          <Field label="Dietary">
+            <select
+              value={d.diet_type || ''}
+              onChange={(e) => set('diet_type', e.target.value || null)}
+              className="w-full px-2 py-1.5 text-xs rounded border border-gray-200 cursor-pointer"
+            >
+              <option value="">— No dietary classification —</option>
+              <option value="poultry">Poultry</option>
+              <option value="pescatarian">Pescatarian</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="vegan">Vegan</option>
+            </select>
+          </Field>
+
           <Field label="Description (optional)">
             <textarea value={d.description || ''} onChange={(e) => set('description', e.target.value)} rows={2}
               className="w-full px-3 py-1.5 text-xs rounded border border-gray-200 focus:outline-none focus:border-gold-400 resize-y" />
@@ -457,29 +677,51 @@ function Field({ label, children }) {
 }
 
 // ─── AI PDF import modal ────────────────────────────────────────────
+// Page-count thresholds tuned against the server's char limits
+// (~4-5K chars per dense recipe page). The hard limit refuses upfront
+// instead of letting the user wait for a server 413; the soft limit
+// triggers a longer-wait warning during extraction.
+const HARD_PAGE_LIMIT  = 45;   // refuse before sending
+const SOFT_PAGE_LIMIT  = 25;   // show "this'll take a while" copy
+
 function PdfImportModal({ onCancel, onImported }) {
-  const [phase,    setPhase]    = useState('drop'); // drop | extracting | review | saving | done
-  const [error,    setError]    = useState(null);
-  const [fileName, setFileName] = useState(null);
-  const [draft,    setDraft]    = useState([]);   // [{ ...recipe, _checked }]
+  const [phase,     setPhase]     = useState('drop'); // drop | extracting | review | saving | done
+  const [error,     setError]     = useState(null);
+  const [fileName,  setFileName]  = useState(null);
+  const [pageCount, setPageCount] = useState(0);
+  const [draft,     setDraft]     = useState([]);   // [{ ...recipe, _checked }]
   const inputRef = useRef(null);
 
   const onPdf = async (file) => {
     setError(null);
     setFileName(file.name);
+    setPageCount(0);
     setPhase('extracting');
     try {
       // Extract text client-side with pdfjs (already a dep). Lazy
       // import keeps the bundle off the critical path; we also point
       // GlobalWorkerOptions.workerSrc at the bundled worker so PDF.js
       // doesn't throw "No 'GlobalWorkerOptions.workerSrc' specified".
-      // Matches the pattern already used by ResourcesAdminView.
       const pdfjs    = await import('pdfjs-dist');
       const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
       const arrayBuf = await file.arrayBuffer();
       const doc = await pdfjs.getDocument({ data: new Uint8Array(arrayBuf) }).promise;
+      setPageCount(doc.numPages);
+
+      // Bail early on documents that will almost certainly time out
+      // server-side — coaches get a clear "split the PDF" message
+      // before they sit through a long extraction.
+      if (doc.numPages > HARD_PAGE_LIMIT) {
+        setError(
+          `This PDF is ${doc.numPages} pages — too large for one AI pass. `
+          + `Please split it into smaller files of around 20-30 pages each and import them separately.`
+        );
+        setPhase('drop');
+        return;
+      }
+
       const pages = [];
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
@@ -497,7 +739,7 @@ function PdfImportModal({ onCancel, onImported }) {
       const res = await fetch('/api/recipes/extract', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, max_recipes: 40 }),
+        body: JSON.stringify({ text, max_recipes: 60 }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -558,17 +800,36 @@ function PdfImportModal({ onCancel, onImported }) {
             >
               <FileUp size={28} style={{ color: GOLD }} />
               <p className="text-sm font-semibold text-gray-700 mt-2">Drop a PDF or click to pick</p>
-              <p className="text-[11px] text-gray-400 mt-1">Up to ~150,000 chars. Image-only PDFs aren't supported yet.</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Up to <strong>{HARD_PAGE_LIMIT} pages</strong>. Image-only PDFs aren't supported yet.
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5 italic">
+                Larger documents — split into chunks of 20-30 pages and import each one.
+              </p>
               <input ref={inputRef} type="file" accept="application/pdf" className="hidden"
                      onChange={(e) => { const f = e.target.files?.[0]; if (f) onPdf(f); }} />
             </div>
           )}
 
           {phase === 'extracting' && (
-            <div className="flex flex-col items-center gap-3 py-12 text-xs text-gray-500">
+            <div className="flex flex-col items-center gap-3 py-12 text-xs text-gray-500 text-center">
               <Loader2 size={24} className="animate-spin" style={{ color: GOLD }} />
-              <p>Reading <strong>{fileName}</strong>…</p>
-              <p className="italic text-gray-400">AI extraction can take 10-30 seconds for a longer document.</p>
+              <p>Reading <strong>{fileName}</strong>{pageCount ? ` · ${pageCount} pages` : ''}…</p>
+              {pageCount > SOFT_PAGE_LIMIT ? (
+                <>
+                  <p className="text-gray-500 font-semibold">
+                    Larger PDF — the AI is processing this in chunks.
+                  </p>
+                  <p className="italic text-gray-400 max-w-sm">
+                    Please wait. This can take <strong>1-2 minutes</strong> for a 20-40 page document.
+                    Keep the tab open.
+                  </p>
+                </>
+              ) : (
+                <p className="italic text-gray-400">
+                  Typical extraction takes <strong>30-60 seconds</strong>. Please don't close the tab.
+                </p>
+              )}
             </div>
           )}
 
