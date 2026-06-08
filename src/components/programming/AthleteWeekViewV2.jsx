@@ -1,11 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, ChevronLeft, ChevronRight, MoreVertical, RotateCcw, StickyNote } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  DndContext, DragOverlay, PointerSensor, TouchSensor,
+  useDraggable, useDroppable, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  ArrowLeftRight, ChevronLeft, ChevronRight, Copy, MoreVertical,
+  RotateCcw, StickyNote, Trash2, X,
+} from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import {
   replaceExerciseFromWeek,
   clearExerciseOverrideFromWeek,
 } from '../../utils/programmeTemplates';
+import {
+  movePlannedSession,
+  copyPlannedSession,
+  deletePlannedSession,
+} from '../../hooks/usePlannedSessionMutations';
 import ExercisePicker from './programme/builder/ExercisePicker';
 
 // Letter accents for grouped exercises. Soft pastel tints so the
@@ -21,6 +33,11 @@ const LETTER_TINTS = [
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Long-press threshold (ms) after which a held card arms COPY mode.
+// Tuned to feel intentional without being annoying — comfortably longer
+// than a mistap, short enough that you don't second-guess yourself.
+const COPY_HOLD_MS = 550;
+
 function startOfWeekMon(date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -29,8 +46,6 @@ function startOfWeekMon(date) {
   d.setDate(d.getDate() - offset);
   return d;
 }
-
-function isoEqual(a, b) { return a === b; }
 
 function formatTarget(value, type) {
   if (value == null || value === '') return '';
@@ -47,41 +62,32 @@ function formatTarget(value, type) {
 }
 
 /**
- * AthleteWeekViewV2 — opt-in variant behind the
- * `calendar_deemphasised_empty_days` feature flag. Identical to
- * AthleteWeekView except for how DAYS WITH NO SESSION render:
+ * AthleteWeekViewV2 — variant behind the
+ * `calendar_deemphasised_empty_days` feature flag (on by default).
  *
- *   - no card / no border / transparent background (blends with page)
- *   - no "No session" placeholder text
- *   - day label fades to ~65% opacity
- *   - column compresses naturally to just the faded label
- *   - subtle "+ Add session" hint appears on hover
+ * Adds intuitive drag-and-drop session rearrangement on top of the
+ * V2 day-fade behaviour:
  *
- * Days WITH sessions render exactly as in V1 — no shared empty-day
- * styles between the two variants, so flipping the flag back to false
- * is purely a render-path swap with no risk of cross-contamination.
+ *   - Drag a session card to another day      → MOVES it.
+ *   - Hold a card ~0.5s (gold glow) then drag → COPIES (reuses)
+ *     the same session template on the new day. Original stays put.
+ *   - Trash icon on each card                 → confirm-then-delete.
  *
- * Click a card → opens the session builder (same as V1).
+ * Click-to-open still works because the drag sensor requires 8px of
+ * movement (or 200ms hold on touch) before activating. Quick taps
+ * fall through to the existing builder open flow.
+ *
+ * All mutations hit planned_sessions for the SINGLE athlete being
+ * viewed — squad-wide moves are intentionally out of scope.
  */
 export default function AthleteWeekViewV2({
   athlete,
   viewDate,
   onChangeDate,
-  onChangeView,    // (mode) → switches month/week toggle on the parent
-  onClickPlanned,  // (planned) → opens session builder
-  // ── Embed-mode props ────────────────────────────────────────────────
-  // When `hideToolbar` is true, the prev/next/today/month-week controls
-  // are not rendered. Use this when the parent already owns the week
-  // selection (e.g. ProgrammeWeekList expanded tile).
+  onChangeView,
+  onClickPlanned,
   hideToolbar = false,
-  // When `hideCompleted` is true, sessions whose status === 'completed'
-  // are filtered out before the grid renders. Used for past weeks
-  // inside the week-by-week list — completed sessions live in the
-  // Logged Sessions sub-tab.
   hideCompleted = false,
-  // When provided, sessions whose id appears here render with reduced
-  // opacity + a "Done" tick. Used for the current week so the grid
-  // shows everything but visually distinguishes the completed ones.
   dimCompletedIds = null,
 }) {
   const weekStart = useMemo(() => startOfWeekMon(viewDate), [viewDate]);
@@ -94,11 +100,11 @@ export default function AthleteWeekViewV2({
   const toISO_  = days[6];
 
   const [refreshTick, setRefreshTick] = useState(0);
-  const refresh = () => setRefreshTick(n => n + 1);
+  const refresh = useCallback(() => setRefreshTick(n => n + 1), []);
   const { planned, loading } = usePlannedWeekDetail(athlete.id, fromISO, toISO_, refreshTick);
 
-  // Replace-from-week state
-  const [replaceTarget, setReplaceTarget] = useState(null); // { exercise (item), sessionName }
+  // ── Replace-from-week state (unchanged) ─────────────────────────
+  const [replaceTarget, setReplaceTarget] = useState(null);
   const handleReplaceConfirm = async (libRow) => {
     if (!replaceTarget) return;
     const { exercise } = replaceTarget;
@@ -119,19 +125,66 @@ export default function AthleteWeekViewV2({
     if (res.ok) refresh();
   };
 
+  // ── DnD + delete state ──────────────────────────────────────────
+  // Sensor activation constraints serve two jobs:
+  //   - PointerSensor distance:8 keeps click-to-open intact (the card
+  //     only starts dragging once the cursor has actually travelled).
+  //   - TouchSensor delay:200 leaves the page scrollable on phones —
+  //     flick-scroll doesn't accidentally pick up a card.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 6 } }),
+  );
+
+  // armedCopyId — the session.id whose long-press timer has fired.
+  // On drop, if active.id matches, we copy instead of move. Stored as
+  // both ref + state so the drag-end handler reads fresh data while
+  // the SessionCard re-renders the gold glow.
+  const [armedCopyId, setArmedCopyId] = useState(null);
+  const armedCopyRef = useRef(null);
+  const armCopy = useCallback((id) => {
+    armedCopyRef.current = id;
+    setArmedCopyId(id);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(15); } catch { /* ignore */ }
+    }
+  }, []);
+  const disarmCopy = useCallback(() => {
+    armedCopyRef.current = null;
+    setArmedCopyId(null);
+  }, []);
+
+  // activeDrag — kept so the DragOverlay can render a card-shaped
+  // preview that follows the pointer / finger.
+  const [activeDrag, setActiveDrag] = useState(null);
+
+  // Confirm-delete modal payload + busy/toast state.
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null); // { kind: 'error'|'info', text }
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const plannedByDate = useMemo(() => {
     const m = new Map();
     for (const p of planned) {
-      // Embed-mode: drop completed sessions for past weeks (they live
-      // in the Logged Sessions sub-tab now).
       if (hideCompleted && p.status === 'completed') continue;
       if (!m.has(p.planned_date)) m.set(p.planned_date, []);
       m.get(p.planned_date).push(p);
     }
-    // Stable order: by session_order within each day
     for (const list of m.values()) list.sort((a, b) => a.session_order - b.session_order);
     return m;
   }, [planned, hideCompleted]);
+
+  // Flat lookup by session id for the DragOverlay.
+  const sessionById = useMemo(() => {
+    const m = new Map();
+    for (const p of planned) m.set(p.id, p);
+    return m;
+  }, [planned]);
 
   const todayISO = toISO(new Date());
 
@@ -151,12 +204,65 @@ export default function AthleteWeekViewV2({
   const handleNext  = () => onChangeDate(addDaysISOAsDate(days[0], +7));
   const handleToday = () => onChangeDate(new Date());
 
+  // ── Drag handlers ───────────────────────────────────────────────
+  const handleDragStart = (event) => {
+    const id = event.active?.data?.current?.sessionId;
+    if (id) setActiveDrag(id);
+  };
+
+  const handleDragCancel = () => {
+    setActiveDrag(null);
+    disarmCopy();
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    const sessionId = active?.data?.current?.sessionId;
+    const fromDate  = active?.data?.current?.plannedDate;
+    const toDate    = over?.data?.current?.dayISO;
+    const wasCopy   = armedCopyRef.current === sessionId;
+
+    setActiveDrag(null);
+    disarmCopy();
+
+    if (!sessionId || !toDate) return;
+    // No-op move (dropped on the same day, no copy intent).
+    if (!wasCopy && fromDate === toDate) return;
+
+    setBusy(true);
+    const res = wasCopy
+      ? await copyPlannedSession(sessionId, toDate)
+      : await movePlannedSession(sessionId, toDate);
+    setBusy(false);
+    if (!res.ok) {
+      setToast({ kind: 'error', text: res.error?.message || 'Could not save change.' });
+      return;
+    }
+    refresh();
+  };
+
+  // ── Delete handler ──────────────────────────────────────────────
+  const confirmDeleteRun = async () => {
+    if (!confirmDelete) return;
+    setBusy(true);
+    const res = await deletePlannedSession(confirmDelete.id);
+    setBusy(false);
+    setConfirmDelete(null);
+    if (!res.ok) {
+      setToast({ kind: 'error', text: res.error?.message || 'Could not delete.' });
+      return;
+    }
+    refresh();
+  };
+
+  const activeSession = activeDrag ? sessionById.get(activeDrag) : null;
+
   return (
     <div
-      className={hideToolbar ? 'bg-white' : 'rounded-xl bg-white'}
+      className={hideToolbar ? 'bg-white relative' : 'rounded-xl bg-white relative'}
       style={hideToolbar ? undefined : { border: '1px solid #e5e7eb' }}
     >
-      {/* Toolbar — hidden in embed mode (parent owns week selection) */}
+      {/* Toolbar — hidden in embed mode */}
       {!hideToolbar && (
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div className="flex items-center gap-1">
@@ -178,7 +284,6 @@ export default function AthleteWeekViewV2({
           </span>
         </div>
 
-        {/* Month / Week toggle */}
         <div className="flex items-center gap-1 rounded-md p-0.5" style={{ backgroundColor: '#f3f4f6' }}>
           <button
             onClick={() => onChangeView && onChangeView('month')}
@@ -197,7 +302,6 @@ export default function AthleteWeekViewV2({
       </div>
       )}
 
-      {/* Picker overlay used to pick the replacement exercise */}
       {replaceTarget && (
         <ExercisePicker
           sessionLabel={`Replace ${replaceTarget.exercise.name} from Wk ${replaceTarget.exercise.week_number}`}
@@ -206,121 +310,357 @@ export default function AthleteWeekViewV2({
         />
       )}
 
-      {/* 7-day grid — V2 behaviour for empty days.
-          - `align-items: start` lets each column take its natural
-            height instead of stretching to the row's tallest cell.
-            Empty columns therefore visually compress to just the
-            faded day label while session columns expand for cards.
-          - Empty days get 0.5fr, training days get 1fr — so session
-            cards reclaim the breathing room empty days no longer need.
-            Column slots still cover Mon..Sun in order, so weekly
-            structure is preserved; the proportions just rebalance per
-            week based on which days actually have a session. */}
-      <div
-        className="grid items-start"
-        style={{
-          gridTemplateColumns: days
-            .map(dayISO => {
-              const isEmpty = !loading && (plannedByDate.get(dayISO) || []).length === 0;
-              return isEmpty ? '0.5fr' : '1fr';
-            })
-            .join(' '),
-          minHeight: 120,
-        }}
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        {days.map((dayISO, i) => {
-          const sessions = plannedByDate.get(dayISO) || [];
-          const isToday = dayISO === todayISO;
-          const d = parseDate(dayISO);
-          const isEmpty = !loading && sessions.length === 0;
+        {/* Hint strip — only when a card is armed for copy, so we
+            don't crowd the UI in steady state. */}
+        {armedCopyId && (
+          <div
+            className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-widest border-b flex items-center gap-1.5"
+            style={{
+              color: '#A58D69',
+              backgroundColor: 'rgba(165,141,105,0.08)',
+              borderColor: 'rgba(165,141,105,0.25)',
+            }}
+          >
+            <Copy size={11} />
+            Copy mode — drop on a day to duplicate this session
+          </div>
+        )}
 
-          return (
+        <div
+          className="grid items-start"
+          style={{
+            gridTemplateColumns: days
+              .map(dayISO => {
+                const isEmpty = !loading && (plannedByDate.get(dayISO) || []).length === 0;
+                // While dragging, give empty days a bit more width so
+                // they're an easier drop target on touch.
+                if (activeDrag) return isEmpty ? '0.75fr' : '1fr';
+                return isEmpty ? '0.5fr' : '1fr';
+              })
+              .join(' '),
+            minHeight: 120,
+          }}
+        >
+          {days.map((dayISO, i) => {
+            const sessions = plannedByDate.get(dayISO) || [];
+            const isToday = dayISO === todayISO;
+            const d = parseDate(dayISO);
+            const isEmpty = !loading && sessions.length === 0;
+
+            return (
+              <DroppableDay
+                key={dayISO}
+                dayISO={dayISO}
+                isEmpty={isEmpty}
+                isToday={isToday}
+                isLast={i === 6}
+                dragInProgress={!!activeDrag}
+              >
+                <div
+                  className="px-3 py-2"
+                  style={{
+                    borderBottom: isEmpty ? 'none' : '1px solid #f3f4f6',
+                    backgroundColor: !isEmpty && isToday
+                      ? 'rgba(67,126,141,0.06)'
+                      : 'transparent',
+                    opacity: isEmpty ? 0.65 : 1,
+                  }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+                      {DAY_LABELS[i]}
+                    </span>
+                    <span className="text-[13px] font-bold tabular-nums" style={{ color: isToday ? '#437E8D' : '#1C1C1C' }}>
+                      {d.getDate()}
+                    </span>
+                  </div>
+                </div>
+
+                {!isEmpty && (
+                  <div className="flex-1 px-2 py-2 space-y-2">
+                    {loading && (
+                      <div className="text-[10px] italic" style={{ color: '#9ca3af' }}>Loading…</div>
+                    )}
+                    {!loading && sessions.map(s => {
+                      const dim = (dimCompletedIds && dimCompletedIds.has(s.id))
+                        || (s.status === 'completed' && !hideCompleted);
+                      return (
+                        <DraggableSessionCard
+                          key={s.id}
+                          session={s}
+                          dim={dim}
+                          armed={armedCopyId === s.id}
+                          isDraggingThis={activeDrag === s.id}
+                          onArmCopy={() => armCopy(s.id)}
+                          onClick={() => onClickPlanned && onClickPlanned(s)}
+                          onRequestReplace={(item) => setReplaceTarget({ exercise: item, sessionName: s.session_name })}
+                          onClearOverride={(item) => handleClearOverride(item)}
+                          onRequestDelete={() => setConfirmDelete(s)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {isEmpty && (
+                  <div className="px-3 pb-2">
+                    {activeDrag ? (
+                      <div
+                        className="text-[10px] italic select-none"
+                        style={{ color: '#A58D69' }}
+                      >
+                        Drop here →
+                      </div>
+                    ) : (
+                      <div
+                        className="opacity-0 group-hover/emptyday:opacity-100 transition-opacity text-[10px] italic select-none"
+                        style={{ color: '#cbd5e1' }}
+                      >
+                        + Add session
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DroppableDay>
+            );
+          })}
+        </div>
+
+        {/* Drag preview — a low-fi card silhouette that follows the
+            pointer. Keeping it minimal so the underlying grid stays
+            visible. Tilt + gold ring during copy mode. */}
+        <DragOverlay dropAnimation={null}>
+          {activeSession ? (
             <div
-              key={dayISO}
-              className={`flex flex-col ${isEmpty ? 'group/emptyday' : ''}`}
+              className="rounded-lg shadow-xl"
               style={{
-                // Empty columns drop the right divider so the row
-                // doesn't read as a structural grid; session columns
-                // keep theirs to anchor the card visually.
-                borderRight: !isEmpty && i < 6 ? '1px solid #f3f4f6' : 'none',
-                backgroundColor: isEmpty
-                  ? 'transparent'
-                  : isToday ? 'rgba(67,126,141,0.03)' : '#fff',
+                width: 200,
+                backgroundColor: '#fff',
+                border: armedCopyId === activeSession.id
+                  ? '2px solid #A58D69'
+                  : '1px solid #437E8D',
+                transform: 'rotate(-2deg)',
               }}
             >
               <div
-                className="px-3 py-2"
-                style={{
-                  // Empty days drop the header divider so there's
-                  // nothing demanding attention.
-                  borderBottom: isEmpty ? 'none' : '1px solid #f3f4f6',
-                  backgroundColor: !isEmpty && isToday
-                    ? 'rgba(67,126,141,0.06)'
-                    : 'transparent',
-                  // Day label recedes to ~65% on empty days so the
-                  // eye skips past them and lands on the sessions.
-                  opacity: isEmpty ? 0.65 : 1,
-                }}
+                className="px-2.5 py-1.5 border-b border-gray-100 text-[11px] font-bold truncate"
+                style={{ color: '#1C1C1C' }}
               >
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
-                    {DAY_LABELS[i]}
-                  </span>
-                  <span className="text-[13px] font-bold tabular-nums" style={{ color: isToday ? '#437E8D' : '#1C1C1C' }}>
-                    {d.getDate()}
-                  </span>
-                </div>
+                {activeSession.session_name}
               </div>
-
-              {/* Content area. Loading + sessions render unchanged.
-                  Empty days replace the "No session" placeholder with
-                  a hover-only "+ Add session" hint that's purely
-                  visual until a real handler is wired through. */}
-              {!isEmpty && (
-                <div className="flex-1 px-2 py-2 space-y-2">
-                  {loading && (
-                    <div className="text-[10px] italic" style={{ color: '#9ca3af' }}>Loading…</div>
-                  )}
-                  {!loading && sessions.map(s => {
-                    const dim = (dimCompletedIds && dimCompletedIds.has(s.id))
-                      || (s.status === 'completed' && !hideCompleted);
-                    return (
-                      <SessionCard
-                        key={s.id}
-                        session={s}
-                        dim={dim}
-                        onClick={() => onClickPlanned && onClickPlanned(s)}
-                        onRequestReplace={(item) => setReplaceTarget({ exercise: item, sessionName: s.session_name })}
-                        onClearOverride={(item) => handleClearOverride(item)}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-
-              {isEmpty && (
-                <div className="px-3 pb-2">
-                  <div
-                    className="opacity-0 group-hover/emptyday:opacity-100 transition-opacity text-[10px] italic select-none"
-                    style={{ color: '#cbd5e1' }}
-                  >
-                    + Add session
-                  </div>
-                </div>
-              )}
+              <div className="px-2 py-1.5 text-[10px]" style={{ color: '#6b7280' }}>
+                {armedCopyId === activeSession.id ? 'Copy →' : 'Move →'}
+              </div>
             </div>
-          );
-        })}
-      </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
+      {/* Confirm-delete modal */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onClick={() => !busy && setConfirmDelete(null)}
+        >
+          <div
+            className="rounded-xl bg-white w-full max-w-sm p-5"
+            style={{ border: '1px solid #e5e7eb', boxShadow: '0 24px 48px rgba(0,0,0,0.18)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <span
+                className="shrink-0 inline-flex items-center justify-center rounded-full"
+                style={{ width: 36, height: 36, backgroundColor: 'rgba(220,38,38,0.10)' }}
+              >
+                <Trash2 size={16} style={{ color: '#dc2626' }} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold" style={{ color: '#1C1C1C' }}>
+                  Delete this session?
+                </h3>
+                <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
+                  Removes <span className="font-semibold">{confirmDelete.session_name}</span>{' '}
+                  from {athlete.first_name || athlete.name || 'this athlete'}'s plan on{' '}
+                  <span className="font-semibold">
+                    {parseDate(confirmDelete.planned_date).toLocaleDateString('en-GB', {
+                      weekday: 'short', day: 'numeric', month: 'short',
+                    })}
+                  </span>. The session template stays available to re-add later.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteRun}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#fff', backgroundColor: '#dc2626' }}
+              >
+                {busy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast — bottom-right, auto-dismiss */}
+      {toast && (
+        <div
+          className="absolute right-3 bottom-3 z-40 px-3 py-2 rounded-md shadow-lg text-[11px] font-semibold flex items-center gap-2 max-w-xs"
+          style={{
+            backgroundColor: toast.kind === 'error' ? '#fee2e2' : '#ecfeff',
+            color:           toast.kind === 'error' ? '#991b1b' : '#155e75',
+            border: `1px solid ${toast.kind === 'error' ? '#fecaca' : '#a5f3fc'}`,
+          }}
+        >
+          <span className="flex-1">{toast.text}</span>
+          <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100">
+            <X size={12} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DroppableDay ───────────────────────────────────────────────────
+function DroppableDay({ dayISO, isEmpty, isToday, isLast, dragInProgress, children }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `day-${dayISO}`,
+    data: { dayISO },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col ${isEmpty ? 'group/emptyday' : ''}`}
+      style={{
+        borderRight: !isEmpty && !isLast ? '1px solid #f3f4f6' : 'none',
+        backgroundColor: isOver
+          ? 'rgba(165,141,105,0.12)'
+          : isEmpty
+            ? 'transparent'
+            : isToday ? 'rgba(67,126,141,0.03)' : '#fff',
+        outline: isOver ? '2px dashed #A58D69' : 'none',
+        outlineOffset: -2,
+        transition: 'background-color 120ms ease, outline 120ms ease',
+        minHeight: dragInProgress ? 90 : undefined,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── DraggableSessionCard ───────────────────────────────────────────
+// Wraps SessionCard with dnd-kit drag wiring + a long-press timer that
+// arms COPY mode. The card itself stays a plain presentational
+// component so the click-to-open path is unchanged.
+function DraggableSessionCard({
+  session, dim, armed, isDraggingThis,
+  onArmCopy, onClick, onRequestReplace, onClearOverride, onRequestDelete,
+}) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    id: `planned-${session.id}`,
+    data: { sessionId: session.id, plannedDate: session.planned_date },
+  });
+
+  // ── Long-press detector ─────────────────────────────────────────
+  // Runs in PARALLEL with dnd-kit's own pointer listeners (events
+  // bubble fine to both). Timer fires after COPY_HOLD_MS of a still
+  // pointer; movement >8px before then cancels.
+  const timerRef = useRef(null);
+  const startRef = useRef(null);
+
+  const startHoldTimer = useCallback((e) => {
+    startRef.current = { x: e.clientX, y: e.clientY };
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onArmCopy();
+      timerRef.current = null;
+    }, COPY_HOLD_MS);
+  }, [onArmCopy]);
+
+  const cancelHoldTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    startRef.current = null;
+  }, []);
+
+  const trackHoldMove = useCallback((e) => {
+    if (!startRef.current || !timerRef.current) return;
+    const dx = e.clientX - startRef.current.x;
+    const dy = e.clientY - startRef.current.y;
+    if (Math.hypot(dx, dy) > 8) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const dragStyle = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    // While the real card is being dragged, hide it — the DragOverlay
+    // renders the preview that actually follows the pointer.
+    opacity: isDraggingThis ? 0.35 : 1,
+    touchAction: 'none',
+    cursor: 'grab',
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={dragStyle}
+      {...attributes}
+      {...listeners}
+      onPointerDown={(e) => {
+        startHoldTimer(e);
+        // Let dnd-kit's own pointer-down listener also fire — its handler
+        // is included in {...listeners} above and receives the event
+        // before this one in the DOM event chain.
+      }}
+      onPointerMove={trackHoldMove}
+      onPointerUp={cancelHoldTimer}
+      onPointerCancel={cancelHoldTimer}
+      onPointerLeave={cancelHoldTimer}
+    >
+      <SessionCard
+        session={session}
+        dim={dim}
+        armed={armed}
+        onClick={onClick}
+        onRequestReplace={onRequestReplace}
+        onClearOverride={onClearOverride}
+        onRequestDelete={onRequestDelete}
+      />
     </div>
   );
 }
 
 // ─── SessionCard ────────────────────────────────────────────────────
-function SessionCard({ session, onClick, onRequestReplace, onClearOverride, dim = false }) {
-  // The card itself acts as a button (click → builder), but inner
-  // controls (per-exercise menus) need to stop propagation so they
-  // don't also trigger the card click.
+function SessionCard({
+  session, onClick, onRequestReplace, onClearOverride, onRequestDelete,
+  dim = false, armed = false,
+}) {
   return (
     <div
       onClick={onClick}
@@ -330,8 +670,10 @@ function SessionCard({ session, onClick, onRequestReplace, onClearOverride, dim 
       className="block w-full text-left rounded-lg transition-shadow hover:shadow-sm cursor-pointer"
       style={{
         backgroundColor: '#fff',
-        border: '1px solid #e5e7eb',
+        border: armed ? '2px solid #A58D69' : '1px solid #e5e7eb',
+        boxShadow: armed ? '0 0 0 3px rgba(165,141,105,0.18)' : undefined,
         opacity: dim ? 0.55 : 1,
+        transition: 'box-shadow 160ms ease, border-color 160ms ease',
       }}
     >
       <div className="px-2.5 py-1.5 border-b border-gray-100 flex items-center gap-1.5">
@@ -346,6 +688,22 @@ function SessionCard({ session, onClick, onRequestReplace, onClearOverride, dim 
             ✓ Done
           </span>
         )}
+        {/* Trash icon — hover-only on desktop (group/sesscard), always
+            visible on touch. stopPropagation so it doesn't open the
+            session editor, and pointerdown stops drag activation. */}
+        <button
+          onPointerDown={(e) => { e.stopPropagation(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRequestDelete && onRequestDelete();
+          }}
+          className="shrink-0 p-1 rounded hover:bg-red-50 transition-colors"
+          style={{ color: '#9ca3af' }}
+          title="Delete this session"
+          aria-label="Delete session"
+        >
+          <Trash2 size={11} />
+        </button>
       </div>
       <div className="px-2 py-1.5 space-y-1">
         {session.items.length === 0 && (
@@ -399,11 +757,6 @@ function ExerciseItem({
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
 
-  // Right-edge slot is a fixed 18×18 frame:
-  //   - swap icon at rest (when overridden) — gold chip with double-arrow
-  //   - three-dots on row hover — overlays the swap icon
-  // This keeps row layout stable so wrapped names don't shift on hover.
-
   return (
     <div className="group/exrow flex items-start gap-2 relative">
       <span
@@ -442,9 +795,6 @@ function ExerciseItem({
         className="shrink-0 relative mt-0.5"
         style={{ width: 18, height: 18 }}
       >
-        {/* Swap status chip — gold rounded square with white double-arrow.
-            Always visible at rest when overridden; fades out on row hover
-            so the three-dots can take its place without jumping. */}
         {is_overridden && (
           <span
             className="absolute inset-0 inline-flex items-center justify-center rounded-md transition-opacity pointer-events-none group-hover/exrow:opacity-0"
@@ -456,9 +806,8 @@ function ExerciseItem({
             <ArrowLeftRight size={11} style={{ color: '#fff' }} strokeWidth={2.5} />
           </span>
         )}
-        {/* Three-dots — only on row hover (or when menu open). Sits in
-            the same slot as the swap chip so the row never reflows. */}
         <button
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
           className={`absolute inset-0 flex items-center justify-center rounded hover:bg-gray-100 transition-opacity ${
             menuOpen
@@ -530,8 +879,6 @@ function addDaysISOAsDate(iso, days) {
   return parseDate(addDaysISO(iso, days));
 }
 
-// ISO week number — Mon-start, week-of-year. Approximates close enough
-// for the calendar header label.
 function weekNumber(d) {
   const target = new Date(d.valueOf());
   const dayNr = (d.getDay() + 6) % 7;
