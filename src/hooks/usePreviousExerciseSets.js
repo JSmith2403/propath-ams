@@ -14,8 +14,13 @@ import { supabase } from '../lib/supabase';
  *       }> }
  *
  * Notes:
- *   - "Prior" = completed_at IS NOT NULL and session_log_id !=
- *     excludeSessionLogId (the in-progress log we're logging into now).
+ *   - "Prior" = any session_log other than the one we're logging into
+ *     right now. We deliberately do NOT require completed_at IS NOT
+ *     NULL — most athletes log every set but never hit the final
+ *     Complete-session button, so requiring formal completion hides
+ *     useful history. The currently-open session is excluded via
+ *     excludeSessionLogId, so we can't accidentally echo back the
+ *     reps the athlete just typed in.
  *   - `set_logs` doesn't carry exercise_id directly — it points at
  *     `session_exercises`, which carries it. We join through there.
  *   - The schema stores `actual_reps` / `actual_load_kg`; we alias them
@@ -41,9 +46,10 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
       setState(s => ({ ...s, loading: true }));
 
       // Inner-join via session_exercises to surface the exercise_id, and
-      // via session_logs to filter on athlete + completed_at server-side.
-      // Sorted newest-first so the single-pass JS grouping below grabs
-      // the most recent session per exercise.
+      // via session_logs to filter on athlete server-side. Sorted
+      // newest-first so the single-pass JS grouping below grabs the
+      // most recent session per exercise. We intentionally don't filter
+      // on completed_at — see the doc comment above.
       const { data, error } = await supabase
         .from('set_logs')
         .select(`
@@ -55,7 +61,6 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
           session_logs!inner ( id, athlete_id, started_at, completed_at )
         `)
         .eq('session_logs.athlete_id', athleteId)
-        .not('session_logs.completed_at', 'is', null)
         .in('session_exercises.exercise_id', exerciseIds)
         .order('set_number', { ascending: true });
 
