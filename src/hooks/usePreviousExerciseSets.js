@@ -3,8 +3,8 @@ import { supabase } from '../lib/supabase';
 
 /**
  * usePreviousExerciseSets — for each exercise the athlete is about to
- * train, fetch their most recent *prior* completed log of that exercise
- * so the session logger can show a "Last week" reference strip
+ * train, fetch their most recent *prior* log of that exercise so the
+ * session logger can show a "Last week" reference strip
  * (8 × 70, 8 × 72.5, 7 × 75 — 19 May).
  *
  *   Returns:
@@ -21,13 +21,15 @@ import { supabase } from '../lib/supabase';
  *     useful history. The currently-open session is excluded via
  *     excludeSessionLogId, so we can't accidentally echo back the
  *     reps the athlete just typed in.
- *   - `set_logs` doesn't carry exercise_id directly — it points at
- *     `session_exercises`, which carries it. We join through there.
- *   - The schema stores `actual_reps` / `actual_load_kg`; we alias them
- *     to the friendlier `reps` / `weight_kg` shape the UI already
- *     consumes (the original hook silently failed because it asked
- *     Supabase for columns that don't exist — the "Last week" strip
- *     in SessionLogger never rendered as a result).
+ *   - LIVE schema carries exercise_id directly on set_logs (so we
+ *     don't need to join through session_exercises). Columns are
+ *     `reps` / `weight_kg` — NOT `actual_reps` / `actual_load_kg`,
+ *     despite what supabase/migrations/programming-foundation-…sql
+ *     declares. That migration was never applied to production; the
+ *     real schema came from an earlier path. Always trust LIVE.
+ *   - Match is by exercise_id, not session_exercise_id, so a per-week
+ *     swap still surfaces the last time the athlete actually performed
+ *     the exercise they're being prescribed now.
  *   - Picks the single most recent prior session per exercise (by
  *     session_logs.started_at). Earlier sessions are ignored.
  */
@@ -45,23 +47,17 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
     (async () => {
       setState(s => ({ ...s, loading: true }));
 
-      // Inner-join via session_exercises to surface the exercise_id, and
-      // via session_logs to filter on athlete server-side. Sorted
-      // newest-first so the single-pass JS grouping below grabs the
-      // most recent session per exercise. We intentionally don't filter
-      // on completed_at — see the doc comment above.
+      // Inner join to session_logs so we can filter on athlete server-
+      // side. Sorted newest-first so the single-pass JS grouping below
+      // grabs the most recent session per exercise.
       const { data, error } = await supabase
         .from('set_logs')
         .select(`
-          set_number,
-          actual_reps,
-          actual_load_kg,
-          session_log_id,
-          session_exercises!inner ( exercise_id ),
-          session_logs!inner ( id, athlete_id, started_at, completed_at )
+          exercise_id, set_number, reps, weight_kg, session_log_id,
+          session_logs!inner ( id, athlete_id, started_at )
         `)
         .eq('session_logs.athlete_id', athleteId)
-        .in('session_exercises.exercise_id', exerciseIds)
+        .in('exercise_id', exerciseIds)
         .order('set_number', { ascending: true });
 
       if (cancelled) return;
@@ -76,25 +72,18 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
       for (const row of data || []) {
         if (excludeSessionLogId && row.session_log_id === excludeSessionLogId) continue;
         const slog = row.session_logs;
-        const sx   = row.session_exercises;
-        if (!slog?.started_at || !sx?.exercise_id) continue;
-        const exerciseId = sx.exercise_id;
-        const set = {
-          set_number: row.set_number,
-          reps:       row.actual_reps,
-          weight_kg:  row.actual_load_kg,
-        };
-        const existing = byEx.get(exerciseId);
+        if (!slog?.started_at) continue;
+        const existing = byEx.get(row.exercise_id);
         if (!existing || slog.started_at > existing.startedAt) {
           // Found a more recent session for this exercise — restart the bucket.
-          byEx.set(exerciseId, {
-            startedAt:    slog.started_at,
+          byEx.set(row.exercise_id, {
+            startedAt: slog.started_at,
             sessionLogId: row.session_log_id,
-            sets:         [set],
+            sets: [{ set_number: row.set_number, reps: row.reps, weight_kg: row.weight_kg }],
           });
         } else if (slog.started_at === existing.startedAt
                    && row.session_log_id === existing.sessionLogId) {
-          existing.sets.push(set);
+          existing.sets.push({ set_number: row.set_number, reps: row.reps, weight_kg: row.weight_kg });
         }
         // older session for the same exercise → ignore
       }
