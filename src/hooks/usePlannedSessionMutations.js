@@ -114,3 +114,141 @@ export async function deletePlannedSession(plannedId) {
   if (error) return { ok: false, error };
   return { ok: true };
 }
+
+export async function bulkDeletePlannedSessions(plannedIds) {
+  if (!plannedIds?.length) return { ok: true, deleted: 0 };
+  const { error } = await supabase
+    .from('planned_sessions')
+    .delete()
+    .in('id', plannedIds);
+  if (error) return { ok: false, error };
+  return { ok: true, deleted: plannedIds.length };
+}
+
+/**
+ * Bulk copy planned sessions onto new dates. Used by the multi-select
+ * "Copy" / "Repeat" actions. Each source row is re-inserted with a
+ * fresh id at the supplied target date, week_number recalculated.
+ *
+ * Pass an array of { sourceId, targetDateISO } pairs. Mixed-block
+ * sources are fine — each row resolves its own block window.
+ */
+export async function bulkCopyPlannedSessions(pairs) {
+  if (!pairs?.length) return { ok: true, copied: 0 };
+
+  // Pull each source row's parent info in one round-trip
+  const ids = pairs.map(p => p.sourceId);
+  const { data: srcRows, error: e1 } = await supabase
+    .from('planned_sessions')
+    .select('id, athlete_id, block_id, block_session_id')
+    .in('id', ids);
+  if (e1) return { ok: false, error: e1 };
+  const srcById = new Map(srcRows.map(r => [r.id, r]));
+
+  // Resolve every distinct block's window in one call
+  const blockIds = [...new Set(srcRows.map(r => r.block_id))];
+  const { data: blocks, error: e2 } = await supabase
+    .from('training_blocks')
+    .select('id, start_date, end_date')
+    .in('id', blockIds);
+  if (e2) return { ok: false, error: e2 };
+  const blockById = new Map(blocks.map(b => [b.id, b]));
+
+  // Build the insert payload, skipping any pair whose date sits
+  // outside its block window (surface this in the result so the
+  // caller can show a "couldn't copy N — out of block window" hint).
+  const insertRows = [];
+  const skipped    = [];
+  for (const { sourceId, targetDateISO } of pairs) {
+    const src = srcById.get(sourceId);
+    if (!src) { skipped.push({ sourceId, reason: 'source not found' }); continue; }
+    const blk = blockById.get(src.block_id);
+    if (!blk) { skipped.push({ sourceId, reason: 'block missing' }); continue; }
+    const week = weekNumberWithin(blk.start_date, blk.end_date, targetDateISO);
+    if (week == null) { skipped.push({ sourceId, reason: 'outside block window' }); continue; }
+    insertRows.push({
+      athlete_id:       src.athlete_id,
+      block_id:         src.block_id,
+      block_session_id: src.block_session_id,
+      week_number:      week,
+      planned_date:     targetDateISO,
+      status:           'planned',
+    });
+  }
+
+  if (!insertRows.length) {
+    return { ok: false, error: new Error('Nothing to copy — all targets outside block windows.'), skipped };
+  }
+
+  const { data, error } = await supabase
+    .from('planned_sessions')
+    .insert(insertRows)
+    .select();
+  if (error) return { ok: false, error, skipped };
+  return { ok: true, copied: data?.length || 0, skipped };
+}
+
+/**
+ * Create a fresh planned_session for a block_session template on a
+ * specific date. Used by the empty-day "+ Add session" popover.
+ */
+export async function createPlannedSession({ athleteId, blockId, blockSessionId, plannedDateISO }) {
+  const win = await fetchBlockWindow(blockId);
+  if (!win.ok) return win;
+  const week = weekNumberWithin(win.start, win.end, plannedDateISO);
+  if (week == null) {
+    return { ok: false, error: new Error('That date is outside this block.') };
+  }
+  const { data, error } = await supabase
+    .from('planned_sessions')
+    .insert({
+      athlete_id:       athleteId,
+      block_id:         blockId,
+      block_session_id: blockSessionId,
+      week_number:      week,
+      planned_date:     plannedDateISO,
+      status:           'planned',
+    })
+    .select()
+    .single();
+  if (error) return { ok: false, error };
+  return { ok: true, data };
+}
+
+/**
+ * For the "+ Add session" popover — list every block_session template
+ * available to this athlete on a given date. We look up which
+ * training_blocks the date falls inside, then return the joined
+ * session templates grouped by block.
+ *
+ * Returns:
+ *   [{ block: { id, block_name }, sessions: [{ id, session_name, session_order }] }]
+ */
+export async function listAddableSessionsForDate(athleteId, plannedDateISO) {
+  const { data: blocks, error: e1 } = await supabase
+    .from('training_blocks')
+    .select('id, block_name, start_date, end_date')
+    .eq('athlete_id', athleteId)
+    .lte('start_date', plannedDateISO)
+    .gte('end_date',   plannedDateISO)
+    .order('start_date', { ascending: false });
+  if (e1) return { ok: false, error: e1 };
+  if (!blocks?.length) return { ok: true, groups: [] };
+
+  const blockIds = blocks.map(b => b.id);
+  const { data: sessions, error: e2 } = await supabase
+    .from('block_sessions')
+    .select('id, block_id, session_name, session_order')
+    .in('block_id', blockIds)
+    .order('session_order', { ascending: true });
+  if (e2) return { ok: false, error: e2 };
+
+  const byBlock = new Map(blocks.map(b => [b.id, []]));
+  for (const s of sessions || []) {
+    if (byBlock.has(s.block_id)) byBlock.get(s.block_id).push(s);
+  }
+  return {
+    ok: true,
+    groups: blocks.map(b => ({ block: b, sessions: byBlock.get(b.id) || [] })),
+  };
+}

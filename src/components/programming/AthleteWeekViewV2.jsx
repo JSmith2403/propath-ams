@@ -4,8 +4,8 @@ import {
   useDraggable, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core';
 import {
-  ArrowLeftRight, ChevronLeft, ChevronRight, Copy, MoreVertical,
-  RotateCcw, StickyNote, Trash2, X,
+  ArrowLeftRight, CheckSquare, ChevronLeft, ChevronRight, Copy,
+  MoreVertical, Plus, RotateCcw, Square, StickyNote, Trash2, X,
 } from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
@@ -17,8 +17,12 @@ import {
   movePlannedSession,
   copyPlannedSession,
   deletePlannedSession,
+  bulkDeletePlannedSessions,
+  bulkCopyPlannedSessions,
 } from '../../hooks/usePlannedSessionMutations';
 import ExercisePicker from './programme/builder/ExercisePicker';
+import AddSessionPopover from './AddSessionPopover';
+import BulkActionBar     from './BulkActionBar';
 
 // Letter accents for grouped exercises. Soft pastel tints so the
 // letter chip reads as metadata not a primary control. Cycles for >5.
@@ -168,6 +172,45 @@ export default function AthleteWeekViewV2({
     return () => clearTimeout(t);
   }, [toast]);
 
+  // ── Selection / bulk-action state ──────────────────────────────
+  // selectionMode toggles all drag/long-press wiring off and swaps the
+  // card click handler for "toggle selection". The bottom action bar
+  // renders whenever `selected.size > 0` regardless of mode flag so
+  // exiting the mode also clears the bar.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // copyDestPicker !== null → coach is choosing the destination day
+  // for a bulk Copy. Click a day → bulk-copies every selected session
+  // to that day.
+  const [copyDestPicker, setCopyDestPicker] = useState(false);
+
+  const toggleSelected = useCallback((id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    setSelectionMode(false);
+    setCopyDestPicker(false);
+  }, []);
+
+  // ── Add Session popover state ──────────────────────────────────
+  // addPopover = { dayISO, anchorRect } — fixed-position, follows the
+  // viewport coordinates of the clicked empty-day hint.
+  const [addPopover, setAddPopover] = useState(null);
+  const openAddPopover = useCallback((dayISO, anchorEl) => {
+    if (!anchorEl) return;
+    const r = anchorEl.getBoundingClientRect();
+    setAddPopover({
+      dayISO,
+      anchorRect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+    });
+  }, []);
+
   const plannedByDate = useMemo(() => {
     const m = new Map();
     for (const p of planned) {
@@ -203,6 +246,73 @@ export default function AthleteWeekViewV2({
   const handlePrev  = () => onChangeDate(addDaysISOAsDate(days[0], -7));
   const handleNext  = () => onChangeDate(addDaysISOAsDate(days[0], +7));
   const handleToday = () => onChangeDate(new Date());
+
+  // ── Bulk action handlers ───────────────────────────────────────
+  const runBulkDelete = async () => {
+    if (!selected.size) return;
+    setBusy(true);
+    const res = await bulkDeletePlannedSessions([...selected]);
+    setBusy(false);
+    setConfirmBulkDelete(false);
+    if (!res.ok) {
+      setToast({ kind: 'error', text: res.error?.message || 'Could not delete.' });
+      return;
+    }
+    clearSelection();
+    refresh();
+  };
+
+  // Repeat = bulk-copy every selected session +7 days. Skipped sources
+  // (e.g. dates that would fall outside the block window) are surfaced
+  // in the toast so the coach knows what didn't copy.
+  const runBulkRepeat = async () => {
+    if (!selected.size) return;
+    setBusy(true);
+    const pairs = [];
+    for (const id of selected) {
+      const src = sessionById.get(id);
+      if (!src?.planned_date) continue;
+      pairs.push({ sourceId: id, targetDateISO: addDaysISO(src.planned_date, 7) });
+    }
+    const res = await bulkCopyPlannedSessions(pairs);
+    setBusy(false);
+    if (!res.ok) {
+      setToast({ kind: 'error', text: res.error?.message || 'Could not repeat.' });
+      return;
+    }
+    const skipped = res.skipped?.length || 0;
+    if (skipped) {
+      setToast({
+        kind: 'info',
+        text: `Repeated ${res.copied}, skipped ${skipped} (outside block window).`,
+      });
+    }
+    clearSelection();
+    refresh();
+  };
+
+  // Copy = arm destination-pick mode. Next day click bulk-copies
+  // every selected session onto the picked date.
+  const runBulkCopyTo = async (dayISO) => {
+    if (!selected.size) return;
+    setBusy(true);
+    const pairs = [...selected].map(id => ({ sourceId: id, targetDateISO: dayISO }));
+    const res = await bulkCopyPlannedSessions(pairs);
+    setBusy(false);
+    if (!res.ok) {
+      setToast({ kind: 'error', text: res.error?.message || 'Could not copy.' });
+      return;
+    }
+    const skipped = res.skipped?.length || 0;
+    if (skipped) {
+      setToast({
+        kind: 'info',
+        text: `Copied ${res.copied}, skipped ${skipped} (outside block window).`,
+      });
+    }
+    clearSelection();
+    refresh();
+  };
 
   // ── Drag handlers ───────────────────────────────────────────────
   const handleDragStart = (event) => {
@@ -310,6 +420,44 @@ export default function AthleteWeekViewV2({
         />
       )}
 
+      {/* Compact action strip — always visible above the grid even
+          in embed mode (hideToolbar=true) because that's where the
+          coach lives most of the time. Hosts the Select / Cancel
+          toggle for bulk multi-select mode. */}
+      <div
+        className="flex items-center gap-2 px-3 py-1.5 border-b text-[11px]"
+        style={{ backgroundColor: '#fafafa', borderColor: '#f3f4f6' }}
+      >
+        {selectionMode ? (
+          <>
+            <button
+              onClick={clearSelection}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded transition-colors"
+              style={{ color: '#6b7280', backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
+            >
+              <X size={11} /> Cancel
+            </button>
+            <span className="text-[10px] font-semibold" style={{ color: '#A58D69' }}>
+              Tap sessions to select · {selected.size} chosen
+            </span>
+          </>
+        ) : (
+          <button
+            onClick={() => setSelectionMode(true)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded transition-colors hover:bg-white"
+            style={{ color: '#6b7280', backgroundColor: 'transparent', border: '1px solid #e5e7eb' }}
+            title="Multi-select sessions"
+          >
+            <CheckSquare size={11} /> Select
+          </button>
+        )}
+        {copyDestPicker && (
+          <span className="ml-auto text-[10px] font-semibold" style={{ color: '#A58D69' }}>
+            ← Tap a day to copy {selected.size} session{selected.size === 1 ? '' : 's'} there
+          </span>
+        )}
+      </div>
+
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -382,14 +530,45 @@ export default function AthleteWeekViewV2({
                   </div>
                 </div>
 
+                {/* If we're in copy-destination pick mode, the whole
+                    day column acts as a button that bulk-copies the
+                    selection here. We render an overlay so the click
+                    target covers the entire column area. */}
+                {copyDestPicker && (
+                  <button
+                    onClick={() => runBulkCopyTo(dayISO)}
+                    className="absolute inset-0 z-10 cursor-copy"
+                    style={{
+                      backgroundColor: 'rgba(165,141,105,0.04)',
+                      border: '2px dashed rgba(165,141,105,0.3)',
+                      borderRadius: 4,
+                    }}
+                    aria-label={`Copy ${selected.size} sessions to ${dayISO}`}
+                  />
+                )}
+
                 {!isEmpty && (
-                  <div className="flex-1 px-2 py-2 space-y-2">
+                  <div className="flex-1 px-2 py-2 space-y-2 relative">
                     {loading && (
                       <div className="text-[10px] italic" style={{ color: '#9ca3af' }}>Loading…</div>
                     )}
                     {!loading && sessions.map(s => {
                       const dim = (dimCompletedIds && dimCompletedIds.has(s.id))
                         || (s.status === 'completed' && !hideCompleted);
+                      // In selection mode, render a plain selectable
+                      // card (no drag, no long-press) so taps toggle
+                      // the checkbox cleanly.
+                      if (selectionMode) {
+                        return (
+                          <SelectableSessionCard
+                            key={s.id}
+                            session={s}
+                            dim={dim}
+                            checked={selected.has(s.id)}
+                            onToggle={() => toggleSelected(s.id)}
+                          />
+                        );
+                      }
                       return (
                         <DraggableSessionCard
                           key={s.id}
@@ -405,6 +584,18 @@ export default function AthleteWeekViewV2({
                         />
                       );
                     })}
+                    {/* + button under the existing sessions so the coach
+                        can stack a second session on a day that already
+                        has one. Hidden in selection mode. */}
+                    {!selectionMode && !copyDestPicker && (
+                      <button
+                        onClick={(e) => openAddPopover(dayISO, e.currentTarget)}
+                        className="w-full mt-1 flex items-center justify-center gap-1 px-2 py-1 rounded border text-[10px] italic transition-colors hover:border-gold-300 hover:bg-gold-50/40"
+                        style={{ borderColor: '#e5e7eb', borderStyle: 'dashed', color: '#9ca3af' }}
+                      >
+                        <Plus size={10} /> Add session
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -417,14 +608,15 @@ export default function AthleteWeekViewV2({
                       >
                         Drop here →
                       </div>
-                    ) : (
-                      <div
-                        className="opacity-0 group-hover/emptyday:opacity-100 transition-opacity text-[10px] italic select-none"
-                        style={{ color: '#cbd5e1' }}
+                    ) : !selectionMode && !copyDestPicker ? (
+                      <button
+                        onClick={(e) => openAddPopover(dayISO, e.currentTarget)}
+                        className="text-[10px] italic select-none transition-opacity opacity-40 hover:opacity-100"
+                        style={{ color: '#A58D69' }}
                       >
                         + Add session
-                      </div>
-                    )}
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </DroppableDay>
@@ -461,6 +653,80 @@ export default function AthleteWeekViewV2({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Add Session popover — opens from the empty-day "+ Add session"
+          hint, or from the small dashed button under existing sessions. */}
+      {addPopover && (
+        <AddSessionPopover
+          athleteId={athlete.id}
+          targetDateISO={addPopover.dayISO}
+          anchorRect={addPopover.anchorRect}
+          onClose={() => setAddPopover(null)}
+          onAdded={() => { setAddPopover(null); refresh(); }}
+        />
+      )}
+
+      {/* Bulk action bar — appears whenever something's selected. */}
+      <BulkActionBar
+        count={selected.size}
+        disabled={busy}
+        onCancel={clearSelection}
+        onRepeat={runBulkRepeat}
+        onCopy={() => setCopyDestPicker(true)}
+        onDelete={() => setConfirmBulkDelete(true)}
+      />
+
+      {/* Bulk delete confirm modal */}
+      {confirmBulkDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onClick={() => !busy && setConfirmBulkDelete(false)}
+        >
+          <div
+            className="rounded-xl bg-white w-full max-w-sm p-5"
+            style={{ border: '1px solid #e5e7eb', boxShadow: '0 24px 48px rgba(0,0,0,0.18)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <span
+                className="shrink-0 inline-flex items-center justify-center rounded-full"
+                style={{ width: 36, height: 36, backgroundColor: 'rgba(220,38,38,0.10)' }}
+              >
+                <Trash2 size={16} style={{ color: '#dc2626' }} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold" style={{ color: '#1C1C1C' }}>
+                  Delete {selected.size} session{selected.size === 1 ? '' : 's'}?
+                </h3>
+                <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
+                  Removes the selected planned sessions from{' '}
+                  <span className="font-semibold">{athlete.first_name || athlete.name || 'this athlete'}</span>'s
+                  plan. Session templates stay available to re-add later.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setConfirmBulkDelete(false)}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runBulkDelete}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#fff', backgroundColor: '#dc2626' }}
+              >
+                {busy ? 'Deleting…' : `Delete ${selected.size}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm-delete modal */}
       {confirmDelete && (
@@ -547,7 +813,7 @@ function DroppableDay({ dayISO, isEmpty, isToday, isLast, dragInProgress, childr
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col ${isEmpty ? 'group/emptyday' : ''}`}
+      className={`flex flex-col relative ${isEmpty ? 'group/emptyday' : ''}`}
       style={{
         borderRight: !isEmpty && !isLast ? '1px solid #f3f4f6' : 'none',
         backgroundColor: isOver
@@ -562,6 +828,44 @@ function DroppableDay({ dayISO, isEmpty, isToday, isLast, dragInProgress, childr
       }}
     >
       {children}
+    </div>
+  );
+}
+
+// ─── SelectableSessionCard ───────────────────────────────────────────
+// Plain (no drag, no long-press) variant used when the week view is in
+// selection mode. Tap toggles the checkbox; nothing else fires so the
+// coach can't accidentally open the editor while picking multiple.
+function SelectableSessionCard({ session, dim, checked, onToggle }) {
+  return (
+    <div
+      onClick={onToggle}
+      role="checkbox"
+      aria-checked={checked}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}
+      className="block w-full text-left rounded-lg transition-shadow cursor-pointer relative"
+      style={{
+        backgroundColor: checked ? 'rgba(165,141,105,0.08)' : '#fff',
+        border: checked ? '2px solid #A58D69' : '1px solid #e5e7eb',
+        opacity: dim ? 0.55 : 1,
+      }}
+    >
+      <div className="absolute top-1.5 right-1.5">
+        {checked
+          ? <CheckSquare size={14} style={{ color: '#A58D69' }} fill="rgba(165,141,105,0.18)" />
+          : <Square      size={14} style={{ color: '#9ca3af' }} />}
+      </div>
+      <div className="px-2.5 py-1.5 border-b border-gray-100">
+        <div className="text-[11px] font-bold truncate pr-5" style={{ color: '#1C1C1C' }}>
+          {session.session_name}
+        </div>
+      </div>
+      <div className="px-2 py-1.5">
+        <div className="text-[10px]" style={{ color: '#6b7280' }}>
+          {session.items?.length || 0} item{(session.items?.length || 0) === 1 ? '' : 's'}
+        </div>
+      </div>
     </div>
   );
 }
