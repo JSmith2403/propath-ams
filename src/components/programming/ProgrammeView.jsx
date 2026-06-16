@@ -77,7 +77,10 @@ export default function ProgrammeView({
 
   // Brief 5d/5e — planned training sessions, sourced into the new
   // week-by-week list (Brief Part 4 replaced the calendar surface).
-  const { planned: plannedRows } = usePlannedSessions(athleteIds);
+  // `refreshPlanned` is invoked after any block mutation that resizes
+  // or relocates the timeline (add/remove week, delete block) so the
+  // calendar pills don't lag behind the schema.
+  const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(athleteIds);
 
   // ── Modal state ─────────────────────────────────────────────────────────
   // event === null means a fresh add. event === { start_date, ... } may carry
@@ -169,6 +172,7 @@ export default function ProgrammeView({
     const res = await deleteBlockOptimistic(target.id);
     if (res.ok) {
       closeBuilder();
+      refreshPlanned();
       showToast('Block deleted');
     } else {
       showToast(`Couldn't delete block. ${res.error?.message || ''}`.trim(), 'error');
@@ -180,7 +184,13 @@ export default function ProgrammeView({
 
   const handleAddWeek = async (block) => {
     const res = await addWeekToBlock(block.id);
-    if (!res.ok) showToast(`Couldn't add week. ${res.error?.message || ''}`.trim(), 'error');
+    if (!res.ok) {
+      showToast(`Couldn't add week. ${res.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    // The shift cascade in useTrainingBlocks moves later blocks' planned
+    // sessions on the DB side — refetch so the calendar reflects it.
+    refreshPlanned();
   };
 
   const handleConfirmRemoveWeek = async () => {
@@ -188,7 +198,13 @@ export default function ProgrammeView({
     setRemoveWeekTarget(null);
     if (!target) return;
     const res = await removeLastWeekFromBlock(target.id);
-    if (!res.ok) showToast(`Couldn't remove week. ${res.error?.message || ''}`.trim(), 'error');
+    if (!res.ok) {
+      showToast(`Couldn't remove week. ${res.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    // Dropped-week planned_sessions have been deleted server-side; later
+    // blocks shifted. Refetch so the calendar pills disappear immediately.
+    refreshPlanned();
   };
 
   // Block colour map — shared between the timeline bar and the calendar
@@ -225,7 +241,7 @@ export default function ProgrammeView({
   const handleBlockDelete = async (block) => {
     setBlockSaveError(null);
     const res = await deleteBlockOptimistic(block.id);
-    if (res.ok) closeBlock();
+    if (res.ok) { closeBlock(); refreshPlanned(); }
     else setBlockSaveError(formatError(res.error, "Couldn't delete block."));
   };
 

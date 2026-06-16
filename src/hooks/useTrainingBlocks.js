@@ -199,6 +199,47 @@ export function useTrainingBlocks(athleteIds = []) {
       setBlocks(prev => prev.map(b => snapshotMap.get(b.id) || b));
       return { ok: false, error: e };
     }
+
+    // ─── Sync planned_sessions to the new block windows ───────────────
+    // The FK CASCADE only fires on DELETE of the parent training_block.
+    // We just UPDATED it (shrunk / grew), so planned_sessions in the
+    // dropped week are still hanging around — and later blocks' planned
+    // dates have drifted out of sync with the shifted block windows.
+    // See supabase/migrations/planned-sessions-window-sync-2026-06-08.sql
+    // for the schema-side companion (cleanup + RPC).
+    try {
+      const newTarget = updatedById.get(target.id);
+
+      // Target block: delete any planned_sessions outside the new window.
+      // Only meaningful when shrinking — but the predicate is cheap so
+      // we run it either way to keep the code branchless.
+      await supabase
+        .from('planned_sessions')
+        .delete()
+        .eq('block_id', target.id)
+        .or(
+          `planned_date.gt.${newTarget.end_date}`
+          + `,planned_date.lt.${newTarget.start_date}`
+          + `,week_number.gt.${newTarget.duration_weeks}`
+        );
+
+      // Later blocks: ride along by the same deltaDays so each session's
+      // calendar date stays aligned with its (now-shifted) block window.
+      if (sameAthleteLater.length) {
+        const laterIds = sameAthleteLater.map(b => b.id);
+        const { error: rpcErr } = await supabase.rpc('shift_planned_session_dates', {
+          p_block_ids:  laterIds,
+          p_delta_days: deltaDays,
+        });
+        if (rpcErr) console.error('[Blocks] shift_planned_session_dates RPC failed:', rpcErr);
+      }
+    } catch (cleanupErr) {
+      // Don't fail the whole shift just because of a cleanup glitch —
+      // the block math already committed. Surface in console and let
+      // the caller refetch on its next tick.
+      console.error('[Blocks] planned_sessions sync after shift failed:', cleanupErr);
+    }
+
     return { ok: true };
   }, []);
 

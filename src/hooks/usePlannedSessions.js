@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -17,9 +17,12 @@ export function usePlannedSessions(athleteIds = []) {
   const [planned, setPlanned] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
+  const [tick,    setTick]    = useState(0);
 
   // Stable key so we don't refetch on every render.
   const key = (athleteIds || []).slice().sort().join(',');
+
+  const refresh = useCallback(() => setTick(t => t + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,9 +56,9 @@ export function usePlannedSessions(athleteIds = []) {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [key]);
+  }, [key, tick]);
 
-  return { planned, loading, error };
+  return { planned, loading, error, refresh };
 }
 
 /**
