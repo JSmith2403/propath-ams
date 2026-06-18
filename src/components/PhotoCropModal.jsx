@@ -3,16 +3,27 @@ import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { X, Check } from 'lucide-react';
 
-/** Render the cropped region to a 400×400 JPEG data URL (full rectangle). */
+// Output resolution for cropped athlete photos. The card displays the
+// image at ~260px tall and stretches it wide via object-cover, so the
+// previous 400px source was getting upscaled on roster cards and any
+// larger detail view → visible graininess. 1024 gives every display
+// surface 2× device-pixel headroom on common laptop / phone screens
+// without bloating base64 payloads excessively (~120 KB per athlete).
+const OUTPUT_PX = 1024;
+
+/** Render the cropped region to a 1024×1024 JPEG data URL (full rectangle). */
 function getCroppedDataURL(imgEl, crop) {
   const scaleX = imgEl.naturalWidth  / imgEl.width;
   const scaleY = imgEl.naturalHeight / imgEl.height;
-  const size   = 400;
+  const size   = OUTPUT_PX;
 
   const canvas = document.createElement('canvas');
   canvas.width  = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
+  // Hint the browser to use higher-quality image smoothing on the
+  // downsample from source to 1024 — defaults vary by browser.
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 
   // Convert % crop → pixel crop relative to the displayed image
   const px = crop.unit === '%'

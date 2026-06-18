@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import AthleteCard from './AthleteCard';
 import AddAthleteModal from './AddAthleteModal';
 import { COHORTS } from '../data/athletes';
@@ -21,10 +21,26 @@ function sortAthletes(list) {
   });
 }
 
-export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete, wellnessMap = {} }) {
+export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete, onDeleteAthlete, wellnessMap = {} }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // athlete to delete
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
+  const runDelete = async () => {
+    if (!confirmDelete || !onDeleteAthlete) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const res = await onDeleteAthlete(confirmDelete.id);
+    setDeleteBusy(false);
+    if (res?.ok === false) {
+      setDeleteError(res?.error?.message || 'Could not delete athlete.');
+      return;
+    }
+    setConfirmDelete(null);
+  };
 
   const filtered = sortAthletes(
     athletes.filter((a) => {
@@ -106,6 +122,7 @@ export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete,
                 athlete={athlete}
                 onClick={onSelectAthlete}
                 wellnessData={wellnessMap[athlete.id]}
+                onRequestDelete={onDeleteAthlete ? (a) => { setDeleteError(null); setConfirmDelete(a); } : null}
               />
             ))}
           </div>
@@ -117,6 +134,68 @@ export default function AthleteRoster({ athletes, onSelectAthlete, onAddAthlete,
           onClose={() => setShowAddModal(false)}
           onAdd={onAddAthlete}
         />
+      )}
+
+      {/* Confirm-delete modal — destructive action gets a clear two-step
+          flow with the athlete's name typed back at the coach so they
+          can't blow away the wrong row on a stray click. */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+          onClick={() => !deleteBusy && setConfirmDelete(null)}
+        >
+          <div
+            className="rounded-xl bg-white w-full max-w-md p-6"
+            style={{ border: '1px solid #e5e7eb', boxShadow: '0 24px 48px rgba(0,0,0,0.18)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <span
+                className="shrink-0 inline-flex items-center justify-center rounded-full"
+                style={{ width: 40, height: 40, backgroundColor: 'rgba(220,38,38,0.12)' }}
+              >
+                <Trash2 size={18} style={{ color: '#dc2626' }} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold" style={{ color: '#1C1C1C' }}>
+                  Delete {confirmDelete.name}?
+                </h3>
+                <p className="text-xs mt-1.5 leading-relaxed" style={{ color: '#6b7280' }}>
+                  Permanently removes <span className="font-semibold">{confirmDelete.name}</span> and
+                  everything linked to them: training blocks, planned sessions, logged sets, check-ins,
+                  wellness history, mental skills progress. <span className="font-semibold text-red-600">This can't be undone.</span>
+                </p>
+              </div>
+            </div>
+            {deleteError && (
+              <div
+                className="mb-3 px-3 py-2 rounded text-[11px] font-semibold"
+                style={{ color: '#991b1b', backgroundColor: '#fee2e2', border: '1px solid #fecaca' }}
+              >
+                {deleteError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleteBusy}
+                className="px-4 py-2 text-sm font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runDelete}
+                disabled={deleteBusy}
+                className="px-4 py-2 text-sm font-semibold rounded transition-colors disabled:opacity-50"
+                style={{ color: '#fff', backgroundColor: '#dc2626' }}
+              >
+                {deleteBusy ? 'Deleting…' : `Delete ${confirmDelete.name}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

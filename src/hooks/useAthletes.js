@@ -172,6 +172,38 @@ export function useAthletes({ seedEnabled = true } = {}) {
   const updateAthlete = useCallback((id, updates) =>
     update(id, a => ({ ...a, ...updates })), [update]);
 
+  // ── Delete (optimistic) ────────────────────────────────────────
+  // Removes the athletes row. FK CASCADE on athlete_id (planned_sessions,
+  // training_blocks, set_logs etc.) cleans up everything they own.
+  // Returns { ok, error? } so the caller can keep the confirm modal
+  // open on failure and show inline copy.
+  const deleteAthlete = useCallback(async (id) => {
+    // Optimistic remove
+    setAthletes(prev => {
+      const idx = prev.findIndex(a => a.id === id);
+      if (idx < 0) return prev;
+      const snapshot = prev[idx];
+      const next = prev.filter(a => a.id !== id);
+      // Hold the snapshot on the function for rollback below.
+      deleteAthlete._lastSnapshot = { idx, snapshot };
+      return next;
+    });
+    const { error } = await supabase.from('athletes').delete().eq('id', id);
+    if (error) {
+      console.error('[Athletes] delete failed, reverting:', error);
+      const snap = deleteAthlete._lastSnapshot;
+      if (snap) {
+        setAthletes(prev => {
+          const next = prev.slice();
+          next.splice(Math.min(snap.idx, next.length), 0, snap.snapshot);
+          return next;
+        });
+      }
+      return { ok: false, error };
+    }
+    return { ok: true };
+  }, []);
+
   const updateRag = useCallback((id, domain, status) =>
     update(id, a => ({ ...a, rag: { ...a.rag, [domain]: status } })), [update]);
 
@@ -481,7 +513,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     loading,
     getAthlete,
     // Phase 1
-    addAthlete, updateAthlete, updateRag, addRagEntry,
+    addAthlete, updateAthlete, deleteAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addCheckIn, updateCheckIn, deleteCheckIn,
     // Phase 2 — individual

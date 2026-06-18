@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import { COHORT_CONFIG } from '../data/athletes';
 import WellnessDonutRing from './wellness/WellnessDonutRing';
 import { getRagColour } from '../utils/wellnessRag';
@@ -245,7 +246,7 @@ function WellnessZone({ wellnessData, athleteId, onClick }) {
 
 // ─── Main card ───────────────────────────────────────────────────────────────
 
-export default function AthleteCard({ athlete, onClick, wellnessData }) {
+export default function AthleteCard({ athlete, onClick, wellnessData, onRequestDelete }) {
   const age       = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const days      = daysSinceLastCheckIn(athlete);
@@ -263,7 +264,7 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
   return (
     <div
       onClick={() => onClick(athlete.id)}
-      className="bg-white rounded-lg overflow-hidden cursor-pointer flex flex-col shadow-card hover:shadow-raised transition-all duration-200 ease-soft hover:-translate-y-0.5 border border-ink-100"
+      className="group/athletecard bg-white rounded-lg overflow-hidden cursor-pointer flex flex-col shadow-card hover:shadow-raised transition-all duration-200 ease-soft hover:-translate-y-0.5 border border-ink-100"
     >
       {/* ── 1. Image area (fixed 210px) ─────────────────────────────────── */}
       <div
@@ -285,6 +286,27 @@ export default function AthleteCard({ athlete, onClick, wellnessData }) {
         <div className="absolute top-2 right-2">
           <CheckInBadge days={days} />
         </div>
+
+        {/* Delete icon — top LEFT of the photo area. Ghosted at rest so
+            it doesn't fight the photo for attention; goes fully opaque
+            on card hover. stopPropagation so it doesn't open the
+            athlete detail view, pointerdown stops nascent drags. */}
+        {onRequestDelete && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDelete(athlete);
+            }}
+            className="absolute top-2 left-2 p-1.5 rounded-full transition-opacity opacity-40 hover:opacity-100 group-hover/athletecard:opacity-90 hover:bg-red-500/95"
+            style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: '#fff' }}
+            title={`Delete ${athlete.name}`}
+            aria-label={`Delete ${athlete.name}`}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
 
         {/* Name + meta overlaid at the bottom with a dark gradient fade */}
         <div

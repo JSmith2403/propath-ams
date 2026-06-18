@@ -45,7 +45,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   const {
     athletes, loading, getAthlete,
-    addAthlete, updateAthlete, updateRag, addRagEntry,
+    addAthlete, updateAthlete, deleteAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
@@ -155,6 +155,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={visibleAthletes}
             onSelectAthlete={handleSelectAthlete}
             onAddAthlete={canDelete ? addAthlete : undefined}
+            onDeleteAthlete={canDelete ? deleteAthlete : undefined}
             wellnessMap={wellnessMap}
           />
         )}
