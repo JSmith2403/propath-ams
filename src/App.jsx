@@ -90,6 +90,12 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   // External providers cannot delete notes.
   const canDelete = !isExternal;
+  // Athlete-level delete is destructive (FK CASCADE wipes every linked
+  // training_block, planned_session, set_log, check-in, mental-skills
+  // session etc.) so we keep it tighter than canDelete — only the
+  // primary admin sees the trash icon on roster cards. Other admins
+  // / co-admins can still edit, just not nuke.
+  const isMainAdmin = isAdmin && userEmail === 'jonahsmithhintsa@gmail.com';
 
   const handleNavigate = (v) => {
     if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources')) return;
@@ -155,7 +161,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={visibleAthletes}
             onSelectAthlete={handleSelectAthlete}
             onAddAthlete={canDelete ? addAthlete : undefined}
-            onDeleteAthlete={canDelete ? deleteAthlete : undefined}
+            onDeleteAthlete={isMainAdmin ? deleteAthlete : undefined}
             wellnessMap={wellnessMap}
           />
         )}
