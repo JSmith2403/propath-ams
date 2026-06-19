@@ -44,8 +44,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const [profileNav, setProfileNav] = useState(null);
 
   const {
-    athletes, loading, getAthlete,
-    addAthlete, updateAthlete, deleteAthlete, updateRag, addRagEntry,
+    athletes, archivedAthletes, loading, getAthlete,
+    addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
@@ -159,8 +159,11 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         {view === 'roster' && (
           <AthleteRoster
             athletes={visibleAthletes}
+            archivedAthletes={isExternal ? [] : archivedAthletes}
             onSelectAthlete={handleSelectAthlete}
             onAddAthlete={canDelete ? addAthlete : undefined}
+            onArchiveAthlete={canDelete ? archiveAthlete : undefined}
+            onRestoreAthlete={canDelete ? restoreAthlete : undefined}
             onDeleteAthlete={isMainAdmin ? deleteAthlete : undefined}
             wellnessMap={wellnessMap}
           />

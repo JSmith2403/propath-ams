@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Archive } from 'lucide-react';
 import { COHORT_CONFIG } from '../data/athletes';
 import WellnessDonutRing from './wellness/WellnessDonutRing';
 import { getRagColour } from '../utils/wellnessRag';
@@ -246,7 +246,7 @@ function WellnessZone({ wellnessData, athleteId, onClick }) {
 
 // ─── Main card ───────────────────────────────────────────────────────────────
 
-export default function AthleteCard({ athlete, onClick, wellnessData, onRequestDelete }) {
+export default function AthleteCard({ athlete, onClick, wellnessData, onRequestArchive }) {
   const age       = calculateAge(athlete.dob);
   const tierStyle = COHORT_CONFIG[athlete.cohort] || COHORT_CONFIG['Elite'];
   const days      = daysSinceLastCheckIn(athlete);
@@ -287,24 +287,26 @@ export default function AthleteCard({ athlete, onClick, wellnessData, onRequestD
           <CheckInBadge days={days} />
         </div>
 
-        {/* Delete icon — top LEFT of the photo area. Ghosted at rest so
-            it doesn't fight the photo for attention; goes fully opaque
-            on card hover. stopPropagation so it doesn't open the
-            athlete detail view, pointerdown stops nascent drags. */}
-        {onRequestDelete && (
+        {/* Archive icon — top LEFT of the photo area. Ghosted at rest
+            so it doesn't fight the photo; goes fully opaque on card
+            hover. Archive is non-destructive (hides the athlete from
+            the roster but keeps everything) so this can live behind
+            the broad coach-edit gate. True delete is in the archived
+            panel, gated tighter. */}
+        {onRequestArchive && (
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              onRequestDelete(athlete);
+              onRequestArchive(athlete);
             }}
-            className="absolute top-2 left-2 p-1.5 rounded-full transition-opacity opacity-40 hover:opacity-100 group-hover/athletecard:opacity-90 hover:bg-red-500/95"
+            className="absolute top-2 left-2 p-1.5 rounded-full transition-opacity opacity-40 hover:opacity-100 group-hover/athletecard:opacity-90 hover:bg-gold-600"
             style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: '#fff' }}
-            title={`Delete ${athlete.name}`}
-            aria-label={`Delete ${athlete.name}`}
+            title={`Archive ${athlete.name}`}
+            aria-label={`Archive ${athlete.name}`}
           >
-            <Trash2 size={13} />
+            <Archive size={13} />
           </button>
         )}
 

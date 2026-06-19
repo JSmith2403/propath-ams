@@ -172,7 +172,28 @@ export function useAthletes({ seedEnabled = true } = {}) {
   const updateAthlete = useCallback((id, updates) =>
     update(id, a => ({ ...a, ...updates })), [update]);
 
-  // ── Delete (optimistic) ────────────────────────────────────────
+  // ── Archive / Restore ──────────────────────────────────────────
+  // Soft-hide an athlete by stamping data.is_archived. The athletes
+  // table query still pulls every row (the photo bytes dominate, not
+  // the count), but the public `athletes` array filters out archived
+  // entries so they don't show on the roster. Archived athletes live
+  // in `archivedAthletes` instead, surfaced by an explicit "Archived"
+  // panel on the roster. Restoring is just the reverse flag flip —
+  // every training_block, planned_session, set_log etc. stays
+  // untouched, so a returning athlete sees their whole history.
+  const archiveAthlete = useCallback((id) =>
+    update(id, a => ({ ...a, is_archived: true, archived_at: new Date().toISOString() })),
+    [update],
+  );
+  const restoreAthlete = useCallback((id) =>
+    update(id, a => {
+      const { is_archived, archived_at, ...rest } = a;
+      return rest;
+    }),
+    [update],
+  );
+
+  // ── Delete (optimistic, hard) ──────────────────────────────────
   // Removes the athletes row. FK CASCADE on athlete_id (planned_sessions,
   // training_blocks, set_logs etc.) cleans up everything they own.
   // Returns { ok, error? } so the caller can keep the confirm modal
@@ -508,12 +529,19 @@ export function useAthletes({ seedEnabled = true } = {}) {
     });
   }, [p2update]);
 
+  // Split active vs archived. The hook always loads everything in one
+  // round-trip so a Restore is instant — no extra fetch.
+  const activeAthletes   = athletes.filter(a => !a.is_archived);
+  const archivedAthletes = athletes.filter(a =>  a.is_archived);
+
   return {
-    athletes,
+    athletes: activeAthletes,
+    archivedAthletes,
     loading,
     getAthlete,
     // Phase 1
-    addAthlete, updateAthlete, deleteAthlete, updateRag, addRagEntry,
+    addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete,
+    updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addCheckIn, updateCheckIn, deleteCheckIn,
     // Phase 2 — individual
