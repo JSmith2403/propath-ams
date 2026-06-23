@@ -211,6 +211,88 @@ export default function AthleteWeekViewV2({
     });
   }, []);
 
+  // ── Marquee / lasso selection ──────────────────────────────────
+  // Desktop-only Finder-style rectangle select. While in selectionMode,
+  // mousedown on empty grid space starts a rectangle that follows the
+  // cursor. On mouseup, every SessionCard whose bounding box intersects
+  // the rectangle gets ADDED to the selection (additive — won't clear
+  // what's already chosen). Touch users use tap-to-toggle instead.
+  const gridContainerRef = useRef(null);
+  const cardRefs = useRef(new Map()); // sessionId → HTMLElement
+  const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in grid-local px
+
+  const registerCardRef = useCallback((id, el) => {
+    if (el) cardRefs.current.set(id, el);
+    else    cardRefs.current.delete(id);
+  }, []);
+
+  // Begin marquee on mousedown over empty grid space. Skips when the
+  // target is inside a session card, the add-session affordance, or
+  // any interactive element so a click-to-toggle still works cleanly.
+  const handleGridMouseDown = (e) => {
+    if (!selectionMode || copyDestPicker) return;
+    if (e.button !== 0) return; // left-click only
+    if (e.target.closest('[data-session-card]')) return;
+    if (e.target.closest('button')) return;
+    const rect = gridContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setMarquee({ x1: x, y1: y, x2: x, y2: y });
+    e.preventDefault();
+  };
+
+  // Document-level move + up so the cursor can drift outside the
+  // grid mid-drag without dropping the marquee.
+  useEffect(() => {
+    if (!marquee) return;
+    const onMove = (e) => {
+      const rect = gridContainerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMarquee(m => m && ({ ...m, x2: e.clientX - rect.left, y2: e.clientY - rect.top }));
+    };
+    const onUp = () => {
+      // Resolve which cards intersect, additively select them
+      const m = marquee;
+      if (!m) return;
+      const rect = gridContainerRef.current?.getBoundingClientRect();
+      if (!rect) { setMarquee(null); return; }
+      const box = {
+        left:   Math.min(m.x1, m.x2),
+        right:  Math.max(m.x1, m.x2),
+        top:    Math.min(m.y1, m.y2),
+        bottom: Math.max(m.y1, m.y2),
+      };
+      // Ignore tiny drags (treat as a stray click)
+      const dragged = (box.right - box.left) > 4 || (box.bottom - box.top) > 4;
+      if (dragged) {
+        const next = new Set(selected);
+        for (const [id, el] of cardRefs.current.entries()) {
+          if (!el) continue;
+          const cr = el.getBoundingClientRect();
+          const cardLeft   = cr.left   - rect.left;
+          const cardRight  = cr.right  - rect.left;
+          const cardTop    = cr.top    - rect.top;
+          const cardBottom = cr.bottom - rect.top;
+          const intersects =
+            cardLeft   < box.right  &&
+            cardRight  > box.left   &&
+            cardTop    < box.bottom &&
+            cardBottom > box.top;
+          if (intersects) next.add(id);
+        }
+        setSelected(next);
+      }
+      setMarquee(null);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [marquee, selected]);
+
   const plannedByDate = useMemo(() => {
     const m = new Map();
     for (const p of planned) {
@@ -438,7 +520,7 @@ export default function AthleteWeekViewV2({
               <X size={11} /> Cancel
             </button>
             <span className="text-[10px] font-semibold" style={{ color: '#A58D69' }}>
-              Tap sessions to select · {selected.size} chosen
+              Tap sessions, or drag a box across them · {selected.size} chosen
             </span>
           </>
         ) : (
@@ -481,7 +563,9 @@ export default function AthleteWeekViewV2({
         )}
 
         <div
-          className="grid items-start"
+          ref={gridContainerRef}
+          onMouseDown={handleGridMouseDown}
+          className="grid items-start relative"
           style={{
             gridTemplateColumns: days
               .map(dayISO => {
@@ -493,8 +577,26 @@ export default function AthleteWeekViewV2({
               })
               .join(' '),
             minHeight: 120,
+            cursor: selectionMode && !copyDestPicker ? 'crosshair' : undefined,
+            userSelect: marquee ? 'none' : undefined,
           }}
         >
+          {/* Marquee overlay — only rendered while a lasso is in flight */}
+          {marquee && (
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                left:   Math.min(marquee.x1, marquee.x2),
+                top:    Math.min(marquee.y1, marquee.y2),
+                width:  Math.abs(marquee.x2 - marquee.x1),
+                height: Math.abs(marquee.y2 - marquee.y1),
+                backgroundColor: 'rgba(165,141,105,0.12)',
+                border: '1.5px dashed #A58D69',
+                borderRadius: 3,
+                zIndex: 5,
+              }}
+            />
+          )}
           {days.map((dayISO, i) => {
             const sessions = plannedByDate.get(dayISO) || [];
             const isToday = dayISO === todayISO;
@@ -566,6 +668,7 @@ export default function AthleteWeekViewV2({
                             dim={dim}
                             checked={selected.has(s.id)}
                             onToggle={() => toggleSelected(s.id)}
+                            registerRef={(el) => registerCardRef(s.id, el)}
                           />
                         );
                       }
@@ -836,9 +939,11 @@ function DroppableDay({ dayISO, isEmpty, isToday, isLast, dragInProgress, childr
 // Plain (no drag, no long-press) variant used when the week view is in
 // selection mode. Tap toggles the checkbox; nothing else fires so the
 // coach can't accidentally open the editor while picking multiple.
-function SelectableSessionCard({ session, dim, checked, onToggle }) {
+function SelectableSessionCard({ session, dim, checked, onToggle, registerRef }) {
   return (
     <div
+      ref={registerRef}
+      data-session-card
       onClick={onToggle}
       role="checkbox"
       aria-checked={checked}
