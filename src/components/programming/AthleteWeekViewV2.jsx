@@ -1043,18 +1043,23 @@ function DraggableSessionCard({
     cursor: 'grab',
   };
 
+  // JSX-spread semantics: a later `onPointerDown={…}` REPLACES the one
+  // pulled in by `{...listeners}` rather than running alongside it. The
+  // previous version of this file fell into that trap, so dnd-kit never
+  // saw the pointer-down and drags never started. Compose explicitly:
+  // call my hold-timer first, then forward to dnd-kit's listener.
+  const composedPointerDown = (e) => {
+    startHoldTimer(e);
+    listeners?.onPointerDown?.(e);
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={dragStyle}
       {...attributes}
       {...listeners}
-      onPointerDown={(e) => {
-        startHoldTimer(e);
-        // Let dnd-kit's own pointer-down listener also fire — its handler
-        // is included in {...listeners} above and receives the event
-        // before this one in the DOM event chain.
-      }}
+      onPointerDown={composedPointerDown}
       onPointerMove={trackHoldMove}
       onPointerUp={cancelHoldTimer}
       onPointerCancel={cancelHoldTimer}
