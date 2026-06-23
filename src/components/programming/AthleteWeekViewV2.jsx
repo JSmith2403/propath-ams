@@ -1032,6 +1032,14 @@ function DraggableSessionCard({
     // renders the preview that actually follows the pointer.
     opacity: isDraggingThis ? 0.35 : 1,
     touchAction: 'none',
+    // Block native text selection so the browser doesn't steal the
+    // first 8px of pointer movement that dnd-kit needs to activate
+    // a drag. Without this, click-and-drag just highlights the
+    // session name instead of starting the drag.
+    userSelect:       'none',
+    WebkitUserSelect: 'none',
+    MozUserSelect:    'none',
+    msUserSelect:     'none',
     cursor: 'grab',
   };
 
