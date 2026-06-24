@@ -567,12 +567,18 @@ export default function AthleteWeekViewV2({
           onMouseDown={handleGridMouseDown}
           className="grid items-start relative"
           style={{
+            // Columns stay STABLE during drag. Previously empty days
+            // grew from 0.5fr → 0.75fr while a drag was in flight,
+            // which pushed every other column around the moment the
+            // user picked a card up — felt chaotic. Empty days are
+            // still droppable; they just keep their compact width.
             gridTemplateColumns: days
               .map(dayISO => {
-                const isEmpty = !loading && (plannedByDate.get(dayISO) || []).length === 0;
-                // While dragging, give empty days a bit more width so
-                // they're an easier drop target on touch.
-                if (activeDrag) return isEmpty ? '0.75fr' : '1fr';
+                // Use the in-memory session list directly (don't gate on
+                // `loading`) so the column widths stay stable during a
+                // refresh tick. Previously a refetch flipped every
+                // populated day to look "empty" momentarily → flash.
+                const isEmpty = (plannedByDate.get(dayISO) || []).length === 0;
                 return isEmpty ? '0.5fr' : '1fr';
               })
               .join(' '),
@@ -601,7 +607,11 @@ export default function AthleteWeekViewV2({
             const sessions = plannedByDate.get(dayISO) || [];
             const isToday = dayISO === todayISO;
             const d = parseDate(dayISO);
-            const isEmpty = !loading && sessions.length === 0;
+            // Don't gate on `loading` here either — see the column-width
+            // calc above. During a refetch, `planned` still holds the
+            // previous data, so cards stay visible until the new data
+            // arrives. Zero flash, zero layout shift.
+            const isEmpty = sessions.length === 0;
 
             return (
               <DroppableDay
@@ -651,10 +661,7 @@ export default function AthleteWeekViewV2({
 
                 {!isEmpty && (
                   <div className="flex-1 px-2 py-2 space-y-2 relative">
-                    {loading && (
-                      <div className="text-[10px] italic" style={{ color: '#9ca3af' }}>Loading…</div>
-                    )}
-                    {!loading && sessions.map(s => {
+                    {sessions.map(s => {
                       const dim = (dimCompletedIds && dimCompletedIds.has(s.id))
                         || (s.status === 'completed' && !hideCompleted);
                       // In selection mode, render a plain selectable
@@ -1027,15 +1034,18 @@ function DraggableSessionCard({
   }, []);
 
   const dragStyle = {
-    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    // While the real card is being dragged, hide it — the DragOverlay
-    // renders the preview that actually follows the pointer.
-    opacity: isDraggingThis ? 0.35 : 1,
+    // Don't apply the drag transform to the source card — the
+    // DragOverlay handles all visual following. Source stays in place
+    // and just fades while a drag is in flight, so the user always
+    // has one preview (the overlay) and one origin marker (a faint
+    // outline where the card came from). Previous version showed
+    // BOTH the transform on the source AND the overlay — two cards
+    // visible at once, confusing.
+    visibility: isDraggingThis ? 'hidden' : 'visible',
     touchAction: 'none',
     // Block native text selection so the browser doesn't steal the
     // first 8px of pointer movement that dnd-kit needs to activate
-    // a drag. Without this, click-and-drag just highlights the
-    // session name instead of starting the drag.
+    // a drag.
     userSelect:       'none',
     WebkitUserSelect: 'none',
     MozUserSelect:    'none',
