@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Archive, ArchiveRestore, Plus, Search, Trash2, X } from 'lucide-react';
 import AthleteCard from './AthleteCard';
 import AddAthleteModal from './AddAthleteModal';
+import MobileAthleteRow from './mobile/MobileAthleteRow';
 import { COHORTS } from '../data/athletes';
 
 const FILTER_OPTIONS = ['All', ...COHORTS];
@@ -167,17 +168,33 @@ export default function AthleteRoster({
             <p className="text-sm mt-1">Try adjusting your filters</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filtered.map((athlete) => (
-              <AthleteCard
-                key={athlete.id}
-                athlete={athlete}
-                onClick={onSelectAthlete}
-                wellnessData={wellnessMap[athlete.id]}
-                onRequestArchive={onArchiveAthlete ? (a) => { setArchiveError(null); setConfirmArchive(a); } : null}
-              />
-            ))}
-          </div>
+          <>
+            {/* Mobile: horizontal rows (contact-list style). Denser,
+                thumb-scannable, taps into the profile. Hidden on md+. */}
+            <div className="md:hidden -mx-8 border-t border-ink-100 bg-white">
+              {filtered.map((athlete) => (
+                <MobileAthleteRow
+                  key={athlete.id}
+                  athlete={athlete}
+                  onClick={onSelectAthlete}
+                  onRequestArchive={onArchiveAthlete ? (a) => { setArchiveError(null); setConfirmArchive(a); } : null}
+                />
+              ))}
+            </div>
+
+            {/* Desktop / tablet: existing card grid. Hidden below md. */}
+            <div className="hidden md:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {filtered.map((athlete) => (
+                <AthleteCard
+                  key={athlete.id}
+                  athlete={athlete}
+                  onClick={onSelectAthlete}
+                  wellnessData={wellnessMap[athlete.id]}
+                  onRequestArchive={onArchiveAthlete ? (a) => { setArchiveError(null); setConfirmArchive(a); } : null}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
 

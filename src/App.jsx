@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
+import MobileBottomNav from './components/mobile/MobileBottomNav';
+import RecentUpdatesView from './components/recent/RecentUpdatesView';
 import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
@@ -144,17 +146,32 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#f4f5f7' }}>
-      <Sidebar
-        view={view}
-        onNavigate={handleNavigate}
-        role={role}
-        userEmail={userEmail}
-        userName={userName}
-        onSignOut={signOut}
-        isAdmin={isAdmin}
-      />
+      {/* Sidebar: full-width on desktop (md+), hidden on mobile in
+          favour of the bottom nav. Sidebar contains every module the
+          coach uses on desktop; the mobile bottom nav exposes the 5
+          most-used ones. */}
+      <div className="hidden md:flex">
+        <Sidebar
+          view={view}
+          onNavigate={handleNavigate}
+          role={role}
+          userEmail={userEmail}
+          userName={userName}
+          onSignOut={signOut}
+          isAdmin={isAdmin}
+        />
+      </div>
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      {/* Main content — pads the bottom on mobile so the bottom nav
+          doesn't cover the last row of scrollable content. */}
+      <main className="flex-1 flex flex-col overflow-hidden pb-14 md:pb-0">
+
+        {view === 'updates' && !isExternal && (
+          <RecentUpdatesView
+            athletes={visibleAthletes}
+            onNavigateToAthlete={handleSelectAthlete}
+          />
+        )}
 
         {view === 'roster' && (
           <AthleteRoster
@@ -243,6 +260,13 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         )}
 
       </main>
+
+      {/* Mobile-only bottom nav — 5 icons: Updates / Athletes / Data /
+          Programme / Wellness. Hidden on md+ where the sidebar shows
+          the full navigation. */}
+      {!isExternal && (
+        <MobileBottomNav view={view} onNavigate={handleNavigate} />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, BookOpen } from 'lucide-react';
+import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, BookOpen, Bell } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -91,6 +91,15 @@ export default function Sidebar({
         <div className="px-6 mb-2">
           <p className="text-xs font-semibold uppercase tracking-widest text-white/25">Main</p>
         </div>
+
+        {!isExternal && (
+          <NavItem
+            icon={Bell}
+            label="Recent Updates"
+            active={view === 'updates'}
+            onClick={() => onNavigate('updates')}
+          />
+        )}
 
         <NavItem
           icon={Users}
