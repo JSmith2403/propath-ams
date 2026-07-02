@@ -1,39 +1,51 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-const READ_STORAGE_KEY = 'updates:read';
+// Feed shape — deliberately narrow to keep it fast:
+//   - only pulls the last MAX_AGE_DAYS days (server-side date filter)
+//   - caps the merged result at MAX_ITEMS so the DOM stays light
+const MAX_AGE_DAYS  = 30;
+const MAX_ITEMS     = 50;
+
+// localStorage keys
+const READ_THROUGH_KEY = 'updates:read_through_ts'; // ISO, everything ≤ this is implicitly read
+const READ_IDS_KEY     = 'updates:read_ids';        // explicit reads for items AFTER read_through_ts
 
 // ── localStorage-backed read state ────────────────────────────────────
-// Per-device for now (fine as MVP). If coaches want read state to sync
-// across their phone + laptop, we'd move this to a Supabase table
-// keyed on user_id. For now the friction is low: opening on a second
-// device shows everything as unread once, then they can hit "Mark all
-// read".
-function loadRead() {
+// Per-device. If coaches later want read state to sync between phone +
+// laptop, this moves to a Supabase table keyed on user_id.
+function loadReadIds() {
   try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(READ_STORAGE_KEY) : null;
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(READ_IDS_KEY) : null;
     if (!raw) return new Set();
     const arr = JSON.parse(raw);
     return new Set(Array.isArray(arr) ? arr : []);
   } catch { return new Set(); }
 }
-function persistRead(set) {
+function persistReadIds(set) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify([...set]));
+    window.localStorage.setItem(READ_IDS_KEY, JSON.stringify([...set]));
   } catch { /* quota / private mode — silently ignore */ }
+}
+function loadReadThrough() {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(READ_THROUGH_KEY) : null;
+    return raw || null;
+  } catch { return null; }
+}
+function persistReadThrough(iso) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(READ_THROUGH_KEY, iso);
+  } catch { /* ignore */ }
 }
 
 // ── Wellness roll-up ──────────────────────────────────────────────────
-// Each wellness_submissions row has four 1-10 sub-scores. Bucket them
-// into green/amber/red so the feed shows an at-a-glance status.
 function wellnessRag(row) {
   const scores = [row.sleep_quality, row.fatigue, row.muscle_soreness, row.stress]
     .filter(v => v != null);
   if (!scores.length) return 'grey';
-  // 1-10 scale where LOW = better (fatigue/soreness/stress) and HIGH =
-  // better (sleep_quality). Normalise all onto "worse-is-higher"
-  // ourselves. For MVP just look for any red flags.
   const invSleep = row.sleep_quality != null ? (11 - row.sleep_quality) : null;
   const worst = Math.max(
     invSleep ?? 0,
@@ -47,37 +59,44 @@ function wellnessRag(row) {
 }
 
 /**
- * useRecentUpdates — pulls a unified feed of recent activity across
- * every athlete for the coach-side Updates tab. Three sources merged:
+ * useRecentUpdates — unified coach-side activity feed.
  *
- *   1. session      — session_logs.completed_at (physical dev session
- *                     complete). Session name resolved via
- *                     planned_sessions → block_sessions.
- *   2. wellness     — wellness_submissions.created_at (morning
- *                     check-in). RAG rolled up from sub-scores.
- *   3. pb           — athlete_e1rm.created_at (append-only: every row
- *                     IS a new highest e1RM by construction).
- *                     Exercise name joined from exercise_library.
+ * Sources merged (server-side date-filtered to the last 30 days):
+ *   • session   — session_logs.completed_at
+ *   • wellness  — wellness_submissions.created_at
+ *   • pb        — athlete_e1rm.created_at
  *
- * Each row carries a namespaced `id` ("session:<uuid>", "wellness:<id>",
- * "pb:<id>") so read-state keys don't collide across sources.
+ * Read state model — two tiers for speed:
+ *   readThroughTs   — ISO water line. Everything ≤ this ISO is implicitly
+ *                     considered read. Set once, when the coach first
+ *                     opens the feature (deploy-time backdate). Also
+ *                     updated by "Mark all read" so we never accumulate
+ *                     thousands of explicit ids.
+ *   readIds         — explicit reads for items whose timestamp is AFTER
+ *                     the water line. Tiny set in practice.
  *
- * Returns:
- *   {
- *     updates, loading, error, refresh,
- *     readIds,          // Set<string> of seen ids
- *     isRead(id),
- *     markRead(id),     // add one id
- *     markAllRead(),    // add every currently-visible id
- *     unreadCount,      // updates.length - readIds ∩ currently-visible
- *   }
+ * Both survive across sessions in localStorage. Per-device for MVP.
  */
-export function useRecentUpdates({ limit = 50 } = {}) {
+export function useRecentUpdates() {
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [tick,    setTick]    = useState(0);
-  const [readIds, setReadIds] = useState(() => loadRead());
+  const [readThroughTs, setReadThroughTs] = useState(() => loadReadThrough());
+  const [readIds,       setReadIds]       = useState(() => loadReadIds());
+
+  // Initialise read-through water line to "now" the first time this
+  // hook ever mounts on a given device. That backdates every existing
+  // update to read (last 4 weeks + anything else) so the coach starts
+  // with a clean slate — new items from this moment onward count as
+  // unread as normal.
+  useEffect(() => {
+    if (!readThroughTs) {
+      const now = new Date().toISOString();
+      persistReadThrough(now);
+      setReadThroughTs(now);
+    }
+  }, [readThroughTs]);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
@@ -85,6 +104,7 @@ export function useRecentUpdates({ limit = 50 } = {}) {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      const sinceISO = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString();
       const [sessRes, wellRes, pbRes] = await Promise.all([
         supabase
           .from('session_logs')
@@ -93,24 +113,24 @@ export function useRecentUpdates({ limit = 50 } = {}) {
             planned_sessions ( block_sessions ( session_name ) )
           `)
           .not('completed_at', 'is', null)
+          .gte('completed_at', sinceISO)
           .order('completed_at', { ascending: false })
-          .limit(limit),
+          .limit(MAX_ITEMS),
         supabase
           .from('wellness_submissions')
           .select('id, athlete_id, submission_date, created_at, sleep_quality, fatigue, muscle_soreness, stress')
+          .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
-          .limit(limit),
+          .limit(MAX_ITEMS),
         supabase
           .from('athlete_e1rm')
           .select('id, athlete_id, exercise_id, e1rm_kg, created_at, exercise_library ( name )')
+          .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
-          .limit(limit),
+          .limit(MAX_ITEMS),
       ]);
       if (cancelled) return;
 
-      // Any of the three can fail independently; only surface a top-
-      // level error if EVERY source failed (some coach setups may
-      // legitimately have no wellness or PB tables populated).
       const errors = [sessRes.error, wellRes.error, pbRes.error].filter(Boolean);
       if (errors.length === 3) {
         console.error('[useRecentUpdates] every source failed', errors);
@@ -147,10 +167,10 @@ export function useRecentUpdates({ limit = 50 } = {}) {
           timestamp: r.created_at,
           rag: wellnessRag(r),
           scores: {
-            sleep_quality:    r.sleep_quality,
-            fatigue:          r.fatigue,
-            muscle_soreness:  r.muscle_soreness,
-            stress:           r.stress,
+            sleep_quality:   r.sleep_quality,
+            fatigue:         r.fatigue,
+            muscle_soreness: r.muscle_soreness,
+            stress:          r.stress,
           },
         });
       }
@@ -168,37 +188,53 @@ export function useRecentUpdates({ limit = 50 } = {}) {
 
       rows.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       setError(null);
-      setUpdates(rows.slice(0, limit * 2)); // cap combined feed
+      setUpdates(rows.slice(0, MAX_ITEMS));
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [limit, tick]);
+  }, [tick]);
 
-  const isRead = useCallback((id) => readIds.has(id), [readIds]);
+  // ── Read-state helpers ─────────────────────────────────────────
+  const isRead = useCallback((u) => {
+    if (!u) return false;
+    if (readThroughTs && u.timestamp && u.timestamp <= readThroughTs) return true;
+    return readIds.has(u.id);
+  }, [readIds, readThroughTs]);
 
-  const markRead = useCallback((id) => {
+  const markRead = useCallback((u) => {
+    if (!u || isRead(u)) return;
     setReadIds(prev => {
-      if (prev.has(id)) return prev;
       const next = new Set(prev);
-      next.add(id);
-      persistRead(next);
+      next.add(u.id);
+      persistReadIds(next);
       return next;
     });
-  }, []);
+  }, [isRead]);
 
   const markAllRead = useCallback(() => {
-    setReadIds(prev => {
-      const next = new Set(prev);
-      for (const u of updates) next.add(u.id);
-      persistRead(next);
-      return next;
-    });
-  }, [updates]);
+    // Move the water line to now — every currently visible item flips
+    // to read in one stroke, and readIds can be pruned to just those
+    // items that are still after the new water line (which is none).
+    const now = new Date().toISOString();
+    persistReadThrough(now);
+    setReadThroughTs(now);
+    if (readIds.size) {
+      setReadIds(new Set());
+      persistReadIds(new Set());
+    }
+  }, [readIds.size]);
 
   const unreadCount = useMemo(
-    () => updates.reduce((n, u) => n + (readIds.has(u.id) ? 0 : 1), 0),
-    [updates, readIds],
+    () => updates.reduce((n, u) => n + (isRead(u) ? 0 : 1), 0),
+    [updates, isRead],
   );
 
-  return { updates, loading, error, refresh, readIds, isRead, markRead, markAllRead, unreadCount };
+  return {
+    updates, loading, error, refresh,
+    isRead, markRead, markAllRead, unreadCount,
+    // Exposed so the view can put a copy note next to the "Mark all read"
+    // button if it wants ("showing last N days").
+    maxAgeDays: MAX_AGE_DAYS,
+    maxItems:   MAX_ITEMS,
+  };
 }

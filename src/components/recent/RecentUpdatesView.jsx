@@ -70,8 +70,8 @@ function groupByDay(updates) {
 export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }) {
   const {
     updates, loading, error, refresh,
-    isRead, markRead, markAllRead, unreadCount,
-  } = useRecentUpdates({ limit: 100 });
+    isRead, markRead, markAllRead, unreadCount, maxAgeDays,
+  } = useRecentUpdates();
 
   const athleteById = useMemo(() => {
     const m = new Map();
@@ -154,33 +154,40 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
         </div>
       )}
 
-      {!loading && !error && groups.map(group => (
-        <div key={group.label}>
-          <div
-            className="px-4 md:px-8 py-2 text-[10px] font-bold uppercase tracking-widest sticky top-[76px] md:top-[92px] z-[5]"
-            style={{ color: '#9ca3af', backgroundColor: '#fafafa', borderBottom: '1px solid #f3f4f6' }}
-          >
-            {group.label}
+      {!loading && !error && updates.length > 0 && (
+        <>
+          {groups.map(group => (
+            <div key={group.label}>
+              <div
+                className="px-4 md:px-8 py-2 text-[10px] font-bold uppercase tracking-widest sticky top-[76px] md:top-[92px] z-[5]"
+                style={{ color: '#9ca3af', backgroundColor: '#fafafa', borderBottom: '1px solid #f3f4f6' }}
+              >
+                {group.label}
+              </div>
+              <div>
+                {group.rows.map(u => (
+                  <UpdateRow
+                    key={u.id}
+                    update={u}
+                    athlete={athleteById.get(u.athlete_id)}
+                    read={isRead(u)}
+                    onMarkRead={() => markRead(u)}
+                    onOpen={() => {
+                      markRead(u);
+                      if (onNavigateToAthlete && athleteById.has(u.athlete_id)) {
+                        onNavigateToAthlete(u.athlete_id);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="px-4 md:px-8 py-6 text-center text-[10px]" style={{ color: '#9ca3af' }}>
+            Showing the last {maxAgeDays} days · older activity rolls off the feed automatically.
           </div>
-          <div>
-            {group.rows.map(u => (
-              <UpdateRow
-                key={u.id}
-                update={u}
-                athlete={athleteById.get(u.athlete_id)}
-                read={isRead(u.id)}
-                onMarkRead={() => markRead(u.id)}
-                onOpen={() => {
-                  markRead(u.id);
-                  if (onNavigateToAthlete && athleteById.has(u.athlete_id)) {
-                    onNavigateToAthlete(u.athlete_id);
-                  }
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
+        </>
+      )}
     </div>
   );
 }
