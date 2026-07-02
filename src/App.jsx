@@ -41,7 +41,11 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const isExternal = role === 'external';
   const isAdmin    = role === 'admin';
 
-  const [view,       setView]       = useState('roster');
+  // Default landing view — Updates for coaches (they open the app to
+  // check what happened overnight), Roster for external providers who
+  // don't see Updates. Redirected below if the chosen view isn't
+  // permitted for the current role.
+  const [view,       setView]       = useState(role === 'external' ? 'roster' : 'updates');
   const [selectedId, setSelectedId] = useState(null);
   const [profileNav, setProfileNav] = useState(null);
 
