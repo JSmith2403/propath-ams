@@ -1,9 +1,23 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Bell, CheckCircle2, CheckSquare, Circle, Clock, Flame, Heart,
-  Loader2, TrendingUp,
+  Bell, CalendarDays, CheckCircle2, CheckSquare, Circle, Clock, Flame,
+  Heart, Loader2, TrendingUp, Users,
 } from 'lucide-react';
 import { useRecentUpdates } from '../../hooks/useRecentUpdates';
+
+const VIEW_MODE_KEY = 'updates:view_mode';
+const readViewMode = () => {
+  try {
+    const v = typeof window !== 'undefined' ? window.localStorage.getItem(VIEW_MODE_KEY) : null;
+    return v === 'time' ? 'time' : 'athlete';
+  } catch { return 'athlete'; }
+};
+const persistViewMode = (mode) => {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch { /* ignore */ }
+};
 
 const RAG_COLOR = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444', grey: '#9ca3af' };
 
@@ -30,6 +44,35 @@ function relTime(iso) {
   if (d.toDateString() === today)          return `Today, ${timeStr}`;
   if (d.toDateString() === yest.toDateString()) return `Yesterday, ${timeStr}`;
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+/**
+ * groupByAthlete — walk the flat updates list and produce one bucket
+ * per athlete_id, ordered by "most recent activity within". Each
+ * bucket keeps its own rows sorted newest-first.
+ */
+function groupByAthlete(updates, athleteById) {
+  const buckets = new Map(); // athlete_id -> { athlete, rows, latest }
+  for (const u of updates) {
+    if (!u.athlete_id) continue;
+    const existing = buckets.get(u.athlete_id);
+    if (existing) {
+      existing.rows.push(u);
+      if ((u.timestamp || '') > (existing.latest || '')) existing.latest = u.timestamp;
+    } else {
+      buckets.set(u.athlete_id, {
+        athlete: athleteById.get(u.athlete_id),
+        rows:    [u],
+        latest:  u.timestamp,
+      });
+    }
+  }
+  // Sort each bucket's rows newest-first, and the buckets themselves
+  // by most-recent activity.
+  const list = [...buckets.values()];
+  for (const b of list) b.rows.sort((a, x) => (x.timestamp || '').localeCompare(a.timestamp || ''));
+  list.sort((a, b) => (b.latest || '').localeCompare(a.latest || ''));
+  return list;
 }
 
 function groupByDay(updates) {
@@ -73,13 +116,23 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
     isRead, markRead, markAllRead, unreadCount, maxAgeDays,
   } = useRecentUpdates();
 
+  const [viewMode, setViewModeState] = useState(readViewMode);
+  const setViewMode = (m) => { persistViewMode(m); setViewModeState(m); };
+
   const athleteById = useMemo(() => {
     const m = new Map();
     for (const a of athletes) m.set(a.id, a);
     return m;
   }, [athletes]);
 
-  const groups = useMemo(() => groupByDay(updates), [updates]);
+  const dayGroups = useMemo(
+    () => (viewMode === 'time' ? groupByDay(updates) : []),
+    [viewMode, updates],
+  );
+  const athleteBuckets = useMemo(
+    () => (viewMode === 'athlete' ? groupByAthlete(updates, athleteById) : []),
+    [viewMode, updates, athleteById],
+  );
 
   return (
     <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
@@ -104,6 +157,40 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
             Completed sessions, check-ins, new PBs — newest first.
           </p>
         </div>
+        {/* View toggle: athlete vs time. Segmented control, persists
+            per-device so the coach lands back on their preferred view. */}
+        <div
+          className="inline-flex rounded-md p-0.5"
+          style={{ backgroundColor: '#f3f4f6' }}
+        >
+          <button
+            onClick={() => setViewMode('athlete')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded transition-colors"
+            style={{
+              color:            viewMode === 'athlete' ? '#1C1C1C' : '#6b7280',
+              backgroundColor:  viewMode === 'athlete' ? '#fff' : 'transparent',
+              boxShadow:        viewMode === 'athlete' ? '0 1px 2px rgba(0,0,0,0.06)' : undefined,
+            }}
+            title="Group by athlete"
+          >
+            <Users size={11} />
+            <span className="text-[11px] font-semibold hidden sm:inline">By athlete</span>
+          </button>
+          <button
+            onClick={() => setViewMode('time')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded transition-colors"
+            style={{
+              color:            viewMode === 'time' ? '#1C1C1C' : '#6b7280',
+              backgroundColor:  viewMode === 'time' ? '#fff' : 'transparent',
+              boxShadow:        viewMode === 'time' ? '0 1px 2px rgba(0,0,0,0.06)' : undefined,
+            }}
+            title="Sort by time"
+          >
+            <CalendarDays size={11} />
+            <span className="text-[11px] font-semibold hidden sm:inline">By time</span>
+          </button>
+        </div>
+
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
@@ -154,9 +241,82 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
         </div>
       )}
 
-      {!loading && !error && updates.length > 0 && (
+      {!loading && !error && updates.length > 0 && viewMode === 'athlete' && (
         <>
-          {groups.map(group => (
+          {athleteBuckets.map(bucket => {
+            const a       = bucket.athlete;
+            const name    = a?.name || 'Unknown athlete';
+            const unread  = bucket.rows.reduce((n, u) => n + (isRead(u) ? 0 : 1), 0);
+            const sessionCount = bucket.rows.filter(u => u.type === 'session').length;
+            return (
+              <div key={bucket.athlete?.id || 'orphan'}>
+                <div
+                  className="flex items-center gap-3 px-4 md:px-8 py-3 sticky top-[76px] md:top-[92px] z-[5]"
+                  style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #f3f4f6' }}
+                >
+                  <div
+                    className="shrink-0 relative rounded-full overflow-hidden"
+                    style={{ width: 36, height: 36, backgroundColor: '#085777' }}
+                  >
+                    {a?.photo ? (
+                      <img
+                        src={a.photo}
+                        alt={name}
+                        className="w-full h-full"
+                        style={{ objectFit: 'cover', objectPosition: 'top center' }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: 12 }}>
+                        {initials(name)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold" style={{ color: '#1C1C1C' }}>{name}</div>
+                    <div className="text-[10px]" style={{ color: '#9ca3af' }}>
+                      {bucket.rows.length} update{bucket.rows.length === 1 ? '' : 's'}
+                      {sessionCount > 0 && ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'} complete`}
+                    </div>
+                  </div>
+                  {unread > 0 && (
+                    <span
+                      className="inline-flex items-center justify-center text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ color: '#fff', backgroundColor: '#3b82f6', minWidth: 20 }}
+                    >
+                      {unread}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  {bucket.rows.map(u => (
+                    <UpdateRow
+                      key={u.id}
+                      update={u}
+                      athlete={athleteById.get(u.athlete_id)}
+                      read={isRead(u)}
+                      hideAvatar
+                      onMarkRead={() => markRead(u)}
+                      onOpen={() => {
+                        markRead(u);
+                        if (onNavigateToAthlete && athleteById.has(u.athlete_id)) {
+                          onNavigateToAthlete(u.athlete_id);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <div className="px-4 md:px-8 py-6 text-center text-[10px]" style={{ color: '#9ca3af' }}>
+            Showing the last {maxAgeDays} days · older activity rolls off the feed automatically.
+          </div>
+        </>
+      )}
+
+      {!loading && !error && updates.length > 0 && viewMode === 'time' && (
+        <>
+          {dayGroups.map(group => (
             <div key={group.label}>
               <div
                 className="px-4 md:px-8 py-2 text-[10px] font-bold uppercase tracking-widest sticky top-[76px] md:top-[92px] z-[5]"
@@ -193,7 +353,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
 }
 
 // ── UpdateRow ────────────────────────────────────────────────────────
-function UpdateRow({ update, athlete, read, onMarkRead, onOpen }) {
+function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = false }) {
   const name = athlete?.name || 'Unknown athlete';
   const clickable = !!athlete;
   const typeMeta = renderTypeMeta(update);
@@ -228,35 +388,48 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen }) {
         )}
       </button>
 
-      {/* Avatar with type-badge on the bottom-right */}
-      <div
-        className="shrink-0 relative rounded-full overflow-hidden mt-0.5"
-        style={{ width: 40, height: 40, backgroundColor: '#085777' }}
-      >
-        {athlete?.photo ? (
-          <img
-            src={athlete.photo}
-            alt={name}
-            className="w-full h-full"
-            style={{ objectFit: 'cover', objectPosition: 'top center' }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: 13 }}>
-            {initials(name)}
-          </div>
-        )}
+      {/* Avatar with type-badge on the bottom-right — hidden when the
+          row is already inside an athlete-grouped section (parent
+          shows the avatar in the section header). We drop in a small
+          type-icon in the same slot so the row still visually
+          distinguishes session / wellness / PB at a glance. */}
+      {hideAvatar ? (
         <div
-          className="absolute -bottom-0.5 -right-0.5 rounded-full flex items-center justify-center"
-          style={{ width: 16, height: 16, backgroundColor: '#fff' }}
+          className="shrink-0 rounded-full flex items-center justify-center mt-1"
+          style={{ width: 24, height: 24, backgroundColor: 'rgba(165,141,105,0.08)' }}
         >
           {typeMeta.badge}
         </div>
-      </div>
+      ) : (
+        <div
+          className="shrink-0 relative rounded-full overflow-hidden mt-0.5"
+          style={{ width: 40, height: 40, backgroundColor: '#085777' }}
+        >
+          {athlete?.photo ? (
+            <img
+              src={athlete.photo}
+              alt={name}
+              className="w-full h-full"
+              style={{ objectFit: 'cover', objectPosition: 'top center' }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: 13 }}>
+              {initials(name)}
+            </div>
+          )}
+          <div
+            className="absolute -bottom-0.5 -right-0.5 rounded-full flex items-center justify-center"
+            style={{ width: 16, height: 16, backgroundColor: '#fff' }}
+          >
+            {typeMeta.badge}
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 min-w-0">
         <div className={`text-[13px] leading-snug ${read ? 'font-normal' : 'font-medium'}`} style={{ color: '#1C1C1C' }}>
-          <span className="font-bold">{name}</span>{' '}{typeMeta.headline}
+          {!hideAvatar && <span className="font-bold">{name}</span>}{!hideAvatar && ' '}{typeMeta.headline}
         </div>
         <div className="flex items-center gap-3 mt-1 text-[11px] flex-wrap" style={{ color: '#6b7280' }}>
           {typeMeta.chips}
