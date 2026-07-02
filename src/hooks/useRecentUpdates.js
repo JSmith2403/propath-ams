@@ -108,9 +108,15 @@ export function useRecentUpdates() {
       const [sessRes, wellRes, pbRes] = await Promise.all([
         supabase
           .from('session_logs')
+          // Real LIVE columns: `session_rpe` (not `total_rpe`),
+          // `block_session_id` sits directly on session_logs so no need
+          // to join through planned_sessions at all. Earlier revision
+          // referenced total_rpe which crashed the whole select — that's
+          // why the feed came back empty even though rows exist.
           .select(`
-            id, athlete_id, started_at, completed_at, total_rpe, planned_session_id,
-            planned_sessions ( block_sessions ( session_name ) )
+            id, athlete_id, started_at, completed_at, session_rpe,
+            block_session_id,
+            block_sessions ( session_name )
           `)
           .not('completed_at', 'is', null)
           .gte('completed_at', sinceISO)
@@ -153,11 +159,14 @@ export function useRecentUpdates() {
           type: 'session',
           athlete_id: r.athlete_id,
           timestamp: r.completed_at,
-          session_name: r.planned_sessions?.block_sessions?.session_name || 'Session',
+          session_name: r.block_sessions?.session_name || 'Session',
           duration_min,
-          total_rpe: r.total_rpe,
+          total_rpe: r.session_rpe,
         });
       }
+      if (sessRes.error) console.error('[useRecentUpdates] session_logs error', sessRes.error);
+      if (wellRes.error) console.error('[useRecentUpdates] wellness_submissions error', wellRes.error);
+      if (pbRes.error)   console.error('[useRecentUpdates] athlete_e1rm error', pbRes.error);
 
       for (const r of wellRes.data || []) {
         rows.push({
