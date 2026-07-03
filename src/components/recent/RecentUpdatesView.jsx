@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  Bell, CalendarDays, CheckCircle2, CheckSquare, Circle, Clock, Flame,
-  Heart, Loader2, TrendingUp, Users,
+  Bell, CalendarDays, CheckSquare, Circle, Clock, Dumbbell, Flame,
+  Heart, Loader2, TrendingUp, Users, UtensilsCrossed,
 } from 'lucide-react';
 import { useRecentUpdates } from '../../hooks/useRecentUpdates';
 
@@ -388,17 +388,15 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = fal
         )}
       </button>
 
-      {/* Avatar with type-badge on the bottom-right — hidden when the
-          row is already inside an athlete-grouped section (parent
-          shows the avatar in the section header). We drop in a small
-          type-icon in the same slot so the row still visually
-          distinguishes session / wellness / PB at a glance. */}
+      {/* When inside an athlete-grouped section, show a standalone
+          type-badge (parent header already carries the avatar). In
+          the time-grouped view show the avatar with a smaller type
+          badge overlapping the bottom-right corner. Both paths give
+          the type a distinct, coloured circular chip so sessions,
+          wellness, PBs and meals are visually distinct at a glance. */}
       {hideAvatar ? (
-        <div
-          className="shrink-0 rounded-full flex items-center justify-center mt-1"
-          style={{ width: 24, height: 24, backgroundColor: 'rgba(165,141,105,0.08)' }}
-        >
-          {typeMeta.badge}
+        <div className="shrink-0 mt-1">
+          <TypeBadge update={update} size={28} />
         </div>
       ) : (
         <div
@@ -417,11 +415,8 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = fal
               {initials(name)}
             </div>
           )}
-          <div
-            className="absolute -bottom-0.5 -right-0.5 rounded-full flex items-center justify-center"
-            style={{ width: 16, height: 16, backgroundColor: '#fff' }}
-          >
-            {typeMeta.badge}
+          <div className="absolute -bottom-1 -right-1">
+            <TypeBadge update={update} size={20} />
           </div>
         </div>
       )}
@@ -441,11 +436,45 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = fal
 }
 
 // ── Type renderers ───────────────────────────────────────────────────
+// Each event type has its own icon + accent colour. Sizes tuned so the
+// per-avatar corner badge (20px) and the standalone chip (28px) both
+// read clearly at a glance without competing with the athlete photo.
+const TYPE_STYLES = {
+  session:  { icon: Dumbbell,         fg: '#fff', bg: '#16a34a' }, // green
+  wellness: { icon: Heart,            fg: '#fff', bg: '#dc2626' }, // red (overridden by RAG)
+  pb:       { icon: TrendingUp,       fg: '#fff', bg: '#A58D69' }, // gold
+  meal:     { icon: UtensilsCrossed,  fg: '#fff', bg: '#f97316' }, // orange
+};
+
+function TypeBadge({ update, size = 20 }) {
+  const style = TYPE_STYLES[update.type] || TYPE_STYLES.session;
+  const Icon  = style.icon;
+  // Wellness badge takes its colour from the athlete's RAG so a red
+  // check-in visually screams before the coach reads the row text.
+  const bg = update.type === 'wellness'
+    ? (RAG_COLOR[update.rag] || RAG_COLOR.grey)
+    : style.bg;
+  return (
+    <span
+      className="inline-flex items-center justify-center rounded-full"
+      style={{
+        width: size, height: size,
+        backgroundColor: bg,
+        boxShadow: '0 0 0 2px #fff',
+      }}
+    >
+      <Icon size={Math.round(size * 0.55)} strokeWidth={2.5} style={{ color: style.fg }} />
+    </span>
+  );
+}
+
+function capitalise(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
 function renderTypeMeta(u) {
   switch (u.type) {
     case 'session':
       return {
-        badge: <CheckCircle2 size={14} style={{ color: '#16a34a' }} fill="#dcfce7" />,
+        badge: <TypeBadge update={u} size={20} />,
         headline: <>completed <span className="font-semibold" style={{ color: '#A58D69' }}>{u.session_name}</span></>,
         chips: <>
           {u.duration_min != null && (
@@ -463,7 +492,7 @@ function renderTypeMeta(u) {
 
     case 'wellness':
       return {
-        badge: <Heart size={12} style={{ color: RAG_COLOR[u.rag] || RAG_COLOR.grey }} fill={RAG_COLOR[u.rag] || RAG_COLOR.grey} />,
+        badge: <TypeBadge update={u} size={20} />,
         headline: <>submitted a <span className="font-semibold" style={{ color: '#A58D69' }}>wellness check-in</span></>,
         chips: <>
           <span
@@ -489,12 +518,25 @@ function renderTypeMeta(u) {
 
     case 'pb':
       return {
-        badge: <TrendingUp size={12} style={{ color: '#A58D69' }} />,
+        badge: <TypeBadge update={u} size={20} />,
         headline: <>hit a new PB on <span className="font-semibold" style={{ color: '#A58D69' }}>{u.exercise_name}</span></>,
         chips: <>
           {u.e1rm_kg != null && (
             <span className="inline-flex items-center gap-1 font-bold tabular-nums" style={{ color: '#A58D69' }}>
               e1RM {u.e1rm_kg}kg
+            </span>
+          )}
+        </>,
+      };
+
+    case 'meal':
+      return {
+        badge: <TypeBadge update={u} size={20} />,
+        headline: <>logged <span className="font-semibold" style={{ color: '#A58D69' }}>{capitalise(u.meal_type) || 'a meal'}</span></>,
+        chips: <>
+          {u.description && (
+            <span className="truncate max-w-[260px] italic" title={u.description}>
+              {u.description}
             </span>
           )}
         </>,

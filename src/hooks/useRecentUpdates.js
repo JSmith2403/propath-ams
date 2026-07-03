@@ -105,7 +105,7 @@ export function useRecentUpdates() {
     (async () => {
       setLoading(true);
       const sinceISO = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString();
-      const [sessRes, wellRes, pbRes] = await Promise.all([
+      const [sessRes, wellRes, pbRes, mealRes] = await Promise.all([
         supabase
           .from('session_logs')
           // Direct FK to block_sessions gets the template name when the
@@ -135,11 +135,18 @@ export function useRecentUpdates() {
           .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
           .limit(MAX_ITEMS),
+        supabase
+          .from('meal_entries')
+          .select('id, athlete_id, log_date, meal_type, description, submitted_at, created_at')
+          .not('submitted_at', 'is', null)
+          .gte('submitted_at', sinceISO)
+          .order('submitted_at', { ascending: false })
+          .limit(MAX_ITEMS),
       ]);
       if (cancelled) return;
 
-      const errors = [sessRes.error, wellRes.error, pbRes.error].filter(Boolean);
-      if (errors.length === 3) {
+      const errors = [sessRes.error, wellRes.error, pbRes.error, mealRes.error].filter(Boolean);
+      if (errors.length === 4) {
         console.error('[useRecentUpdates] every source failed', errors);
         setError(errors[0]);
         setUpdates([]);
@@ -199,6 +206,18 @@ export function useRecentUpdates() {
           e1rm_kg: r.e1rm_kg,
         });
       }
+
+      for (const r of mealRes.data || []) {
+        rows.push({
+          id: `meal:${r.id}`,
+          type: 'meal',
+          athlete_id: r.athlete_id,
+          timestamp: r.submitted_at || r.created_at,
+          meal_type:  (r.meal_type || 'meal').toLowerCase(),
+          description: r.description || null,
+        });
+      }
+      if (mealRes.error) console.error('[useRecentUpdates] meal_entries error', mealRes.error);
 
       rows.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       setError(null);
