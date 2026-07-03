@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Bell, CalendarDays, CheckSquare, Circle, Clock, Dumbbell, Flame,
-  Heart, Loader2, TrendingUp, Users, UtensilsCrossed,
+  Heart, Loader2, Trophy, TrendingUp, Users, UtensilsCrossed, Weight,
 } from 'lucide-react';
 import { useRecentUpdates } from '../../hooks/useRecentUpdates';
 
@@ -426,10 +426,18 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = fal
         <div className={`text-[13px] leading-snug ${read ? 'font-normal' : 'font-medium'}`} style={{ color: '#1C1C1C' }}>
           {!hideAvatar && <span className="font-bold">{name}</span>}{!hideAvatar && ' '}{typeMeta.headline}
         </div>
-        <div className="flex items-center gap-3 mt-1 text-[11px] flex-wrap" style={{ color: '#6b7280' }}>
-          {typeMeta.chips}
-          <span className="ml-auto">{relTime(update.timestamp)}</span>
-        </div>
+        {typeMeta.chips && (
+          <div className="flex items-center gap-3 mt-1 text-[11px] flex-wrap" style={{ color: '#6b7280' }}>
+            {typeMeta.chips}
+            <span className="ml-auto">{relTime(update.timestamp)}</span>
+          </div>
+        )}
+        {!typeMeta.chips && (
+          <div className="text-[11px] mt-0.5" style={{ color: '#9ca3af' }}>
+            {relTime(update.timestamp)}
+          </div>
+        )}
+        {typeMeta.summary}
       </div>
     </div>
   );
@@ -470,16 +478,60 @@ function TypeBadge({ update, size = 20 }) {
 
 function capitalise(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
+// Format kilograms with a thousands separator: 2450 → "2,450 kg"
+function fmtKg(n) {
+  if (n == null || n === 0 || Number.isNaN(n)) return null;
+  return `${Math.round(n).toLocaleString('en-GB')} kg`;
+}
+
+/**
+ * SessionSummary — rich stats card that sits under the session
+ * headline. Mirrors the post-session summary the athlete sees when
+ * they finish a workout: duration, RPE, total load lifted, and any
+ * PBs set during the session. Fields drop out when unavailable so
+ * a lift-only session (no PBs) doesn't render an awkward zero chip.
+ */
+function SessionSummary({ update }) {
+  const stats = [];
+  if (update.duration_min != null) stats.push({ Icon: Clock, label: `${update.duration_min} min` });
+  if (update.total_rpe != null)     stats.push({ Icon: Flame, label: `RPE ${update.total_rpe}` });
+  const loadLabel = fmtKg(update.total_load_kg);
+  if (loadLabel)                    stats.push({ Icon: Weight, label: loadLabel });
+  if (update.pb_count > 0)          stats.push({ Icon: Trophy, label: `${update.pb_count} PB${update.pb_count === 1 ? '' : 's'}`, gold: true });
+
+  if (!stats.length && !update.pb_exercises?.length) return null;
+
+  return (
+    <div className="mt-2">
+      <div
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-md"
+        style={{ backgroundColor: '#fafafa', border: '1px solid #f3f4f6' }}
+      >
+        {stats.map((s, i) => (
+          <span
+            key={i}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold"
+            style={{ color: s.gold ? '#A58D69' : '#1C1C1C' }}
+          >
+            <s.Icon size={12} style={{ color: s.gold ? '#A58D69' : '#6b7280' }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+      {update.pb_exercises?.length > 0 && (
+        <div className="px-3 pt-1.5 text-[10px]" style={{ color: '#A58D69' }}>
+          🏆 New PB: <span className="font-semibold">{update.pb_exercises.join(' · ')}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderTypeMeta(u) {
   switch (u.type) {
     case 'session':
       return {
         badge: <TypeBadge update={u} size={20} />,
-        // Two-part headline so the coach can see at a glance the
-        // category (Physical Development Session) AND the specific
-        // template (Session 1 / Optional Uppers · PM / etc.). The
-        // generic "Session" fallback still reads clearly when the
-        // block_session pointer is missing.
         headline: <>
           completed a{' '}
           <span className="font-semibold" style={{ color: '#A58D69' }}>Physical Development Session</span>
@@ -487,18 +539,8 @@ function renderTypeMeta(u) {
             <> — <span className="font-semibold" style={{ color: '#1C1C1C' }}>{u.session_name}</span></>
           )}
         </>,
-        chips: <>
-          {u.duration_min != null && (
-            <span className="inline-flex items-center gap-1">
-              <Clock size={10} /> {u.duration_min} min
-            </span>
-          )}
-          {u.total_rpe != null && (
-            <span className="inline-flex items-center gap-1">
-              <Flame size={10} /> RPE {u.total_rpe}
-            </span>
-          )}
-        </>,
+        chips: null,   // rendered below as a richer stats strip
+        summary: <SessionSummary update={u} />,
       };
 
     case 'wellness':

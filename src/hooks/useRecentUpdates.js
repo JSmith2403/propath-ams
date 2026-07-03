@@ -156,6 +156,11 @@ export function useRecentUpdates() {
 
       const rows = [];
 
+      // Build session rows first so we can enrich them below with a
+      // second-pass fetch of set_logs (for total load lifted) and
+      // athlete_e1rm (for PB counts on this session).
+      const sessionRows = [];
+      const sessionLogIds = [];
       for (const r of sessRes.data || []) {
         const started  = r.started_at   ? new Date(r.started_at).getTime()   : null;
         const finished = r.completed_at ? new Date(r.completed_at).getTime() : null;
@@ -166,17 +171,75 @@ export function useRecentUpdates() {
           r.block_sessions?.session_name
           || r.planned_sessions?.block_sessions?.session_name
           || 'Session';
-        rows.push({
+        const row = {
           id: `session:${r.id}`,
           type: 'session',
           athlete_id: r.athlete_id,
           timestamp: r.completed_at,
+          session_log_id: r.id,
           session_name,
           duration_min,
           total_rpe: r.session_rpe,
-        });
+          total_load_kg: 0,
+          pb_count: 0,
+          pb_exercises: [],
+        };
+        sessionRows.push(row);
+        sessionLogIds.push(r.id);
       }
       if (sessRes.error) console.error('[useRecentUpdates] session_logs error', sessRes.error);
+
+      // ── Second pass: enrich sessions with total load + PB detail ─
+      // Two queries, run in parallel:
+      //   1. Every set_log row for these sessions — used both for the
+      //      total-load Σ(weight × reps) aggregation AND to build a
+      //      set_log_id → session_log_id map so PBs can be attributed
+      //      back to the session that produced them.
+      //   2. Every athlete_e1rm row in window with a source set. Small
+      //      table — pull recent rows, filter client-side by whether
+      //      their source_set_log_id maps into one of our sessions.
+      if (sessionLogIds.length) {
+        const [setsRes, pbRowsRes] = await Promise.all([
+          supabase
+            .from('set_logs')
+            .select('id, session_log_id, weight_kg, reps')
+            .in('session_log_id', sessionLogIds),
+          supabase
+            .from('athlete_e1rm')
+            .select('id, source_set_log_id, exercise_library ( name )')
+            .gte('created_at', sinceISO)
+            .not('source_set_log_id', 'is', null),
+        ]);
+        if (setsRes.error)   console.error('[useRecentUpdates] set_logs error', setsRes.error);
+        if (pbRowsRes.error) console.error('[useRecentUpdates] e1rm assoc error', pbRowsRes.error);
+
+        const loadBySession = new Map();
+        const setToSession  = new Map();
+        for (const s of setsRes.data || []) {
+          setToSession.set(s.id, s.session_log_id);
+          if (s.weight_kg == null || s.reps == null) continue;
+          const cur = loadBySession.get(s.session_log_id) || 0;
+          loadBySession.set(s.session_log_id, cur + Number(s.weight_kg) * Number(s.reps));
+        }
+
+        const pbsBySession = new Map();
+        for (const pb of pbRowsRes.data || []) {
+          const sessId = setToSession.get(pb.source_set_log_id);
+          if (!sessId) continue;
+          const name = pb.exercise_library?.name || 'Exercise';
+          if (!pbsBySession.has(sessId)) pbsBySession.set(sessId, []);
+          pbsBySession.get(sessId).push(name);
+        }
+
+        for (const row of sessionRows) {
+          row.total_load_kg = Math.round(loadBySession.get(row.session_log_id) || 0);
+          const pbs         = pbsBySession.get(row.session_log_id) || [];
+          row.pb_count      = pbs.length;
+          row.pb_exercises  = pbs;
+        }
+      }
+
+      rows.push(...sessionRows);
       if (wellRes.error) console.error('[useRecentUpdates] wellness_submissions error', wellRes.error);
       if (pbRes.error)   console.error('[useRecentUpdates] athlete_e1rm error', pbRes.error);
 
