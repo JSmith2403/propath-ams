@@ -108,15 +108,16 @@ export function useRecentUpdates() {
       const [sessRes, wellRes, pbRes] = await Promise.all([
         supabase
           .from('session_logs')
-          // Real LIVE columns: `session_rpe` (not `total_rpe`),
-          // `block_session_id` sits directly on session_logs so no need
-          // to join through planned_sessions at all. Earlier revision
-          // referenced total_rpe which crashed the whole select — that's
-          // why the feed came back empty even though rows exist.
+          // Direct FK to block_sessions gets the template name when the
+          // pointer is intact. planned_sessions is the fallback path
+          // when block_session_id is NULL (which happens for logs whose
+          // template was later deleted — orphan pointers were nulled by
+          // the session-logs-block-session-fk-2026-07-02 migration).
           .select(`
             id, athlete_id, started_at, completed_at, session_rpe,
-            block_session_id,
-            block_sessions ( session_name )
+            block_session_id, planned_session_id,
+            block_sessions ( session_name ),
+            planned_sessions ( block_sessions ( session_name ) )
           `)
           .not('completed_at', 'is', null)
           .gte('completed_at', sinceISO)
@@ -154,12 +155,16 @@ export function useRecentUpdates() {
         const duration_min = (started && finished && finished > started)
           ? Math.round((finished - started) / 60_000)
           : null;
+        const session_name =
+          r.block_sessions?.session_name
+          || r.planned_sessions?.block_sessions?.session_name
+          || 'Session';
         rows.push({
           id: `session:${r.id}`,
           type: 'session',
           athlete_id: r.athlete_id,
           timestamp: r.completed_at,
-          session_name: r.block_sessions?.session_name || 'Session',
+          session_name,
           duration_min,
           total_rpe: r.session_rpe,
         });
