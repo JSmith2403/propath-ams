@@ -475,7 +475,18 @@ function renderTypeMeta(u) {
     case 'session':
       return {
         badge: <TypeBadge update={u} size={20} />,
-        headline: <>completed <span className="font-semibold" style={{ color: '#A58D69' }}>{u.session_name}</span></>,
+        // Two-part headline so the coach can see at a glance the
+        // category (Physical Development Session) AND the specific
+        // template (Session 1 / Optional Uppers · PM / etc.). The
+        // generic "Session" fallback still reads clearly when the
+        // block_session pointer is missing.
+        headline: <>
+          completed a{' '}
+          <span className="font-semibold" style={{ color: '#A58D69' }}>Physical Development Session</span>
+          {u.session_name && u.session_name !== 'Session' && (
+            <> — <span className="font-semibold" style={{ color: '#1C1C1C' }}>{u.session_name}</span></>
+          )}
+        </>,
         chips: <>
           {u.duration_min != null && (
             <span className="inline-flex items-center gap-1">
