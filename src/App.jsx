@@ -101,7 +101,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   // session etc.) so we keep it tighter than canDelete — only the
   // primary admin sees the trash icon on roster cards. Other admins
   // / co-admins can still edit, just not nuke.
-  const isMainAdmin = isAdmin && userEmail === 'jonahsmithhintsa@gmail.com';
+  const isMainAdmin = isAdmin
+    && userEmail === (import.meta.env.VITE_MAIN_ADMIN_EMAIL || 'jonahsmithhintsa@gmail.com');
 
   const handleNavigate = (v) => {
     if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources')) return;

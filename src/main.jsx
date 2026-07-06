@@ -1,6 +1,8 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+import SaveErrorToast from './components/SaveErrorToast.jsx'
 import './index.css'
 
 // The coach App is now lazy too. Athletes loading /athlete/:token used
@@ -33,6 +35,7 @@ const AthleteAppPage   = lazy(() => import('./components/athlete-app/AthleteAppP
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         <Route
@@ -61,5 +64,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         />
       </Routes>
     </BrowserRouter>
+    <SaveErrorToast />
+    </ErrorBoundary>
   </React.StrictMode>,
 )

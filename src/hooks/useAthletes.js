@@ -73,7 +73,14 @@ async function persistAthlete(athlete) {
   const { error } = await supabase
     .from('athletes')
     .upsert({ id: athlete.id, data: athlete, updated_at: new Date().toISOString() });
-  if (error) console.error('[ProPath] Failed to save athlete', athlete.id, error);
+  if (error) {
+    console.error('[ProPath] Failed to save athlete', athlete.id, error);
+    // Surface the failure to the user — a silent save failure means the
+    // coach walks away believing their notes were stored.
+    window.dispatchEvent(new CustomEvent('propath:save-error', {
+      detail: { athleteName: athlete.name, message: error.message },
+    }));
+  }
 }
 
 export function useAthletes({ seedEnabled = true } = {}) {
@@ -93,7 +100,12 @@ export function useAthletes({ seedEnabled = true } = {}) {
       }
 
       if (!data || data.length === 0) {
-        if (seedEnabled) {
+        // Seeding is opt-in (VITE_SEED_DUMMY=true, dev only). Previously an
+        // empty read — including a transient outage returning zero rows —
+        // would write the dummy roster straight into the production table.
+        const seedAllowed = import.meta.env.DEV
+          && import.meta.env.VITE_SEED_DUMMY === 'true';
+        if (seedEnabled && seedAllowed) {
           // Seed with dummy data on first admin run
           const seeded = DUMMY_ATHLETES.map(ensureAthlete);
           setAthletes(seeded);

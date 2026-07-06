@@ -60,3 +60,9 @@ security_remediation.ps1
 # Stage 1 deploy operational scratch — local only
 stage1_execution_prompt.md
 supabase/.temp/
+
+# Env backups — never commit
+*.dev-backup
+
+# Local scratch (contains athlete photos)
+temp/

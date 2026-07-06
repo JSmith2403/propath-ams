@@ -14,8 +14,14 @@ import { supabase } from '../lib/supabase';
 // ── Dev bypass ────────────────────────────────────────────────────────────────
 // import.meta.env.DEV is true only during `vite dev`. Vite replaces it with
 // the literal `false` in production builds, so this branch is tree-shaken
-// and never ships to Vercel.
-const DEV_BYPASS = import.meta.env.DEV;
+// and never ships to Vercel. Belt-and-braces: also require localhost so a
+// misconfigured build can never activate it on a public host, and allow
+// opting out (VITE_DEV_BYPASS=false) to test real auth locally.
+const IS_LOCALHOST = typeof window !== 'undefined'
+  && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const DEV_BYPASS = import.meta.env.DEV
+  && IS_LOCALHOST
+  && import.meta.env.VITE_DEV_BYPASS !== 'false';
 
 // Mock session object — just needs a truthy shape with user.email
 const DEV_SESSION = { user: { email: 'dev@localhost' } };
