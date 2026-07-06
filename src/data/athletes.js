@@ -91,27 +91,30 @@ function makeAthlete(id, name, sport, cohort, gender) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Athlete roster — ProPath Academy Abu Dhabi
+// Dev-only sample roster. These are FICTIONAL names — real athlete
+// records live only in the database, never in the repo. Seeding is
+// gated behind VITE_SEED_DUMMY=true in useAthletes (dev builds only).
+// IDs are kept stable because historical SQL seeds reference them.
 // ─────────────────────────────────────────────────────────────
 export const DUMMY_ATHLETES = [
   // Elite Female cohort
-  makeAthlete('ef1', 'Maryam Al-Farsi',  'Sprinting',    'Elite', 'Female'),
-  makeAthlete('ef2', 'Maha Alshehhi',    'Swimming',     'Elite', 'Female'),
-  makeAthlete('ef3', 'Mahra Alshehhi',   'Swimming',     'Elite', 'Female'),
-  makeAthlete('ef4', 'Mimi Alshehhi',    'Swimming',     'Elite', 'Female'),
-  makeAthlete('ef5', 'Maggie Urda',      'Sprinting',    'Elite', 'Female'),
-  makeAthlete('ef6', 'Sara Ali',         'Golf',         'Elite', 'Female'),
-  makeAthlete('ef7', 'Samhita Srijith',  'Table Tennis', 'Elite', 'Female'),
+  makeAthlete('ef1', 'Ava Example',      'Sprinting',    'Elite', 'Female'),
+  makeAthlete('ef2', 'Bella Sample',     'Swimming',     'Elite', 'Female'),
+  makeAthlete('ef3', 'Cara Demo',        'Swimming',     'Elite', 'Female'),
+  makeAthlete('ef4', 'Dana Placeholder', 'Swimming',     'Elite', 'Female'),
+  makeAthlete('ef5', 'Erin Test',        'Sprinting',    'Elite', 'Female'),
+  makeAthlete('ef6', 'Faye Mock',        'Golf',         'Elite', 'Female'),
+  makeAthlete('ef7', 'Gia Fixture',      'Table Tennis', 'Elite', 'Female'),
 
   // Elite Male cohort
-  makeAthlete('em1', 'Kaiden Higgins',   'Motorsport',   'Elite', 'Male'),
-  makeAthlete('em2', 'Matty Green',      'Triathlon',    'Elite', 'Male'),
-  makeAthlete('em3', 'Feliciano Urda',   'Football',     'Elite', 'Male'),
-  makeAthlete('em4', 'Zach Pitman',      'Golf',         'Elite', 'Male'),
+  makeAthlete('em1', 'Harry Example',    'Motorsport',   'Elite', 'Male'),
+  makeAthlete('em2', 'Ivan Sample',      'Triathlon',    'Elite', 'Male'),
+  makeAthlete('em3', 'Jack Demo',        'Football',     'Elite', 'Male'),
+  makeAthlete('em4', 'Kian Test',        'Golf',         'Elite', 'Male'),
 
   // Mini Athlete Female cohort
-  makeAthlete('mf1', 'Sana Srijith',     'Table Tennis', 'Mini',  'Female'),
+  makeAthlete('mf1', 'Lily Fixture',     'Table Tennis', 'Mini',  'Female'),
 
   // Mini Athlete Male cohort
-  makeAthlete('mm1', 'Yassin',           'Swimming',     'Mini',  'Male'),
+  makeAthlete('mm1', 'Milo Mock',        'Swimming',     'Mini',  'Male'),
 ];

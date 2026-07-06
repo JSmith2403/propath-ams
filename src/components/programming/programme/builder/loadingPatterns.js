@@ -8,14 +8,14 @@
 
 function num(s) {
   if (s == null || s === '') return null;
-  const n = parseFloat(String(s).replace(/[^\d.\-]/g, ''));
+  const n = parseFloat(String(s).replace(/[^\d.-]/g, ''));
   return Number.isFinite(n) ? n : null;
 }
 
 function formatTargetLike(template, value) {
   // Preserve a trailing unit if the template carries one ("60kg", "70%")
   if (template == null) return String(value);
-  const m = String(template).match(/^[\d.\-]+(.*)$/);
+  const m = String(template).match(/^[\d.-]+(.*)$/);
   const suffix = m ? m[1] : '';
   return `${Math.round(value * 10) / 10}${suffix}`;
 }

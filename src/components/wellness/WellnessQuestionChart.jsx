@@ -84,19 +84,19 @@ function makeDot(question) {
  * reference lines.
  */
 export default function WellnessQuestionChart({ question, submissions }) {
-  if (!isChartable(question)) return null;
-  if (!submissions || submissions.length === 0) return null;
-
-  const cfg = yAxisFor(question);
+  // Hooks must run unconditionally — the "not chartable / no data" early
+  // returns live BELOW them, otherwise React throws a hook-order error
+  // the first time a question flips between chartable and not.
   const Dot = useMemo(() => makeDot(question), [question]);
   const means = useMemo(
-    () => rollingMeans(submissions, question.id, 28),
-    [submissions, question.id]
+    () => rollingMeans(submissions || [], question?.id, 28),
+    [submissions, question?.id]
   );
 
   // Build chart rows. yes_no is mapped to 0/1 so it draws a step line.
   const chartData = useMemo(() => {
-    return submissions
+    if (!question) return [];
+    return (submissions || [])
       .map((sub) => {
         const raw = sub.responses?.[question.id];
         if (raw == null || raw === '') return null;
@@ -117,8 +117,12 @@ export default function WellnessQuestionChart({ question, submissions }) {
       .filter(Boolean);
   }, [submissions, question, means]);
 
+  // Early returns — safe now that every hook above has run.
+  if (!isChartable(question)) return null;
+  if (!submissions || submissions.length === 0) return null;
   if (chartData.length === 0) return null;
 
+  const cfg = yAxisFor(question);
   const latestN = means.get(submissions[submissions.length - 1].submission_date)?.n || 0;
   const showAvg = latestN >= 2;
 

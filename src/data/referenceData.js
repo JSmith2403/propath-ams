@@ -12,13 +12,10 @@ export const PERFORMANCE_METRICS = {
     higherIsBetter: true,
     sports: ['Football', 'Basketball', 'Athletics', 'Swimming'],
   },
-  cmjPeakPower: {
-    label: 'Peak Power CMJ',
-    unit: 'W/kg',
-    low: 28, high: 58, cohortAvg: 42, acuteLimit: 30,
-    higherIsBetter: true,
-    sports: ['Football', 'Basketball', 'Athletics'],
-  },
+  // NOTE: cmjPeakPower is defined once, further down ("Power — new keys").
+  // A second definition here (unit W/kg + thresholds) was silently
+  // discarded by JS duplicate-key rules; removed to keep behaviour
+  // identical and the file honest. Restore thresholds there if wanted.
   dsi: {
     label: 'Dynamic Strength Index',
     unit: 'ratio',

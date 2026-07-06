@@ -540,7 +540,7 @@ function ChipGrid({ options, value, onToggle }) {
 // programme PDFs converge on a single matching contract.
 const normaliseName = (s) => String(s || '')
   .toLowerCase()
-  .replace(/[\-–—_/]/g, ' ')
+  .replace(/[-–—_/]/g, ' ')
   .replace(/[^\p{L}\p{N}\s]/gu, '')
   .replace(/\s+/g, ' ')
   .trim();

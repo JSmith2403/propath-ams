@@ -174,7 +174,7 @@ export default function WellnessTab({ athleteId }) {
                   {m.label}
                 </p>
                 <div className="flex items-baseline gap-1.5 mt-1">
-                  <span className="text-display font-bold" style={{ color }}>
+                  <span className="text-display font-bold" style={{ color: colour }}>
                     {formatAvg(m, curAvg)}
                   </span>
                   <span className="text-meta font-semibold text-ink-500">
