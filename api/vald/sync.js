@@ -24,6 +24,8 @@
 // host is for Hub user logins, NOT the External API — using it returns
 // invalid_client. The Swagger UI for ForceDecks confirms this URL plus the
 // `audience=vald-api-external` body param requirement.
+import { requireUser } from '../_lib/verifyUser.js';
+
 const VALD_AUTH_URL =
   process.env.VALD_AUTH_URL || 'https://auth.prd.vald.com/oauth/token';
 
@@ -207,6 +209,11 @@ function pickFromEnriched(enriched, patterns) {
 
 // ─── Handler ───────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  // Coach-only endpoint — returns athlete test data and consumes VALD API
+  // quota, so the caller must present a valid Supabase session token.
+  const user = await requireUser(req, res);
+  if (!user) return;
+
   const profileId = (req.query.profileId || '').trim();
   const fromIso   = (req.query.fromIso   || '').trim() || null;
 

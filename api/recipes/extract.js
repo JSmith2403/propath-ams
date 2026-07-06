@@ -30,6 +30,8 @@
 // Setup: add ANTHROPIC_API_KEY to Vercel project env vars. Without it
 // the route returns a clear 503 with guidance.
 
+import { requireUser } from '../_lib/verifyUser.js';
+
 // Tell Vercel this route may run longer than the default 10s — chunked
 // extractions take ~12-15s per chunk, so 8 chunks worst case = ~2 min.
 // Vercel Pro plan supports up to 300s; on free/hobby this caps at 60.
@@ -100,6 +102,10 @@ export default async function handler(req, res) {
     res.status(405).json({ ok: false, error: 'POST only' });
     return;
   }
+  // Coach-only endpoint — every call costs Anthropic API budget, so the
+  // caller must present a valid Supabase session token.
+  const user = await requireUser(req, res);
+  if (!user) return;
   if (!process.env.ANTHROPIC_API_KEY) {
     res.status(503).json({
       ok: false,
