@@ -55,11 +55,12 @@ export default function AthleteAppPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: tokenRow } = await supabase
-        .from('athlete_app_tokens')
-        .select('athlete_id, is_active')
-        .eq('token', token)
-        .maybeSingle();
+      // Token validation goes through a SECURITY DEFINER RPC — anon has
+      // no direct SELECT on athlete_app_tokens, so tokens can't be
+      // enumerated. The RPC also returns the athlete display fields.
+      const { data: rpcRows } = await supabase
+        .rpc('validate_athlete_token', { p_token: token });
+      const tokenRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
 
       if (cancelled) return;
       if (!tokenRow || !tokenRow.is_active) {
@@ -74,19 +75,11 @@ export default function AthleteAppPage() {
         return;
       }
 
-      const { data: athleteRow } = await supabase
-        .from('athletes')
-        .select('id, data')
-        .eq('id', tokenRow.athlete_id)
-        .single();
-
-      if (cancelled) return;
-      const d = athleteRow?.data || {};
       setAthlete({
         id:    tokenRow.athlete_id,
-        name:  d.name  || 'Athlete',
-        photo: d.photo || null,
-        sport: d.sport || '',
+        name:  tokenRow.name  || 'Athlete',
+        photo: tokenRow.photo || null,
+        sport: tokenRow.sport || '',
       });
       // Remember this token so future PWA launches (start_url is "/")
       // can redirect the user back to their athlete app instead of

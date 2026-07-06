@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getMetricColour } from '../../utils/wellnessFlags';
@@ -39,6 +40,7 @@ function formatAvg(metric, val) {
  *   - a short coaching insight tuned to the average
  */
 export default function WellnessTab({ athleteId }) {
+  const { token: appToken } = useParams();
   const [submissions, setSubmissions] = useState([]);
   const [useCustom,   setUseCustom]   = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,20 +50,22 @@ export default function WellnessTab({ athleteId }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [{ data: subs }, { data: appTok }] = await Promise.all([
+      const [{ data: subs }, { data: tokRows }] = await Promise.all([
         supabase.from('wellness_submissions').select('*')
           .eq('athlete_id', athleteId)
           .order('submission_date', { ascending: true }),
-        supabase.from('athlete_app_tokens').select('use_custom_wellness')
-          .eq('athlete_id', athleteId).maybeSingle(),
+        // Anon has no direct SELECT on athlete_app_tokens — read
+        // use_custom_wellness via the token-validation RPC instead.
+        supabase.rpc('validate_athlete_token', { p_token: appToken }),
       ]);
       if (cancelled) return;
+      const appTok = Array.isArray(tokRows) ? tokRows[0] : tokRows;
       setSubmissions(subs || []);
       setUseCustom(!!appTok?.use_custom_wellness);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [athleteId]);
+  }, [athleteId, appToken]);
 
   // Slice into current + prior windows for change-vs-previous calc.
   const { current, prior } = useMemo(() => {

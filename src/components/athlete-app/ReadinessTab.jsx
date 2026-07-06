@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import WellnessMiniRings from '../wellness/WellnessMiniRings';
 import WellnessDonutRing from '../wellness/WellnessDonutRing';
@@ -17,6 +18,7 @@ const METRICS = [
  * five donuts (large), then a 7-day mini history beneath.
  */
 export default function ReadinessTab({ athleteId }) {
+  const { token: appToken } = useParams();
   const [submissions, setSubmissions] = useState([]);
   const [useCustom,   setUseCustom]   = useState(false);
   const [loading,     setLoading]     = useState(true);
@@ -25,20 +27,22 @@ export default function ReadinessTab({ athleteId }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [{ data: subs }, { data: appTok }] = await Promise.all([
+      const [{ data: subs }, { data: tokRows }] = await Promise.all([
         supabase.from('wellness_submissions').select('*')
           .eq('athlete_id', athleteId)
           .order('submission_date', { ascending: false }).limit(7),
-        supabase.from('athlete_app_tokens').select('use_custom_wellness')
-          .eq('athlete_id', athleteId).maybeSingle(),
+        // Anon has no direct SELECT on athlete_app_tokens — read
+        // use_custom_wellness via the token-validation RPC instead.
+        supabase.rpc('validate_athlete_token', { p_token: appToken }),
       ]);
       if (cancelled) return;
+      const appTok = Array.isArray(tokRows) ? tokRows[0] : tokRows;
       setSubmissions(subs || []);
       setUseCustom(!!appTok?.use_custom_wellness);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [athleteId]);
+  }, [athleteId, appToken]);
 
   if (loading) {
     return (

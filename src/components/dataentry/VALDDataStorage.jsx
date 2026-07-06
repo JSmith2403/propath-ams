@@ -117,7 +117,10 @@ export default function VALDDataStorage({ athletes = [] }) {
         setProgress({ current: i + 1, total: athletesWithVald.length, name: a.name });
         try {
           const url = `/api/vald/sync?profileId=${encodeURIComponent(a.vald_profile_id.trim())}`;
-          const res = await fetch(url);
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(url, {
+            headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+          });
           const json = await res.json().catch(() => ({}));
           if (!res.ok || !json?.ok) {
             errorList.push({ athlete: a.name, error: json?.error || `HTTP ${res.status}` });

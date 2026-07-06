@@ -736,9 +736,13 @@ function PdfImportModal({ onCancel, onImported }) {
       }
 
       // Send to the AI extractor.
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/recipes/extract', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ text, max_recipes: 60 }),
       });
       const json = await res.json();

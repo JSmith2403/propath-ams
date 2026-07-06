@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import WellnessInlineCustom from './WellnessInlineCustom';
 
@@ -13,23 +14,28 @@ import WellnessInlineCustom from './WellnessInlineCustom';
  * (used for the anon RLS check on inserts) and pass it down.
  */
 export default function WellnessInline({ athleteId, dateISO }) {
+  const { token: appToken } = useParams();
   const [token,  setToken]  = useState(null);
   const [status, setStatus] = useState('loading'); // loading | active | inactive
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Anon has no direct SELECT on wellness_tokens — the app-token RPC
+      // returns the athlete's active wellness_token alongside validation.
       const { data } = await supabase
-        .from('wellness_tokens')
-        .select('token, is_active')
-        .eq('athlete_id', athleteId)
-        .maybeSingle();
+        .rpc('validate_athlete_token', { p_token: appToken });
+      const row = Array.isArray(data) ? data[0] : data;
       if (cancelled) return;
-      if (data?.is_active) { setToken(data.token); setStatus('active'); }
-      else { setStatus('inactive'); }
+      if (row?.is_active && row.wellness_token) {
+        setToken(row.wellness_token);
+        setStatus('active');
+      } else {
+        setStatus('inactive');
+      }
     })();
     return () => { cancelled = true; };
-  }, [athleteId]);
+  }, [appToken]);
 
   if (status !== 'active') return null;
 

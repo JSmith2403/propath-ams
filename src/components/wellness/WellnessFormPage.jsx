@@ -37,11 +37,12 @@ export default function WellnessFormPage() {
   // Validate token and load athlete name
   useEffect(() => {
     (async () => {
-      const { data: tokenRow } = await supabase
-        .from('wellness_tokens')
-        .select('athlete_id, is_active')
-        .eq('token', token)
-        .single();
+      // Token validation goes through a SECURITY DEFINER RPC — anon has
+      // no direct SELECT on wellness_tokens, so tokens can't be
+      // enumerated. The RPC also returns the athlete's name.
+      const { data: rpcRows } = await supabase
+        .rpc('validate_wellness_token', { p_token: token });
+      const tokenRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
 
       if (!tokenRow || !tokenRow.is_active) {
         setStatus('invalid');
@@ -49,16 +50,7 @@ export default function WellnessFormPage() {
       }
 
       setAthleteId(tokenRow.athlete_id);
-
-      // Fetch athlete name from athletes table
-      const { data: athleteRow } = await supabase
-        .from('athletes')
-        .select('data')
-        .eq('id', tokenRow.athlete_id)
-        .single();
-
-      const name = athleteRow?.data?.name || 'Athlete';
-      setAthleteName(name);
+      setAthleteName(tokenRow.name || 'Athlete');
       setStatus('ready');
     })();
   }, [token]);
