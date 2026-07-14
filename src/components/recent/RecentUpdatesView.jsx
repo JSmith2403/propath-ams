@@ -119,19 +119,28 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
   const [viewMode, setViewModeState] = useState(readViewMode);
   const setViewMode = (m) => { persistViewMode(m); setViewModeState(m); };
 
+  // "New" filter — show only rows not yet acknowledged, so unseen
+  // activity isn't buried among rows the coach has already read.
+  const [unreadOnly, setUnreadOnly] = useState(false);
+
   const athleteById = useMemo(() => {
     const m = new Map();
     for (const a of athletes) m.set(a.id, a);
     return m;
   }, [athletes]);
 
+  const visibleUpdates = useMemo(
+    () => (unreadOnly ? updates.filter(u => !isRead(u)) : updates),
+    [unreadOnly, updates, isRead],
+  );
+
   const dayGroups = useMemo(
-    () => (viewMode === 'time' ? groupByDay(updates) : []),
-    [viewMode, updates],
+    () => (viewMode === 'time' ? groupByDay(visibleUpdates) : []),
+    [viewMode, visibleUpdates],
   );
   const athleteBuckets = useMemo(
-    () => (viewMode === 'athlete' ? groupByAthlete(updates, athleteById) : []),
-    [viewMode, updates, athleteById],
+    () => (viewMode === 'athlete' ? groupByAthlete(visibleUpdates, athleteById) : []),
+    [viewMode, visibleUpdates, athleteById],
   );
 
   return (
@@ -191,6 +200,21 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
           </button>
         </div>
 
+        {/* New-only filter — hides everything already acknowledged so
+            unseen activity stands out on its own. */}
+        <button
+          onClick={() => setUnreadOnly(v => !v)}
+          className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+          style={unreadOnly
+            ? { color: '#fff', border: '1px solid #A58D69', backgroundColor: '#A58D69' }
+            : { color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
+          title={unreadOnly ? 'Showing new only — tap to show everything' : 'Show only new (unread) updates'}
+        >
+          <Bell size={12} />
+          <span className="hidden sm:inline">{unreadOnly ? 'Showing new' : 'New only'}</span>
+          <span className="sm:hidden">New</span>
+        </button>
+
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
@@ -237,6 +261,25 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
           </div>
           <div className="text-xs mt-1 max-w-xs mx-auto" style={{ color: '#9ca3af' }}>
             Completed sessions, wellness check-ins and new PBs will appear here as your athletes log them.
+          </div>
+        </div>
+      )}
+
+      {/* "New only" active but everything's been read — say so instead
+          of rendering an unexplained blank feed. */}
+      {!loading && !error && updates.length > 0 && visibleUpdates.length === 0 && (
+        <div className="px-4 py-16 text-center">
+          <div
+            className="mx-auto inline-flex items-center justify-center rounded-full mb-4"
+            style={{ width: 48, height: 48, backgroundColor: 'rgba(34,197,94,0.12)' }}
+          >
+            <CheckSquare size={20} style={{ color: '#16a34a' }} />
+          </div>
+          <div className="text-sm font-semibold" style={{ color: '#1C1C1C' }}>
+            All caught up
+          </div>
+          <div className="text-xs mt-1 max-w-xs mx-auto" style={{ color: '#9ca3af' }}>
+            No new updates. Tap "Showing new" to see everything you've already read.
           </div>
         </div>
       )}
