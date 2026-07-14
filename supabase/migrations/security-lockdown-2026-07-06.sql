@@ -115,10 +115,14 @@ END $$;
 
 
 -- ── 3. Token tables — authenticated staff only, no anon access at all ───────
+-- Every loop below skips tables that don't exist in this database —
+-- the sql/ folder accumulated schemas over time and some (e.g. the old
+-- wellness_questions) were later dropped or never created.
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['athlete_app_tokens','wellness_tokens'] LOOP
+    IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY staff_all ON %I FOR ALL TO authenticated
@@ -137,8 +141,9 @@ BEGIN
     'athlete_e1rm','vald_test_results',
     'block_templates','block_template_sessions','session_templates',
     'session_template_exercises','session_template_week_prescriptions',
-    'training_phases','meal_events','wellness_questions'
+    'training_phases','meal_events'
   ] LOOP
+    IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY auth_select ON %I FOR SELECT TO authenticated USING (true)', t);
@@ -164,6 +169,7 @@ BEGIN
     'wellness_question_library','athlete_wellness_questions',
     'nutrition_settings','meal_structure_guidance'
   ] LOOP
+    IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY anon_select ON %I FOR SELECT TO anon USING (true)', t);
@@ -189,6 +195,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'session_logs','set_logs','meal_entries','meal_photos'
   ] LOOP
+    IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY anon_select ON %I FOR SELECT TO anon USING (true)', t);
@@ -201,28 +208,40 @@ BEGIN
   END LOOP;
 END $$;
 
-CREATE POLICY anon_delete ON set_logs FOR DELETE TO anon USING (true);
+DO $$
+BEGIN
+  IF to_regclass('public.set_logs') IS NOT NULL THEN
+    CREATE POLICY anon_delete ON set_logs FOR DELETE TO anon USING (true);
+  END IF;
+END $$;
 
 
 -- ── 7. Wellness submissions/responses — token-scoped anon access ────────────
-ALTER TABLE wellness_submissions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY anon_select ON wellness_submissions FOR SELECT TO anon
-  USING (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
-CREATE POLICY anon_insert ON wellness_submissions FOR INSERT TO anon
-  WITH CHECK (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
-CREATE POLICY anon_update ON wellness_submissions FOR UPDATE TO anon
-  USING (token IN (SELECT token FROM wellness_tokens WHERE is_active = true))
-  WITH CHECK (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
-CREATE POLICY auth_all ON wellness_submissions FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF to_regclass('public.wellness_submissions') IS NOT NULL THEN
+    ALTER TABLE wellness_submissions ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY anon_select ON wellness_submissions FOR SELECT TO anon
+      USING (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
+    CREATE POLICY anon_insert ON wellness_submissions FOR INSERT TO anon
+      WITH CHECK (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
+    CREATE POLICY anon_update ON wellness_submissions FOR UPDATE TO anon
+      USING (token IN (SELECT token FROM wellness_tokens WHERE is_active = true))
+      WITH CHECK (token IN (SELECT token FROM wellness_tokens WHERE is_active = true));
+    CREATE POLICY auth_all ON wellness_submissions FOR ALL TO authenticated
+      USING (true) WITH CHECK (true);
+  END IF;
 
-ALTER TABLE wellness_responses ENABLE ROW LEVEL SECURITY;
-CREATE POLICY anon_select ON wellness_responses FOR SELECT TO anon USING (true);
-CREATE POLICY anon_insert ON wellness_responses FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY anon_update ON wellness_responses FOR UPDATE TO anon
-  USING (true) WITH CHECK (true);
-CREATE POLICY auth_all ON wellness_responses FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  IF to_regclass('public.wellness_responses') IS NOT NULL THEN
+    ALTER TABLE wellness_responses ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY anon_select ON wellness_responses FOR SELECT TO anon USING (true);
+    CREATE POLICY anon_insert ON wellness_responses FOR INSERT TO anon WITH CHECK (true);
+    CREATE POLICY anon_update ON wellness_responses FOR UPDATE TO anon
+      USING (true) WITH CHECK (true);
+    CREATE POLICY auth_all ON wellness_responses FOR ALL TO authenticated
+      USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
 -- ============================================================================
 -- POST-RUN CHECKLIST
