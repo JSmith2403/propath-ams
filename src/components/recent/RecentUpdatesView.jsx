@@ -399,22 +399,26 @@ function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = fal
           <TypeBadge update={update} size={28} />
         </div>
       ) : (
-        <div
-          className="shrink-0 relative rounded-full overflow-hidden mt-0.5"
-          style={{ width: 40, height: 40, backgroundColor: '#085777' }}
-        >
-          {athlete?.photo ? (
-            <img
-              src={athlete.photo}
-              alt={name}
-              className="w-full h-full"
-              style={{ objectFit: 'cover', objectPosition: 'top center' }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: 13 }}>
-              {initials(name)}
-            </div>
-          )}
+        <div className="shrink-0 relative mt-0.5" style={{ width: 40, height: 40 }}>
+          {/* Clip only the photo — the corner badge sits outside the
+              circle, so overflow-hidden here would slice it in half. */}
+          <div
+            className="w-full h-full rounded-full overflow-hidden"
+            style={{ backgroundColor: '#085777' }}
+          >
+            {athlete?.photo ? (
+              <img
+                src={athlete.photo}
+                alt={name}
+                className="w-full h-full"
+                style={{ objectFit: 'cover', objectPosition: 'top center' }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: 13 }}>
+                {initials(name)}
+              </div>
+            )}
+          </div>
           <div className="absolute -bottom-1 -right-1">
             <TypeBadge update={update} size={20} />
           </div>
