@@ -148,33 +148,16 @@ function trailingWeekAverage(daily) {
 }
 
 // Auto-detect if an exercise is best tracked as 1RM (Mayhew) or as
-// best-reps-per-session. The Mayhew formula doesn't apply when the
-// load is bodyweight or the load doesn't vary across sessions —
-// trying to use it then produces flat / misleading numbers.
-//
-// Heuristics (in order):
-//   1. Name match — common bodyweight movements always use reps.
-//   2. Variance check — if every set across all sessions is at the
-//      same load, treat it as a reps progression (consistent with
-//      bodyweight isolation movements).
-//   3. Default to 1RM Mayhew.
-const BODYWEIGHT_NAME_PATTERNS = [
-  /push[-\s]?up/i,
-  /pull[-\s]?up/i,
-  /chin[-\s]?up/i,
-  /^dip\b/i,
-  /burpee/i,
-  /sit[-\s]?up/i,
-  /plank/i,
-];
-
-function detectMetric(name, weights) {
-  if (BODYWEIGHT_NAME_PATTERNS.some(re => re.test(name))) return 'reps';
-  const numericWeights = weights.filter(w => w != null && isFinite(Number(w)));
-  if (numericWeights.length === 0) return 'reps';
-  const min = Math.min(...numericWeights);
-  const max = Math.max(...numericWeights);
-  if (max - min < 1) return 'reps';   // weight is effectively constant
+// best-reps-per-session. Signal comes from the logged loads, not the
+// name: a chin-up done bodyweight tracks reps, a loaded chin-up tracks
+// e1RM. Rule: any real load logged and it varies → Mayhew; otherwise
+// reps.
+function detectMetric(_name, weights) {
+  const loaded = weights.filter(w => Number(w) > 0);
+  if (loaded.length === 0) return 'reps';       // no load logged → bodyweight
+  const min = Math.min(...loaded);
+  const max = Math.max(...loaded);
+  if (max - min < 1) return 'reps';             // constant load → reps progression
   return 'e1rm';
 }
 

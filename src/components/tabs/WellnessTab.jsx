@@ -40,6 +40,12 @@ export default function WellnessTab({ athlete, role }) {
     () => [...submissions].sort((a, b) => b.submission_date.localeCompare(a.submission_date)),
     [submissions]
   );
+  // Charts read left→right chronologically, and the rolling-mean window
+  // in WellnessQuestionChart walks the array assuming ascending order.
+  const chartSubs = useMemo(
+    () => [...submissions].sort((a, b) => a.submission_date.localeCompare(b.submission_date)),
+    [submissions]
+  );
 
   // Featured questions go first in the charts strip; everything else
   // chartable below it. Order matches the library display_order.
@@ -91,7 +97,7 @@ export default function WellnessTab({ athlete, role }) {
                 Trends &amp; Rolling Averages
               </h3>
               {featuredCharts.map(q => (
-                <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
               ))}
               {otherCharts.length > 0 && (
                 <details className="mb-2">
@@ -100,7 +106,7 @@ export default function WellnessTab({ athlete, role }) {
                   </summary>
                   <div className="mt-2">
                     {otherCharts.map(q => (
-                      <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                      <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
                     ))}
                   </div>
                 </details>

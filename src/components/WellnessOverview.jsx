@@ -79,6 +79,11 @@ export default function WellnessOverview({ athletes, role }) {
     () => [...submissions].sort((a, b) => b.submission_date.localeCompare(a.submission_date)),
     [submissions]
   );
+  // Charts read left→right chronologically.
+  const chartSubs = useMemo(
+    () => [...submissions].sort((a, b) => a.submission_date.localeCompare(b.submission_date)),
+    [submissions]
+  );
 
   // Featured first, the rest folded under a "show more" toggle so the
   // page stays scannable when an athlete has 15+ questions selected.
@@ -196,7 +201,7 @@ export default function WellnessOverview({ athletes, role }) {
                     Trends &amp; Rolling Averages
                   </h3>
                   {featuredCharts.map(q => (
-                    <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                    <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
                   ))}
                   {otherCharts.length > 0 && (
                     <details className="mb-2">
@@ -205,7 +210,7 @@ export default function WellnessOverview({ athletes, role }) {
                       </summary>
                       <div className="mt-2">
                         {otherCharts.map(q => (
-                          <WellnessQuestionChart key={q.id} question={q} submissions={sortedSubs} />
+                          <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
                         ))}
                       </div>
                     </details>
