@@ -14,7 +14,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # ponytail: `npm install` (not `npm ci`) — the lockfile trips npm 10.9's
+      # strict validator on Linux for a reason we can't see without auth. CI
+      # never pushes, so any lockfile regen it does is harmless.
+      - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm test
       - run: npm run build
