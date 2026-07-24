@@ -89,6 +89,20 @@ export function useWellness(athleteId) {
     await fetchAll();
   }, [tokenData, fetchAll]);
 
+  // Coach retrospective note attached to a specific submission day.
+  // Optimistic local update so the tooltip/popover feels instant.
+  const saveCoachNote = useCallback(async (submissionId, note) => {
+    const clean = (note ?? '').trim() || null;
+    setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, coach_notes: clean } : s));
+    const { error } = await supabase.from('wellness_responses')
+      .update({ coach_notes: clean }).eq('id', submissionId);
+    if (error) {
+      console.error('[Wellness] save coach note failed:', error);
+      await fetchAll(); // revert
+      throw error;
+    }
+  }, [fetchAll]);
+
   return {
     tokenData,
     questions,
@@ -98,5 +112,6 @@ export function useWellness(athleteId) {
     refresh: fetchAll,
     activateWellness,
     deactivateWellness,
+    saveCoachNote,
   };
 }

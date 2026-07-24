@@ -73,7 +73,7 @@ export default function WellnessOverview({ athletes, role }) {
     }
   }, [activeAthletes, selectedAthleteId]);
 
-  const { questions, featuredIds, submissions, loading, refresh } = useWellness(selectedAthleteId);
+  const { questions, featuredIds, submissions, loading, refresh, saveCoachNote } = useWellness(selectedAthleteId);
 
   const sortedSubs = useMemo(
     () => [...submissions].sort((a, b) => b.submission_date.localeCompare(a.submission_date)),
@@ -201,7 +201,7 @@ export default function WellnessOverview({ athletes, role }) {
                     Trends &amp; Rolling Averages
                   </h3>
                   {featuredCharts.map(q => (
-                    <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
+                    <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} onSaveNote={saveCoachNote} />
                   ))}
                   {otherCharts.length > 0 && (
                     <details className="mb-2">
@@ -210,7 +210,7 @@ export default function WellnessOverview({ athletes, role }) {
                       </summary>
                       <div className="mt-2">
                         {otherCharts.map(q => (
-                          <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
+                          <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} onSaveNote={saveCoachNote} />
                         ))}
                       </div>
                     </details>

@@ -34,7 +34,7 @@ function CellValue({ question, value }) {
  *         column per selected question, RAG-coloured.
  */
 export default function WellnessTab({ athlete, role }) {
-  const { questions, featuredIds, submissions, loading } = useWellness(athlete.id);
+  const { questions, featuredIds, submissions, loading, saveCoachNote } = useWellness(athlete.id);
 
   const sortedSubs = useMemo(
     () => [...submissions].sort((a, b) => b.submission_date.localeCompare(a.submission_date)),
@@ -97,7 +97,7 @@ export default function WellnessTab({ athlete, role }) {
                 Trends &amp; Rolling Averages
               </h3>
               {featuredCharts.map(q => (
-                <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
+                <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} onSaveNote={saveCoachNote} />
               ))}
               {otherCharts.length > 0 && (
                 <details className="mb-2">
@@ -106,7 +106,7 @@ export default function WellnessTab({ athlete, role }) {
                   </summary>
                   <div className="mt-2">
                     {otherCharts.map(q => (
-                      <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} />
+                      <WellnessQuestionChart key={q.id} question={q} submissions={chartSubs} onSaveNote={saveCoachNote} />
                     ))}
                   </div>
                 </details>
