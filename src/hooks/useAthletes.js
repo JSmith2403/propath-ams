@@ -10,6 +10,17 @@ function _diag(...args) {
   console.log(`[Athletes-diag ${new Date().toISOString().slice(11, 23)}]`, ...args);
 }
 
+// Module-level "last known good" cache, survives remounts of the hook.
+// 2026-08-18 incident: confirmed the athletes query itself was succeeding
+// even while the roster showed empty — the fetch resolved after its
+// component had already unmounted, so the result was correctly discarded
+// per the isMounted guard, but nothing else ever picked it up. Whatever
+// causes the remounting (still being chased separately via the diag logs
+// above), a fresh mount can now start from the last successful fetch
+// instead of an empty array, so a repeated-mount storm degrades to
+// "briefly shows slightly stale data" instead of "shows nothing."
+let _athletesCache = null; // Array | null
+
 const EMPTY_WORKING_ON = () => [
   { title: '', description: '' },
   { title: '', description: '' },
@@ -91,8 +102,8 @@ async function persistAthlete(athlete) {
 }
 
 export function useAthletes({ seedEnabled = true } = {}) {
-  const [athletes, setAthletes] = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [athletes, setAthletes] = useState(() => _athletesCache || []);
+  const [loading, setLoading]   = useState(_athletesCache === null);
   const [error,   setError]     = useState(null);
 
   // ── Initial load + real-time subscription ───────────────────
@@ -106,18 +117,22 @@ export function useAthletes({ seedEnabled = true } = {}) {
     _diag(`#${mountId} fetching athletes...`);
     const { data, error } = await supabase.from('athletes').select('id, data');
       _diag(`#${mountId} fetch resolved. isMounted=${isMounted}, rows=${data?.length ?? 'n/a'}, error=${error?.message ?? 'none'}`);
-      if (!isMounted) {
-        _diag(`#${mountId} DISCARDED — component unmounted before this response landed`);
-        return;
-      }
+
       if (error) {
         console.error('[ProPath] Failed to load athletes', error);
-        setError(error);
-        setLoading(false);
+        if (isMounted) { setError(error); setLoading(false); }
         return;
       }
 
-      if (!data || data.length === 0) {
+      if (data && data.length > 0) {
+        // Cache regardless of isMounted — even if THIS mount got torn down
+        // before the response landed, the very next mount's useState
+        // initializer reads this cache, so the data isn't lost to a
+        // remount race. See the _athletesCache comment above for context.
+        const mapped = data.map(row => ensureAthlete(row.data));
+        _athletesCache = mapped;
+        if (isMounted) setAthletes(mapped);
+      } else if (!data || data.length === 0) {
         // Seeding is opt-in (VITE_SEED_DUMMY=true, dev only). Previously an
         // empty read — including a transient outage returning zero rows —
         // would write the dummy roster straight into the production table.
@@ -126,20 +141,19 @@ export function useAthletes({ seedEnabled = true } = {}) {
         if (seedEnabled && seedAllowed) {
           // Seed with dummy data on first admin run
           const seeded = DUMMY_ATHLETES.map(ensureAthlete);
-          setAthletes(seeded);
+          _athletesCache = seeded;
+          if (isMounted) setAthletes(seeded);
           await Promise.all(
             seeded.map(a =>
               supabase.from('athletes').upsert({ id: a.id, data: a, updated_at: new Date().toISOString() })
             )
           );
-        } else {
+        } else if (isMounted) {
           setAthletes([]);
         }
-      } else {
-        setAthletes(data.map(row => ensureAthlete(row.data)));
       }
-      setError(null);
-      if (isMounted) setLoading(false);
+      if (isMounted) { setError(null); setLoading(false); }
+      if (!isMounted) _diag(`#${mountId} response landed after unmount — cache updated for next mount, this instance discarded`);
     } catch (err) {
       // Catches anything that throws while processing a successful response
       // (e.g. a malformed row) — previously this became a silent unhandled
@@ -157,17 +171,20 @@ export function useAthletes({ seedEnabled = true } = {}) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'athletes' },
         payload => {
-          if (!isMounted) return;
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const incoming = ensureAthlete(payload.new.data);
-            setAthletes(prev => {
+            const apply = prev => {
               const exists = prev.some(a => a.id === incoming.id);
               return exists
                 ? prev.map(a => a.id === incoming.id ? incoming : a)
                 : [...prev, incoming];
-            });
+            };
+            if (_athletesCache) _athletesCache = apply(_athletesCache);
+            if (isMounted) setAthletes(apply);
           } else if (payload.eventType === 'DELETE') {
-            setAthletes(prev => prev.filter(a => a.id !== payload.old.id));
+            const apply = prev => prev.filter(a => a.id !== payload.old.id);
+            if (_athletesCache) _athletesCache = apply(_athletesCache);
+            if (isMounted) setAthletes(apply);
           }
         }
       )
