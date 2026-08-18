@@ -173,14 +173,14 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
       <main className="flex-1 flex flex-col overflow-hidden pb-14 md:pb-0">
 
         {view === 'updates' && !isExternal && (
-          <div className="flex-1 flex overflow-hidden">
-            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden rounded-xl border border-ink-100 bg-white">
               <RecentUpdatesView
                 athletes={visibleAthletes}
                 onNavigateToAthlete={handleSelectAthlete}
               />
             </div>
-            <div className="hidden xl:flex shrink-0" style={{ width: 400 }}>
+            <div className="hidden xl:flex flex-1 min-w-0">
               <WellnessAdherencePanel
                 athletes={visibleAthletes}
                 onNavigate={handleNavigate}

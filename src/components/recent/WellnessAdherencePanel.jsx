@@ -44,7 +44,7 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
   );
 
   return (
-    <div className="w-full h-full flex flex-col border-l border-ink-100 bg-white">
+    <div className="w-full h-full flex flex-col rounded-xl border border-ink-100 bg-white overflow-hidden">
       {/* Header */}
       <div className="px-5 pt-6 pb-4 flex items-start justify-between border-b border-ink-100">
         <div className="flex items-center gap-2">
