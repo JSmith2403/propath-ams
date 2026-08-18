@@ -36,11 +36,21 @@ export function useWellnessAdherence(athleteIds) {
 
       const [
         { data: tokens },
+        { data: appTokens },
         { data: responses },
         { data: selections },
         { data: library },
       ] = await Promise.all([
         supabase.from('wellness_tokens')
+          .select('athlete_id, is_active')
+          .in('athlete_id', athleteIds)
+          .eq('is_active', true),
+        // wellness_tokens.is_active is meant to mirror athlete_app_tokens
+        // (the actual "Athlete App" toggle a coach uses), but the two
+        // aren't DB-enforced in sync — cross-check both so a stale
+        // wellness_tokens row from a deactivated/never-activated athlete
+        // app can't make them show up here.
+        supabase.from('athlete_app_tokens')
           .select('athlete_id, is_active')
           .in('athlete_id', athleteIds)
           .eq('is_active', true),
@@ -58,7 +68,8 @@ export function useWellnessAdherence(athleteIds) {
       ]);
       if (cancelled) return;
 
-      const activeIds = new Set((tokens || []).map(t => t.athlete_id));
+      const activeAppIds = new Set((appTokens || []).map(t => t.athlete_id));
+      const activeIds = new Set((tokens || []).map(t => t.athlete_id).filter(id => activeAppIds.has(id)));
 
       const libById = Object.fromEntries((library || []).map(q => [q.id, q]));
       const questionsByAthlete = {};

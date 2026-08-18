@@ -50,14 +50,19 @@ export default function WellnessOverview({ athletes, role }) {
 
   const canDelete = role === 'admin' || role === 'co_admin';
 
-  // Active wellness tokens — list of athletes who can submit
+  // Active wellness tokens — list of athletes who can submit.
+  // wellness_tokens.is_active is meant to mirror athlete_app_tokens (the
+  // actual "Athlete App" toggle a coach uses), but the two aren't
+  // DB-enforced in sync — cross-check both so a stale wellness_tokens row
+  // can't show an athlete as active here.
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('wellness_tokens')
-        .select('athlete_id, is_active')
-        .eq('is_active', true);
-      setTokens(data || []);
+      const [{ data: wellness }, { data: appTokens }] = await Promise.all([
+        supabase.from('wellness_tokens').select('athlete_id, is_active').eq('is_active', true),
+        supabase.from('athlete_app_tokens').select('athlete_id, is_active').eq('is_active', true),
+      ]);
+      const activeAppIds = new Set((appTokens || []).map(t => t.athlete_id));
+      setTokens((wellness || []).filter(t => activeAppIds.has(t.athlete_id)));
       setTokensLoading(false);
     })();
   }, []);

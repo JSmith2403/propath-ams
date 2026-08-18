@@ -63,32 +63,6 @@ export function useWellness(athleteId) {
     return () => { cancelled = true; };
   }, [fetchAll]);
 
-  // Activate / deactivate kept for backwards compat with the old
-  // Wellness tab toggle (now driven by the Athlete App switch on
-  // the Overview tab, but the hook still exposes them in case any
-  // surface needs a manual override).
-  const activateWellness = useCallback(async () => {
-    try {
-      if (tokenData) {
-        await supabase.from('wellness_tokens').update({ is_active: true }).eq('id', tokenData.id);
-      } else {
-        await supabase.from('wellness_tokens').insert({
-          athlete_id: athleteId, token: crypto.randomUUID(), is_active: true,
-        });
-      }
-      await fetchAll();
-    } catch (err) {
-      console.error('[Wellness] activate failed:', err);
-      alert('Failed to activate wellness tracking: ' + (err.message || err));
-    }
-  }, [athleteId, tokenData, fetchAll]);
-
-  const deactivateWellness = useCallback(async () => {
-    if (!tokenData) return;
-    await supabase.from('wellness_tokens').update({ is_active: false }).eq('id', tokenData.id);
-    await fetchAll();
-  }, [tokenData, fetchAll]);
-
   // Coach retrospective note attached to a specific submission day.
   // Optimistic local update so the tooltip/popover feels instant.
   const saveCoachNote = useCallback(async (submissionId, note) => {
@@ -110,8 +84,6 @@ export function useWellness(athleteId) {
     submissions,
     loading,
     refresh: fetchAll,
-    activateWellness,
-    deactivateWellness,
     saveCoachNote,
   };
 }

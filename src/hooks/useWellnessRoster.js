@@ -34,11 +34,19 @@ export function useWellnessRoster(athleteIds) {
 
       const [
         { data: tokens },
+        { data: appTokens },
         { data: responses },
         { data: selections },
         { data: library },
       ] = await Promise.all([
         supabase.from('wellness_tokens')
+          .select('athlete_id, is_active')
+          .in('athlete_id', athleteIds),
+        // wellness_tokens.is_active is meant to mirror athlete_app_tokens
+        // (the actual "Athlete App" toggle a coach uses), but the two
+        // aren't DB-enforced in sync — cross-check both so a stale
+        // wellness_tokens row can't show an athlete as active.
+        supabase.from('athlete_app_tokens')
           .select('athlete_id, is_active')
           .in('athlete_id', athleteIds),
         supabase.from('wellness_responses')
@@ -56,6 +64,7 @@ export function useWellnessRoster(athleteIds) {
 
       if (cancelled) return;
 
+      const activeAppIds = new Set((appTokens || []).filter(t => t.is_active).map(t => t.athlete_id));
       const tokenByAthlete = {};
       (tokens || []).forEach(t => { tokenByAthlete[t.athlete_id] = t; });
 
@@ -95,7 +104,7 @@ export function useWellnessRoster(athleteIds) {
         );
 
         map[id] = {
-          isActive:        tok?.is_active ?? false,
+          isActive:        (tok?.is_active ?? false) && activeAppIds.has(id),
           latestDate:      latest?.submission_date || null,
           latestResponses: latest?.responses || null,
           questions:       ringable,
