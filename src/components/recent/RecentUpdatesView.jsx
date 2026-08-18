@@ -146,9 +146,9 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
   return (
     <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
       {/* Header — sticky so "Mark all read" is always reachable */}
-      <div className="px-4 md:px-8 pt-6 pb-3 flex items-center gap-2 border-b border-ink-100 bg-white sticky top-0 z-10">
-        <Bell size={18} style={{ color: '#A58D69' }} />
-        <div className="flex-1 min-w-0">
+      <div className="px-4 md:px-8 pt-6 pb-3 flex items-center gap-2 flex-wrap border-b border-ink-100 bg-white sticky top-0 z-10">
+        <Bell size={18} className="shrink-0" style={{ color: '#A58D69' }} />
+        <div className="flex-1 min-w-[160px]">
           <div className="flex items-center gap-2">
             <h1 className="text-lg md:text-2xl font-bold" style={{ color: '#1C1C1C' }}>
               Recent Updates
@@ -169,7 +169,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
         {/* View toggle: athlete vs time. Segmented control, persists
             per-device so the coach lands back on their preferred view. */}
         <div
-          className="inline-flex rounded-md p-0.5"
+          className="inline-flex rounded-md p-0.5 shrink-0"
           style={{ backgroundColor: '#f3f4f6' }}
         >
           <button
@@ -204,7 +204,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
             unseen activity stands out on its own. */}
         <button
           onClick={() => setUnreadOnly(v => !v)}
-          className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+          className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded transition-colors shrink-0"
           style={unreadOnly
             ? { color: '#fff', border: '1px solid #A58D69', backgroundColor: '#A58D69' }
             : { color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
@@ -218,7 +218,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
-            className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded transition-colors shrink-0"
             style={{ color: '#A58D69', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
             title="Mark every visible row as read"
           >
@@ -229,7 +229,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
         )}
         <button
           onClick={refresh}
-          className="hidden md:inline-flex text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+          className="hidden md:inline-flex text-xs font-semibold px-3 py-1.5 rounded transition-colors shrink-0"
           style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
         >
           Refresh
