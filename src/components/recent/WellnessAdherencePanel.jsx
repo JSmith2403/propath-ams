@@ -37,11 +37,24 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
   }, [athletes]);
 
   const [viewingRow, setViewingRow] = useState(null); // row object or null
+  const [statusFilter, setStatusFilter] = useState('all'); // all | not_completed | completed
 
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => (athleteById.get(a.athleteId)?.name || '').localeCompare(athleteById.get(b.athleteId)?.name || '')),
     [rows, athleteById]
   );
+
+  const counts = useMemo(() => ({
+    all:           sortedRows.length,
+    completed:     sortedRows.filter(r => r.todayCompleted).length,
+    not_completed: sortedRows.filter(r => !r.todayCompleted).length,
+  }), [sortedRows]);
+
+  const filteredRows = useMemo(() => {
+    if (statusFilter === 'completed')     return sortedRows.filter(r => r.todayCompleted);
+    if (statusFilter === 'not_completed') return sortedRows.filter(r => !r.todayCompleted);
+    return sortedRows;
+  }, [sortedRows, statusFilter]);
 
   return (
     <div className="w-full h-full flex flex-col rounded-xl border border-ink-100 bg-white overflow-hidden">
@@ -67,6 +80,30 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
         )}
       </div>
 
+      {/* Status filter */}
+      <div className="px-5 py-2.5 border-b border-ink-100">
+        <div className="inline-flex rounded-md p-0.5" style={{ backgroundColor: '#f3f4f6' }}>
+          {[
+            { key: 'all',           label: 'All' },
+            { key: 'not_completed', label: 'Not completed' },
+            { key: 'completed',     label: 'Completed' },
+          ].map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setStatusFilter(opt.key)}
+              className="px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+              style={{
+                color:           statusFilter === opt.key ? '#1C1C1C' : '#6b7280',
+                backgroundColor: statusFilter === opt.key ? '#fff' : 'transparent',
+                boxShadow:       statusFilter === opt.key ? '0 1px 2px rgba(0,0,0,0.06)' : undefined,
+              }}
+            >
+              {opt.label} ({counts[opt.key]})
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
         {loading && (
@@ -84,7 +121,15 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
           </div>
         )}
 
-        {!loading && sortedRows.map(row => {
+        {!loading && sortedRows.length > 0 && filteredRows.length === 0 && (
+          <div className="px-5 py-16 text-center">
+            <div className="text-sm font-semibold" style={{ color: '#1C1C1C' }}>
+              {statusFilter === 'completed' ? 'No one has checked in yet' : 'Everyone has checked in'}
+            </div>
+          </div>
+        )}
+
+        {!loading && filteredRows.map(row => {
           const athlete = athleteById.get(row.athleteId);
           if (!athlete) return null;
           return (
