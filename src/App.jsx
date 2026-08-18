@@ -51,7 +51,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const [profileNav, setProfileNav] = useState(null);
 
   const {
-    athletes, archivedAthletes, loading, getAthlete,
+    athletes, archivedAthletes, loading, error: athletesError, getAthlete,
     addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete, updateRag, addRagEntry,
     saveQuarterlyReview, updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
@@ -171,6 +171,15 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
       {/* Main content — pads the bottom on mobile so the bottom nav
           doesn't cover the last row of scrollable content. */}
       <main className="flex-1 flex flex-col overflow-hidden pb-14 md:pb-0">
+
+        {athletesError && (
+          <div
+            className="px-4 py-2.5 text-xs font-semibold flex items-center gap-2 shrink-0"
+            style={{ backgroundColor: '#fef2f2', color: '#991b1b', borderBottom: '1px solid #fecaca' }}
+          >
+            Couldn't load athletes — {athletesError.message || 'unknown error'}. Try refreshing the page.
+          </div>
+        )}
 
         {view === 'updates' && !isExternal && (
           <div className="flex-1 flex gap-4 p-4 overflow-hidden">

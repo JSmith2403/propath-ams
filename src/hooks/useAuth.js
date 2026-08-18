@@ -91,7 +91,16 @@ export function useAuth() {
 
       setSession(session);
       if (session?.user) {
-        loadProfile(session.user.id);
+        // TOKEN_REFRESHED fires for the same already-authenticated user —
+        // role/full_name/allocations can't have changed, so skip re-fetching
+        // them. Refetching on every refresh is wasteful at best; if refreshes
+        // are ever firing abnormally often (e.g. under realtime reconnect
+        // churn), it turns into a request storm that starves other
+        // first-load queries — exactly what crowded out the athletes fetch
+        // and made the roster appear empty on 2026-08-18.
+        if (event !== 'TOKEN_REFRESHED') {
+          loadProfile(session.user.id);
+        }
       } else {
         setRole(null);
         setUserName('');

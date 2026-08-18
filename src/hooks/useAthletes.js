@@ -86,15 +86,19 @@ async function persistAthlete(athlete) {
 export function useAthletes({ seedEnabled = true } = {}) {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [error,   setError]     = useState(null);
 
   // ── Initial load + real-time subscription ───────────────────
   useEffect(() => {
     let isMounted = true;
 
-    supabase.from('athletes').select('id, data').then(async ({ data, error }) => {
+    (async () => {
+    try {
+    const { data, error } = await supabase.from('athletes').select('id, data');
       if (!isMounted) return;
       if (error) {
         console.error('[ProPath] Failed to load athletes', error);
+        setError(error);
         setLoading(false);
         return;
       }
@@ -120,8 +124,18 @@ export function useAthletes({ seedEnabled = true } = {}) {
       } else {
         setAthletes(data.map(row => ensureAthlete(row.data)));
       }
+      setError(null);
       if (isMounted) setLoading(false);
-    });
+    } catch (err) {
+      // Catches anything that throws while processing a successful response
+      // (e.g. a malformed row) — previously this became a silent unhandled
+      // promise rejection and the roster just looked empty with no clue why.
+      if (!isMounted) return;
+      console.error('[ProPath] Failed to process athletes', err);
+      setError(err);
+      setLoading(false);
+    }
+    })();
 
     const channel = supabase
       .channel('athletes-changes')
@@ -550,6 +564,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     athletes: activeAthletes,
     archivedAthletes,
     loading,
+    error,
     getAthlete,
     // Phase 1
     addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete,
