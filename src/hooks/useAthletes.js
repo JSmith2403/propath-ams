@@ -3,6 +3,13 @@ import { supabase } from '../lib/supabase';
 import { DUMMY_ATHLETES } from '../data/athletes';
 import { SYNC_MAP, METRIC_MAP } from '../data/sessionMetrics';
 
+// ── Temporary diagnostics — see matching note in useAuth.js ────────────────
+// Safe to remove once the 2026-08-18 empty-roster cause is confirmed fixed.
+let _athletesHookMountCount = 0;
+function _diag(...args) {
+  console.log(`[Athletes-diag ${new Date().toISOString().slice(11, 23)}]`, ...args);
+}
+
 const EMPTY_WORKING_ON = () => [
   { title: '', description: '' },
   { title: '', description: '' },
@@ -90,12 +97,19 @@ export function useAthletes({ seedEnabled = true } = {}) {
 
   // ── Initial load + real-time subscription ───────────────────
   useEffect(() => {
+    const mountId = ++_athletesHookMountCount;
     let isMounted = true;
+    _diag(`useAthletes EFFECT MOUNT #${mountId}`);
 
     (async () => {
     try {
+    _diag(`#${mountId} fetching athletes...`);
     const { data, error } = await supabase.from('athletes').select('id, data');
-      if (!isMounted) return;
+      _diag(`#${mountId} fetch resolved. isMounted=${isMounted}, rows=${data?.length ?? 'n/a'}, error=${error?.message ?? 'none'}`);
+      if (!isMounted) {
+        _diag(`#${mountId} DISCARDED — component unmounted before this response landed`);
+        return;
+      }
       if (error) {
         console.error('[ProPath] Failed to load athletes', error);
         setError(error);
@@ -157,9 +171,12 @@ export function useAthletes({ seedEnabled = true } = {}) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        _diag(`#${mountId} realtime channel status:`, status, err ? `error: ${err.message}` : '');
+      });
 
     return () => {
+      _diag(`#${mountId} useAthletes EFFECT CLEANUP (unmounting or re-running)`);
       isMounted = false;
       supabase.removeChannel(channel);
     };

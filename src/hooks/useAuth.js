@@ -26,6 +26,19 @@ const DEV_BYPASS = import.meta.env.DEV
 // Mock session object — just needs a truthy shape with user.email
 const DEV_SESSION = { user: { email: 'dev@localhost' } };
 
+// ── Temporary diagnostics ───────────────────────────────────────────────────
+// Added 2026-08-18 while tracking down the empty-roster incident: the
+// network trace showed the profile check (user_roles + provider_allocations)
+// firing repeatedly instead of once, but it was unclear whether that was
+// repeated onAuthStateChange events on one stable mount, or the whole hook
+// (and therefore AuthenticatedApp) remounting repeatedly. This makes that
+// question answerable from the console instead of guessed at. Safe to
+// remove once the cause is confirmed fixed.
+let _authHookMountCount = 0;
+function _diag(...args) {
+  console.log(`[Auth-diag ${new Date().toISOString().slice(11, 23)}]`, ...args);
+}
+
 // ── Hash-type capture ─────────────────────────────────────────────────────────
 // Read the hash type BEFORE Supabase's getSession() clears it.
 // Supabase appends  #access_token=...&type=recovery  or  &type=invite
@@ -50,11 +63,16 @@ export function useAuth() {
   const [needsPasswordSet, setNeedsPasswordSet] = useState(false);
 
   useEffect(() => {
+    const mountId = ++_authHookMountCount;
+    _diag(`useAuth EFFECT MOUNT #${mountId}`, DEV_BYPASS ? '(dev bypass — auth skipped)' : '');
+
     // Skip all Supabase auth in development — bypass is active
     if (DEV_BYPASS) return;
 
     // Restore existing session on mount
+    _diag(`#${mountId} calling getSession()`);
     supabase.auth.getSession().then(({ data: { session } }) => {
+      _diag(`#${mountId} getSession() resolved, user:`, session?.user?.email || '(none)');
       // If the page was opened from a recovery/invite link, getSession will
       // return a session (Supabase exchanged the token). onAuthStateChange
       // fires synchronously with the right event, so we defer to that handler
@@ -63,7 +81,7 @@ export function useAuth() {
 
       setSession(session);
       if (session?.user) {
-        loadProfile(session.user.id);
+        loadProfile(session.user.id, mountId);
       } else {
         setLoading(false);
       }
@@ -71,6 +89,7 @@ export function useAuth() {
 
     // Keep in sync with sign-in / sign-out / recovery events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      _diag(`#${mountId} onAuthStateChange event:`, event, 'user:', session?.user?.email || '(none)');
       if (event === 'PASSWORD_RECOVERY') {
         // User arrived via a password-reset email link.
         // A session exists but we must not let them into the app yet.
@@ -99,7 +118,7 @@ export function useAuth() {
         // first-load queries — exactly what crowded out the athletes fetch
         // and made the roster appear empty on 2026-08-18.
         if (event !== 'TOKEN_REFRESHED') {
-          loadProfile(session.user.id);
+          loadProfile(session.user.id, mountId);
         }
       } else {
         setRole(null);
@@ -109,10 +128,14 @@ export function useAuth() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      _diag(`#${mountId} useAuth EFFECT CLEANUP (unmounting or re-running)`);
+      subscription.unsubscribe();
+    };
   }, []);
 
-  async function loadProfile(userId) {
+  async function loadProfile(userId, mountId = '?') {
+    _diag(`#${mountId} loadProfile START for`, userId);
     const { data: roleRow } = await supabase
       .from('user_roles')
       .select('role, full_name')
@@ -120,6 +143,7 @@ export function useAuth() {
       .maybeSingle();
 
     const userRole = roleRow?.role ?? 'external';
+    _diag(`#${mountId} loadProfile role resolved:`, userRole, roleRow ? '(row found)' : '(NO ROW — defaulted to external)');
     setRole(userRole);
     setUserName(roleRow?.full_name || '');
 
@@ -134,6 +158,7 @@ export function useAuth() {
 
     setAllocations(athleteAllocations);
     setLoading(false);
+    _diag(`#${mountId} loadProfile DONE`);
   }
 
   const signIn  = (email, password) =>
