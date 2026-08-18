@@ -5,6 +5,7 @@ import logo from '../../assets/Propath_Primary Logo_Black.png';
 import TabBar from './TabBar';
 import TrainingTab from './TrainingTab';
 import InstallPrompt from '../InstallPrompt';
+import WellnessCheckInGate from './WellnessCheckInGate';
 
 // Wellness lives on the Training screen, Resources lives at the bottom
 // of the Training screen as a section (the bottom-nav 'Resources' button
@@ -80,6 +81,9 @@ export default function AthleteAppPage() {
         name:  tokenRow.name  || 'Athlete',
         photo: tokenRow.photo || null,
         sport: tokenRow.sport || '',
+        // Null when wellness monitoring is toggled off for this athlete —
+        // gates the mandatory daily check-in below.
+        wellnessToken: tokenRow.wellness_token || null,
       });
       // Remember this token so future PWA launches (start_url is "/")
       // can redirect the user back to their athlete app instead of
@@ -116,6 +120,7 @@ export default function AthleteAppPage() {
   // 480px content column reads as a phone preview on desktop while
   // staying edge-to-edge on real phones.
   return (
+    <WellnessCheckInGate athleteId={athlete.id} wellnessToken={athlete.wellnessToken}>
     <div className="min-h-screen w-full bg-ink-100">
       <div className="min-h-screen flex flex-col mx-auto relative bg-ink-50 shadow-card"
         style={{ maxWidth: 480 }}>
@@ -156,6 +161,7 @@ export default function AthleteAppPage() {
       </div>
       <InstallPrompt />
     </div>
+    </WellnessCheckInGate>
   );
 }
 

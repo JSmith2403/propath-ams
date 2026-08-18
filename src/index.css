@@ -204,4 +204,10 @@
     background-color: #374151;
     border-radius: 2px;
   }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

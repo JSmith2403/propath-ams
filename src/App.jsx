@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import RecentUpdatesView from './components/recent/RecentUpdatesView';
+import WellnessAdherencePanel from './components/recent/WellnessAdherencePanel';
 import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
@@ -172,10 +173,20 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
       <main className="flex-1 flex flex-col overflow-hidden pb-14 md:pb-0">
 
         {view === 'updates' && !isExternal && (
-          <RecentUpdatesView
-            athletes={visibleAthletes}
-            onNavigateToAthlete={handleSelectAthlete}
-          />
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+              <RecentUpdatesView
+                athletes={visibleAthletes}
+                onNavigateToAthlete={handleSelectAthlete}
+              />
+            </div>
+            <div className="hidden xl:flex shrink-0" style={{ width: 400 }}>
+              <WellnessAdherencePanel
+                athletes={visibleAthletes}
+                onNavigate={handleNavigate}
+              />
+            </div>
+          </div>
         )}
 
         {view === 'roster' && (
