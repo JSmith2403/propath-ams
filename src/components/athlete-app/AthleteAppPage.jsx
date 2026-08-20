@@ -6,6 +6,7 @@ import TabBar from './TabBar';
 import TrainingTab from './TrainingTab';
 import InstallPrompt from '../InstallPrompt';
 import WellnessCheckInGate from './WellnessCheckInGate';
+import NotificationPrompt from './NotificationPrompt';
 
 // Wellness lives on the Training screen, Resources lives at the bottom
 // of the Training screen as a section (the bottom-nav 'Resources' button
@@ -160,6 +161,7 @@ export default function AthleteAppPage() {
         <TabBar active={activeTab} onChange={handleTabChange} />
       </div>
       <InstallPrompt />
+      <NotificationPrompt athleteId={athlete.id} />
     </div>
     </WellnessCheckInGate>
   );

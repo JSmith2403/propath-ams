@@ -1,9 +1,30 @@
-import { useMemo, useState } from 'react';
-import { Heart, CheckCircle2, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Heart, CheckCircle2, AlertTriangle, X, Loader2, Users, ChevronDown, Check } from 'lucide-react';
 import { useWellnessAdherence } from '../../hooks/useWellnessAdherence';
 import { getRagColour } from '../../utils/wellnessRag';
 
 const RAG_HEX = { green: '#16a34a', amber: '#d97706', red: '#dc2626' };
+
+// Which athletes the coach wants shown here — independent of whether
+// wellness monitoring is actually toggled on for them (that's a
+// separate, coach-controlled display preference: e.g. "I know this
+// athlete has it on, but I don't want them cluttering this view").
+// null = no preference saved yet, defaults to showing everyone.
+const VISIBLE_IDS_KEY = 'wellness_overview:visible_ids';
+function readVisibleIds() {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(VISIBLE_IDS_KEY) : null;
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : null;
+  } catch { return null; }
+}
+function persistVisibleIds(set) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(VISIBLE_IDS_KEY, JSON.stringify([...set]));
+  } catch { /* ignore */ }
+}
 
 function timeLabel(iso) {
   if (!iso) return '';
@@ -38,23 +59,70 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
 
   const [viewingRow, setViewingRow] = useState(null); // row object or null
   const [statusFilter, setStatusFilter] = useState('all'); // all | not_completed | completed
+  const [visibleIds, setVisibleIds] = useState(readVisibleIds); // Set<athleteId> | null
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
+
+  // Close the athlete picker on outside click.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [pickerOpen]);
+
+  const rosterSorted = useMemo(
+    () => [...athletes].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [athletes]
+  );
+
+  // Base set for the first-ever edit: the full roster, so unchecking one
+  // athlete reads as "everyone except this one" rather than silently
+  // hiding anyone not currently wellness-active.
+  const toggleVisible = (id) => {
+    setVisibleIds(prev => {
+      const base = prev ?? new Set(rosterSorted.map(a => a.id));
+      const next = new Set(base);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      persistVisibleIds(next);
+      return next;
+    });
+  };
+
+  const showAll = () => {
+    const next = new Set(rosterSorted.map(a => a.id));
+    persistVisibleIds(next);
+    setVisibleIds(next);
+  };
+  const hideAll = () => {
+    const next = new Set();
+    persistVisibleIds(next);
+    setVisibleIds(next);
+  };
 
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => (athleteById.get(a.athleteId)?.name || '').localeCompare(athleteById.get(b.athleteId)?.name || '')),
     [rows, athleteById]
   );
 
+  const visibleRows = useMemo(
+    () => (visibleIds === null ? sortedRows : sortedRows.filter(r => visibleIds.has(r.athleteId))),
+    [sortedRows, visibleIds]
+  );
+
   const counts = useMemo(() => ({
-    all:           sortedRows.length,
-    completed:     sortedRows.filter(r => r.todayCompleted).length,
-    not_completed: sortedRows.filter(r => !r.todayCompleted).length,
-  }), [sortedRows]);
+    all:           visibleRows.length,
+    completed:     visibleRows.filter(r => r.todayCompleted).length,
+    not_completed: visibleRows.filter(r => !r.todayCompleted).length,
+  }), [visibleRows]);
 
   const filteredRows = useMemo(() => {
-    if (statusFilter === 'completed')     return sortedRows.filter(r => r.todayCompleted);
-    if (statusFilter === 'not_completed') return sortedRows.filter(r => !r.todayCompleted);
-    return sortedRows;
-  }, [sortedRows, statusFilter]);
+    if (statusFilter === 'completed')     return visibleRows.filter(r => r.todayCompleted);
+    if (statusFilter === 'not_completed') return visibleRows.filter(r => !r.todayCompleted);
+    return visibleRows;
+  }, [visibleRows, statusFilter]);
 
   return (
     <div className="w-full h-full flex flex-col rounded-xl border border-ink-100 bg-white overflow-hidden">
@@ -80,8 +148,8 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
         )}
       </div>
 
-      {/* Status filter */}
-      <div className="px-5 py-2.5 border-b border-ink-100">
+      {/* Status filter + athlete picker */}
+      <div className="px-5 py-2.5 border-b border-ink-100 flex items-center justify-between gap-2 flex-wrap">
         <div className="inline-flex rounded-md p-0.5" style={{ backgroundColor: '#f3f4f6' }}>
           {[
             { key: 'all',           label: 'All' },
@@ -102,6 +170,61 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
             </button>
           ))}
         </div>
+
+        {/* Athlete picker — who appears in this list at all, independent
+            of whether wellness monitoring is toggled on for them. */}
+        <div className="relative" ref={pickerRef}>
+          <button
+            onClick={() => setPickerOpen(v => !v)}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded transition-colors"
+            style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
+          >
+            <Users size={12} />
+            Athletes ({visibleIds === null ? rosterSorted.length : visibleIds.size})
+            <ChevronDown size={12} />
+          </button>
+
+          {pickerOpen && (
+            <div
+              className="absolute right-0 mt-1 rounded-lg bg-white shadow-xl z-20 overflow-hidden"
+              style={{ width: 240, border: '1px solid #e5e7eb' }}
+            >
+              <div className="flex items-center justify-between px-3 py-2 border-b border-ink-100">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                  Show on this list
+                </span>
+                <div className="flex items-center gap-2">
+                  <button onClick={showAll} className="text-[10px] font-semibold" style={{ color: '#A58D69' }}>All</button>
+                  <button onClick={hideAll} className="text-[10px] font-semibold" style={{ color: '#6b7280' }}>None</button>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto py-1">
+                {rosterSorted.map(a => {
+                  const isOn = visibleIds === null ? true : visibleIds.has(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => toggleVisible(a.id)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <span
+                        className="shrink-0 flex items-center justify-center rounded"
+                        style={{
+                          width: 14, height: 14,
+                          backgroundColor: isOn ? '#A58D69' : '#fff',
+                          border: isOn ? 'none' : '1px solid #d1d5db',
+                        }}
+                      >
+                        {isOn && <Check size={10} color="#fff" strokeWidth={3} />}
+                      </span>
+                      <span className="text-xs truncate" style={{ color: '#1C1C1C' }}>{a.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -121,7 +244,16 @@ export default function WellnessAdherencePanel({ athletes = [], onNavigate }) {
           </div>
         )}
 
-        {!loading && sortedRows.length > 0 && filteredRows.length === 0 && (
+        {!loading && sortedRows.length > 0 && visibleRows.length === 0 && (
+          <div className="px-5 py-16 text-center">
+            <div className="text-sm font-semibold" style={{ color: '#1C1C1C' }}>No athletes selected</div>
+            <div className="text-xs mt-1" style={{ color: '#9ca3af' }}>
+              Use the Athletes filter above to choose who shows here.
+            </div>
+          </div>
+        )}
+
+        {!loading && visibleRows.length > 0 && filteredRows.length === 0 && (
           <div className="px-5 py-16 text-center">
             <div className="text-sm font-semibold" style={{ color: '#1C1C1C' }}>
               {statusFilter === 'completed' ? 'No one has checked in yet' : 'Everyone has checked in'}

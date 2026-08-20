@@ -9,31 +9,19 @@ export default defineConfig({
     //   • manifest: false  → we ship our own /manifest.json (referenced by
     //     index.html). The plugin only registers the SW and caches the
     //     app shell.
-    //   • Supabase requests are NetworkOnly — athletes must always see
-    //     fresh data; never serve stale auth or profile rows from cache.
+    //   • injectManifest (not generateSW) — needed so src/sw.js can add
+    //     custom push / notificationclick handlers for Web Push. The
+    //     precaching and NetworkOnly-for-Supabase rules moved into that
+    //     file; this config only tells the plugin where to find it.
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/*.png', 'favicon.svg', 'manifest.json'],
       manifest: false,
-      workbox: {
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
-        navigateFallback: '/index.html',
-        // Athlete-app + wellness routes hit Supabase auth checks immediately
-        // on load; let them go to the network rather than serving the SPA shell.
-        navigateFallbackDenylist: [/^\/api\//, /^\/athlete\//, /^\/wellness\//],
-        runtimeCaching: [
-          {
-            // Bypass cache for ALL Supabase calls — REST, Storage, Auth, Realtime.
-            urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.(co|in)\/.*/,
-            handler: 'NetworkOnly',
-          },
-          {
-            // Per-token PWA manifest endpoint must always hit the network
-            // — caching would defeat the whole point.
-            urlPattern: /\/api\//,
-            handler: 'NetworkOnly',
-          },
-        ],
       },
     }),
   ],
