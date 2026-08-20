@@ -1,74 +1,21 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ScatterChart, Scatter,
-  ComposedChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip,
+  XAxis, YAxis, CartesianGrid,
   ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from 'recharts';
-import { Settings, Plus, X, RotateCcw } from 'lucide-react';
-import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
+import { Settings, RotateCcw } from 'lucide-react';
+import { METRIC_CATEGORIES, METRIC_MAP, LABEL_OVERRIDES } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
+import { useKpiBoard } from '../../hooks/useKpiBoard';
+import { extractScalar } from '../../utils/kpiStats';
+import KpiTile from '../kpi/KpiTile';
+import AddMetricTile from '../kpi/AddMetricTile';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GOLD  = '#A58D69';
-const TEAL  = '#437E8D';
-
-const LOWER_IS_BETTER = new Set([
-  'sprint10m', 'sprint20m', 'sprint40m', 'mod505', 'reactionTime',
-]);
-
-// Metrics that render as dual-line charts (Left teal + Right gold) with an LSI
-// readout beneath the chart. This is the explicit allowlist from the spec —
-// bilateral metrics NOT in this set continue to use the single-line chart.
-const DUAL_LINE_METRICS = new Set([
-  'gripStrength',
-  'hamstring0', 'hamstring30', 'hamstring90',
-  'hipFlexionSupine90', 'hipExtensionProne90',
-  'adduction0', 'adduction90',
-  'imtpPeakForceLR',
-  'slBridgeCapacity',
-  'calfRaiseMax',
-  'sidePlank',
-  'cmjHeight',
-  'slDropJumpRSI',
-  'mod505',
-  'medBallRotationalPush',
-  'medBallRotationalThrow',
-]);
-
-const DEFAULT_KPI_KEYS = [
-  'cmjHeight',
-  'cmjRelPower',
-  'imtpPeakForce',
-  'rsi105',
-  'hamstring30',
-  'hamstring90',
-  'adduction0',
-  'chinUpMaxReps',
-  'benchPress3RM',
-  'sixMinRun',
-];
-
-// Special derived metrics that aren't in METRIC_MAP
-const SPECIAL_METRICS = {
-  cmjRelPower: {
-    key: 'cmjRelPower', label: 'CMJ W/kg', unit: 'W/kg',
-    sourceKey: 'cmjPeakPower', categoryKey: 'power',
-  },
-  imtpRelForce: {
-    key: 'imtpRelForce', label: 'IMTP Relative Force', unit: 'N/kg',
-    sourceKey: 'imtpPeakForce', categoryKey: 'strength',
-  },
-};
-
-// Display label overrides for specific metric keys
-const LABEL_OVERRIDES = {
-  cmjRelPower:   'CMJ W/kg',
-  imtpRelForce:  'IMTP Rel Force',
-  adduction0:    'Adductor Squeeze',
-};
 
 const ZONES = {
   well_developed:   { label: 'Well Developed',   bg: '#dcfce7', text: '#15803d', prescription: 'Maintain training balance. Focus on sport-specific power application.' },
@@ -107,186 +54,6 @@ function getDefaultThresholds(athlete) {
   return { imtp: 2800, cmj: 2200 };
 }
 
-function extractScalar(entry) {
-  if (!entry) return null;
-  const l = entry.left ?? entry.bestL ?? null;
-  const r = entry.right ?? entry.bestR ?? null;
-  if (l != null && r != null) return (l + r) / 2;
-  if (l != null) return l;
-  if (r != null) return r;
-  return entry.value ?? entry.best ?? null;
-}
-
-function getBodyweightAt(date, matEntries) {
-  if (!matEntries?.length) return null;
-  const hit = [...matEntries]
-    .filter(e => e.bodyMass != null && e.date <= date)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  return hit[0]?.bodyMass ?? null;
-}
-
-function fmtDate(d) {
-  return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
-}
-
-function fmtNum(v) {
-  if (v == null || !isFinite(v)) return '—';
-  return v < 10 ? v.toFixed(2) : v.toFixed(1);
-}
-
-function rollingStats(values, window = 5) {
-  if (!values.length) return { avg: null, sd: 0 };
-  const w   = values.slice(-window);
-  const avg = w.reduce((s, v) => s + v, 0) / w.length;
-  const sd  = w.length > 1
-    ? Math.sqrt(w.reduce((s, v) => s + (v - avg) ** 2, 0) / w.length)
-    : 0;
-  return { avg, sd };
-}
-
-function linearTrend(pts) {
-  const n = pts.length;
-  if (n < 2) return pts.map(d => ({ ...d, trend: d.v }));
-  let sx = 0, sy = 0, sxy = 0, sx2 = 0;
-  pts.forEach((d, i) => { sx += i; sy += d.v; sxy += i * d.v; sx2 += i * i; });
-  const den = n * sx2 - sx * sx;
-  if (!den) return pts.map(d => ({ ...d, trend: d.v }));
-  const m = (n * sxy - sx * sy) / den;
-  const b = (sy - m * sx) / n;
-  return pts.map((d, i) => ({ ...d, trend: parseFloat((m * i + b).toFixed(3)) }));
-}
-
-// Extract separate Left and Right scalars from an entry (no averaging).
-function extractLR(entry) {
-  if (!entry) return { l: null, r: null };
-  const l = entry.left  ?? entry.bestL ?? null;
-  const r = entry.right ?? entry.bestR ?? null;
-  return { l: l != null ? Number(l) : null, r: r != null ? Number(r) : null };
-}
-
-// Rolling window of non-null values only — used per-side for dual-line charts.
-function rollingAvgWindow(values, window = 5) {
-  const w = values.filter(v => v != null).slice(-window);
-  if (!w.length) return null;
-  return w.reduce((s, v) => s + v, 0) / w.length;
-}
-
-// Compute LSI (Limb Symmetry Index) from the most recent entry.
-// LSI = (lower / higher) * 100.  Returns null if either side is missing.
-function computeLSI(entries) {
-  if (!entries?.length) return null;
-  const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-  for (const e of sorted) {
-    const { l, r } = extractLR(e);
-    if (l != null && r != null && (l !== 0 || r !== 0)) {
-      const lower  = Math.min(Math.abs(l), Math.abs(r));
-      const higher = Math.max(Math.abs(l), Math.abs(r));
-      if (higher === 0) return null;
-      return parseFloat(((lower / higher) * 100).toFixed(1));
-    }
-  }
-  return null;
-}
-
-function lsiColour(lsi) {
-  if (lsi == null) return '#6b7280';
-  if (lsi >= 90)    return '#15803d';
-  if (lsi >= 80)    return '#92400e';
-  return '#b91c1c';
-}
-
-// Dual-line data: one point per entry, carrying both L and R plus rolling
-// averages per side. No Rolling SD band (not meaningful for L/R split).
-function buildDualKpiData(rawEntries) {
-  if (!rawEntries?.length) return null;
-  const sorted = [...rawEntries].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  const pts = sorted.map(e => {
-    const { l, r } = extractLR(e);
-    if (l == null && r == null) return null;
-    return { date: e.date, l, r };
-  }).filter(Boolean);
-
-  if (!pts.length) return null;
-
-  const lVals = pts.map(p => p.l);
-  const rVals = pts.map(p => p.r);
-
-  // Per-point running averages (using all prior values up to and including i,
-  // capped to last 5). This gives a smooth line on the chart.
-  const chartData = pts.map((p, i) => {
-    const ls = lVals.slice(Math.max(0, i - 4), i + 1).filter(v => v != null);
-    const rs = rVals.slice(Math.max(0, i - 4), i + 1).filter(v => v != null);
-    return {
-      date:     p.date,
-      label:    fmtDate(p.date),
-      valueL:   p.l,
-      valueR:   p.r,
-      rollAvgL: ls.length ? parseFloat((ls.reduce((s, v) => s + v, 0) / ls.length).toFixed(2)) : null,
-      rollAvgR: rs.length ? parseFloat((rs.reduce((s, v) => s + v, 0) / rs.length).toFixed(2)) : null,
-    };
-  });
-
-  const latestL = lVals.slice().reverse().find(v => v != null) ?? null;
-  const latestR = rVals.slice().reverse().find(v => v != null) ?? null;
-
-  return {
-    chartData,
-    latestL,
-    latestR,
-    rollingAvgL: rollingAvgWindow(lVals),
-    rollingAvgR: rollingAvgWindow(rVals),
-    lsi:         computeLSI(rawEntries),
-  };
-}
-
-function buildKpiData(rawEntries, metricKey, matEntries) {
-  if (!rawEntries?.length) return null;
-  const isRelPower = metricKey === 'cmjRelPower';
-  const isRelForce = metricKey === 'imtpRelForce';
-  const sorted     = [...rawEntries].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  const pts = sorted.map(e => {
-    let v;
-    if (isRelPower) {
-      const pw = extractScalar(e);
-      const bw = getBodyweightAt(e.date, matEntries);
-      v = pw != null && bw ? parseFloat((pw / bw).toFixed(2)) : null;
-    } else if (isRelForce) {
-      // IMTP Relative Force = peak force (N) / (bodyweight (kg) * 9.81)
-      const f  = extractScalar(e);
-      const bw = getBodyweightAt(e.date, matEntries);
-      v = f != null && bw ? parseFloat((f / (bw * 9.81)).toFixed(1)) : null;
-    } else {
-      v = extractScalar(e);
-    }
-    return v != null ? { date: e.date, v } : null;
-  }).filter(Boolean);
-
-  if (!pts.length) return null;
-
-  const vals       = pts.map(d => d.v);
-  const lowerBetter = LOWER_IS_BETTER.has(metricKey);
-  const latest     = vals[vals.length - 1];
-  const allTimeBest = lowerBetter ? Math.min(...vals) : Math.max(...vals);
-  const { avg: rollingAvg, sd: rollingSD } = rollingStats(vals);
-
-  const isFlagged = rollingAvg != null && rollingSD > 0 && (
-    lowerBetter ? latest > rollingAvg + rollingSD : latest < rollingAvg - rollingSD
-  );
-
-  const trended   = linearTrend(pts);
-  const chartData = trended.map(d => ({
-    ...d,
-    label:   fmtDate(d.date),
-    flagged: rollingAvg != null && rollingSD > 0 && (
-      lowerBetter ? d.v > rollingAvg + rollingSD : d.v < rollingAvg - rollingSD
-    ),
-  }));
-
-  return { chartData, latest, allTimeBest, rollingAvg, rollingSD, isFlagged, lowerBetter };
-}
-
 function fmtEntry(entry, metricDef) {
   if (!entry) return '—';
   const u = metricDef?.unit ? ` ${metricDef.unit}` : '';
@@ -313,87 +80,6 @@ function savePerf(athleteId, patch) {
     all[athleteId] = { ...all[athleteId], ...patch };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   } catch {}
-}
-
-// ─── Metric Picker ────────────────────────────────────────────────────────────
-
-function MetricPicker({ onSelect, onClose, exclude = [], valdMetrics = [] }) {
-  const { customMetrics } = useCustomMetrics();
-  const ref = useRef();
-
-  useEffect(() => {
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [onClose]);
-
-  const customList = Object.values(customMetrics).filter(m => !exclude.includes(m.key));
-
-  return (
-    <div ref={ref}
-      className="absolute z-50 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-y-auto"
-      style={{ width: 248, maxHeight: 320, top: 0, right: 0 }}>
-      {METRIC_CATEGORIES.map(cat => {
-        const specialsFor =
-          cat.key === 'power'    ? [SPECIAL_METRICS.cmjRelPower] :
-          cat.key === 'strength' ? [SPECIAL_METRICS.imtpRelForce] :
-          [];
-        const specials = specialsFor.filter(s => !exclude.includes(s.key));
-        const items = [
-          ...cat.metrics.filter(m => !exclude.includes(m.key)),
-          ...specials,
-        ];
-        if (!items.length) return null;
-        return (
-          <div key={cat.key}>
-            <div className="px-3 py-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 sticky top-0">
-              {cat.label}
-            </div>
-            {items.map(m => (
-              <button key={m.key}
-                onClick={() => { onSelect(m.key); onClose(); }}
-                className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors">
-                {LABEL_OVERRIDES[m.key] || m.label}
-              </button>
-            ))}
-          </div>
-        );
-      })}
-      {customList.length > 0 && (
-        <div>
-          <div className="px-3 py-1.5 text-xs font-bold text-gray-400 uppercase tracking-wide bg-gray-50 sticky top-0">
-            Custom
-          </div>
-          {customList.map(m => (
-            <button key={m.key}
-              onClick={() => { onSelect(m.key); onClose(); }}
-              className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors">
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {valdMetrics.filter(m => !exclude.includes(m.key)).length > 0 && (
-        <div>
-          <div className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide sticky top-0"
-            style={{ color: '#437E8D', backgroundColor: 'rgba(67,126,141,0.08)' }}>
-            VALD Imports
-          </div>
-          {valdMetrics.filter(m => !exclude.includes(m.key)).map(m => (
-            <button key={m.key}
-              onClick={() => { onSelect(m.key); onClose(); }}
-              className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-              title={m.label}
-            >
-              <span className="font-semibold">{m.testType}</span>
-              <span className="text-gray-500"> — {m.name}</span>
-              {m.unit && <span className="text-gray-400"> ({m.unit})</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Diagnostic Quadrant ──────────────────────────────────────────────────────
@@ -545,294 +231,6 @@ function DiagnosticQuadrant({ athlete, entries, matEntries, thresholds, onSaveTh
   );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-function KpiDot({ cx, cy, payload }) {
-  if (cx == null || cy == null) return null;
-  return <circle cx={cx} cy={cy} r={4} fill={payload?.flagged ? '#f59e0b' : TEAL} stroke="white" strokeWidth={1.5} />;
-}
-
-function KpiCard({
-  metricKey, entries, matEntries, customMetrics,
-  onSwap, onRemove, includedInReport, onToggleReport, toggleWarning,
-  // VALD plumbing — supplied by the parent so KpiCard can branch its
-  // data source when the metric key starts with `vald:`.
-  valdMetrics = [],
-  valdEntriesFor,
-  valdDefFor,
-}) {
-  const isVALD = metricKey?.startsWith?.('vald:');
-
-  const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
-  const rawEntries = isVALD
-    ? (valdEntriesFor ? valdEntriesFor(metricKey) : [])
-    : (entries[sourceKey] || []);
-
-  // Dual-line view doesn't apply to VALD imports — they're already
-  // surfaced as bilateral 'Trial' values with L/R/Asym available in
-  // Data Storage instead.
-  const isDualLine = !isVALD && DUAL_LINE_METRICS.has(metricKey);
-
-  const chartData = useMemo(
-    () => isDualLine
-      ? buildDualKpiData(rawEntries)
-      : buildKpiData(rawEntries, metricKey, matEntries),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rawEntries.length, metricKey, isDualLine]
-  );
-
-  const metricDef = isVALD
-    ? (valdDefFor ? valdDefFor(metricKey) : null)
-    : (SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey]);
-  const unit      = metricDef?.unit || '';
-  const customList = Object.values(customMetrics || {});
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4"
-      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-
-      {/* Header — metric selector dropdown */}
-      <div className="flex items-center gap-1 mb-2">
-        <select
-          value={metricKey}
-          onChange={e => onSwap?.(e.target.value)}
-          title="Change metric"
-          className="flex-1 min-w-0 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:border-gray-400 truncate"
-        >
-          {METRIC_CATEGORIES.map(cat => {
-            const specials =
-              cat.key === 'power'    ? [SPECIAL_METRICS.cmjRelPower] :
-              cat.key === 'strength' ? [SPECIAL_METRICS.imtpRelForce] :
-              [];
-            const items    = [...cat.metrics, ...specials];
-            return (
-              <optgroup key={cat.key} label={cat.label}>
-                {items.map(m => (
-                  <option key={m.key} value={m.key}>
-                    {LABEL_OVERRIDES[m.key] || m.label}
-                  </option>
-                ))}
-              </optgroup>
-            );
-          })}
-          {customList.length > 0 && (
-            <optgroup label="Custom">
-              {customList.map(m => (
-                <option key={m.key} value={m.key}>{m.label}</option>
-              ))}
-            </optgroup>
-          )}
-          {valdMetrics.length > 0 && (
-            <optgroup label="VALD Imports">
-              {valdMetrics.map(m => (
-                <option key={m.key} value={m.key}>{m.label}{m.unit ? ` (${m.unit})` : ''}</option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        {onRemove && (
-          <button onClick={onRemove}
-            className="shrink-0 p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors">
-            <X size={12} />
-          </button>
-        )}
-      </div>
-
-      {!chartData ? (
-        <div className="flex items-center justify-center py-8">
-          <p className="text-xs text-gray-300 italic">No data recorded yet.</p>
-        </div>
-      ) : isDualLine ? (
-        <>
-          {/* Legend */}
-          <div className="flex items-center gap-4 mb-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block" style={{ width: 12, height: 2, backgroundColor: TEAL }} />
-              <span className="text-xs text-gray-500" style={{ fontSize: 10 }}>Left</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block" style={{ width: 12, height: 2, backgroundColor: GOLD }} />
-              <span className="text-xs text-gray-500" style={{ fontSize: 10 }}>Right</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block" style={{
-                width: 12, height: 0,
-                borderTop: `1.5px dashed ${TEAL}`,
-              }} />
-              <span className="text-xs text-gray-400" style={{ fontSize: 9 }}>L avg</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block" style={{
-                width: 12, height: 0,
-                borderTop: `1.5px dashed ${GOLD}`,
-              }} />
-              <span className="text-xs text-gray-400" style={{ fontSize: 9 }}>R avg</span>
-            </div>
-          </div>
-
-          {/* Dual-line Chart */}
-          <ResponsiveContainer width="100%" height={140}>
-            <ComposedChart data={chartData.chartData} margin={{ top: 4, right: 4, bottom: 0, left: -14 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} width={32} />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
-                  const p = payload[0]?.payload;
-                  if (!p) return null;
-                  return (
-                    <div className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 shadow-md text-xs">
-                      <p className="text-gray-400 mb-0.5">{p.label}</p>
-                      <p className="font-bold" style={{ color: TEAL }}>
-                        L: {p.valueL != null ? `${fmtNum(p.valueL)}${unit ? ' ' + unit : ''}` : '—'}
-                      </p>
-                      <p className="font-bold" style={{ color: GOLD }}>
-                        R: {p.valueR != null ? `${fmtNum(p.valueR)}${unit ? ' ' + unit : ''}` : '—'}
-                      </p>
-                    </div>
-                  );
-                }}
-              />
-              {/* Rolling averages (dashed) */}
-              <Line type="monotone" dataKey="rollAvgL" stroke={TEAL} strokeWidth={1.5} dot={false}
-                strokeDasharray="4 2" isAnimationActive={false} connectNulls />
-              <Line type="monotone" dataKey="rollAvgR" stroke={GOLD} strokeWidth={1.5} dot={false}
-                strokeDasharray="4 2" isAnimationActive={false} connectNulls />
-              {/* Data lines (solid) */}
-              <Line type="monotone" dataKey="valueL" stroke={TEAL} strokeWidth={2.25}
-                dot={{ r: 3, fill: TEAL, stroke: '#fff', strokeWidth: 1.5 }}
-                activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
-              <Line type="monotone" dataKey="valueR" stroke={GOLD} strokeWidth={2.25}
-                dot={{ r: 3, fill: GOLD, stroke: '#fff', strokeWidth: 1.5 }}
-                activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
-
-          {/* Stats row — L/R latest + L/R rolling average */}
-          <div className="grid grid-cols-4 gap-1 mt-3">
-            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
-              <span className="mb-0.5" style={{ fontSize: 9, color: TEAL, fontWeight: 600 }}>L Latest</span>
-              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.latestL)}</span>
-            </div>
-            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
-              <span className="mb-0.5" style={{ fontSize: 9, color: GOLD, fontWeight: 600 }}>R Latest</span>
-              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.latestR)}</span>
-            </div>
-            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
-              <span className="mb-0.5" style={{ fontSize: 9, color: TEAL }}>L Roll Avg</span>
-              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.rollingAvgL)}</span>
-            </div>
-            <div className="flex flex-col items-center py-1 rounded-md bg-gray-50">
-              <span className="mb-0.5" style={{ fontSize: 9, color: GOLD }}>R Roll Avg</span>
-              <span className="text-xs font-bold text-gray-700">{fmtNum(chartData.rollingAvgR)}</span>
-            </div>
-          </div>
-
-          {/* Summary line: L / R and LSI */}
-          <div className="mt-3 flex items-center justify-between flex-wrap gap-x-3 gap-y-1">
-            <span className="text-xs font-semibold text-gray-700">
-              L: {chartData.latestL != null ? `${fmtNum(chartData.latestL)}${unit ? ' ' + unit : ''}` : '—'}
-              <span className="text-gray-300 mx-1.5">/</span>
-              R: {chartData.latestR != null ? `${fmtNum(chartData.latestR)}${unit ? ' ' + unit : ''}` : '—'}
-            </span>
-            {chartData.lsi != null ? (
-              <span className="text-xs font-bold" style={{ color: lsiColour(chartData.lsi) }}>
-                LSI: {chartData.lsi.toFixed(1)}%
-              </span>
-            ) : (
-              <span className="text-xs" style={{ color: '#9ca3af' }}>LSI: insufficient data</span>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Chart */}
-          <ResponsiveContainer width="100%" height={120}>
-            <ComposedChart data={chartData.chartData} margin={{ top: 4, right: 4, bottom: 0, left: -14 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#d1d5db' }} axisLine={false} tickLine={false} width={32} />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
-                  const p = payload.find(x => x.dataKey === 'v') || payload[0];
-                  return (
-                    <div className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 shadow-md text-xs">
-                      <p className="text-gray-400 mb-0.5">{p?.payload?.label}</p>
-                      <p className="font-bold text-gray-900">{fmtNum(p?.value)}{unit ? ` ${unit}` : ''}</p>
-                    </div>
-                  );
-                }}
-              />
-              {/* Trend dashed */}
-              <Line type="linear" dataKey="trend" stroke="#e5e7eb" strokeWidth={1.5} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
-              {/* Data */}
-              <Line type="monotone" dataKey="v" stroke={TEAL} strokeWidth={2} dot={<KpiDot />} activeDot={false} isAnimationActive={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
-
-          {/* Stats row */}
-          <div className="grid grid-cols-4 gap-1 mt-3">
-            {[
-              { label: 'Latest',      val: chartData.latest },
-              { label: 'All-Time',    val: chartData.allTimeBest },
-              { label: 'Rolling Avg', val: chartData.rollingAvg },
-              { label: 'Rolling SD',  val: chartData.rollingSD },
-            ].map(s => (
-              <div key={s.label} className="flex flex-col items-center py-1 rounded-md bg-gray-50">
-                <span className="text-gray-400 mb-0.5" style={{ fontSize: 9 }}>{s.label}</span>
-                <span className="text-xs font-bold text-gray-700">{fmtNum(s.val)}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Amber flag */}
-          {chartData.isFlagged && (
-            <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: '#fef3c7' }}>
-              <span style={{ fontSize: 11 }}>⚠</span>
-              <p className="text-xs font-medium" style={{ color: '#92400e', fontSize: 11 }}>Below rolling average — monitor</p>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Include-in-Report toggle — bottom right */}
-      {onToggleReport && (
-        <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-gray-100">
-          {toggleWarning && (
-            <span className="text-xs mr-auto" style={{ color: '#b91c1c', fontSize: 10 }}>
-              {toggleWarning}
-            </span>
-          )}
-          <span className="text-xs" style={{ color: '#6b7280', fontSize: 10 }}>Include in Report</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!!includedInReport}
-            onClick={() => onToggleReport(metricKey)}
-            className="relative inline-flex items-center rounded-full transition-colors shrink-0"
-            style={{
-              height: 14,
-              width: 26,
-              backgroundColor: includedInReport ? '#437E8D' : '#d1d5db',
-            }}
-          >
-            <span
-              className="inline-block rounded-full bg-white shadow transition-transform"
-              style={{
-                height: 10,
-                width: 10,
-                transform: includedInReport ? 'translateX(14px)' : 'translateX(2px)',
-              }}
-            />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main Tab ─────────────────────────────────────────────────────────────────
 
 export default function PerformanceTestingTab({
@@ -854,14 +252,14 @@ export default function PerformanceTestingTab({
   const { metrics: valdMetrics, entriesFor: valdEntriesFor, defFor: valdDefFor } =
     useVALDMetrics(athleteId);
 
+  // KPI board — server-synced pinned metrics (span 1-4), replacing the old
+  // localStorage-only fixed-10-slot KPI Dashboard + Additional Metrics.
+  const { board, addMetric, removeMetric, resizeMetric } = useKpiBoard(athleteId);
+
   const persisted = useMemo(() => loadPerf(athleteId), [athleteId]);
   const defaultThresh = useMemo(() => getDefaultThresholds(athlete), [athlete]);
 
-  const [thresholds,  setThresholds]  = useState(() => persisted.thresholds || defaultThresh);
-  const [kpiMetrics,  setKpiMetrics]  = useState(() => persisted.kpiMetrics  || DEFAULT_KPI_KEYS);
-  const [addlMetrics, setAddlMetrics] = useState(() => persisted.additionalMetrics || []);
-  const [addPickerOpen, setAddPickerOpen] = useState(false);
-  const addPickerClose = useCallback(() => setAddPickerOpen(false), []);
+  const [thresholds, setThresholds] = useState(() => persisted.thresholds || defaultThresh);
 
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
 
@@ -897,40 +295,6 @@ export default function PerformanceTestingTab({
     savePerf(athleteId, { thresholds: t });
   }, [athleteId]);
 
-  const swapKpi = useCallback((idx, newKey) => {
-    setKpiMetrics(prev => {
-      const next = prev.map((k, i) => i === idx ? newKey : k);
-      savePerf(athleteId, { kpiMetrics: next });
-      return next;
-    });
-  }, [athleteId]);
-
-  const addAdditional = useCallback(key => {
-    setAddlMetrics(prev => {
-      if (prev.includes(key)) return prev;
-      const next = [...prev, key];
-      savePerf(athleteId, { additionalMetrics: next });
-      return next;
-    });
-    setAddPickerOpen(false);
-  }, [athleteId]);
-
-  const removeAdditional = useCallback(key => {
-    setAddlMetrics(prev => {
-      const next = prev.filter(k => k !== key);
-      savePerf(athleteId, { additionalMetrics: next });
-      return next;
-    });
-  }, [athleteId]);
-
-  const swapAdditional = useCallback((oldKey, newKey) => {
-    setAddlMetrics(prev => {
-      const next = prev.map(k => k === oldKey ? newKey : k);
-      savePerf(athleteId, { additionalMetrics: next });
-      return next;
-    });
-  }, [athleteId]);
-
   const handleBragChange = useCallback((key, color) => {
     setLocalBrag(prev => ({ ...prev, [key]: color }));
     onSaveBrag?.(key, color);
@@ -957,77 +321,35 @@ export default function PerformanceTestingTab({
         onSaveThresholds={handleSaveThresholds}
       />
 
-      {/* ── Section 2: KPI Cards ──────────────────────────────────── */}
+      {/* ── Section 2: KPI Board ──────────────────────────────────── */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">KPI Dashboard</h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {kpiMetrics.map((key, idx) => (
-            <KpiCard
-              key={`kpi-${idx}`}
-              metricKey={key}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-board>
+          {board.map(row => (
+            <KpiTile
+              key={row.id}
+              metricKey={row.metric_key}
+              span={row.span}
               entries={entries}
               matEntries={maturationEntries}
               customMetrics={customMetrics}
               valdMetrics={valdMetrics}
               valdEntriesFor={valdEntriesFor}
               valdDefFor={valdDefFor}
-              onSwap={newKey => swapKpi(idx, newKey)}
-              includedInReport={reportSet.has(key)}
+              includedInReport={reportSet.has(row.metric_key)}
               onToggleReport={toggleReportMetric}
-              toggleWarning={reportWarning && !reportSet.has(key) ? reportWarning : null}
+              toggleWarning={reportWarning && !reportSet.has(row.metric_key) ? reportWarning : null}
+              onRemove={() => removeMetric(row.metric_key)}
+              onResize={newSpan => resizeMetric(row.metric_key, newSpan)}
             />
           ))}
+          <AddMetricTile
+            onSelect={addMetric}
+            excludeKeys={board.map(row => row.metric_key)}
+            valdMetrics={valdMetrics}
+            customMetrics={customMetrics}
+          />
         </div>
-      </div>
-
-      {/* ── Section 3: Additional Metrics ────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">Additional Metrics</h3>
-          <div className="relative">
-            <button onClick={() => setAddPickerOpen(v => !v)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: GOLD }}>
-              <Plus size={12} /> Add Metric
-            </button>
-            {addPickerOpen && (
-              <div className="absolute right-0" style={{ top: 32, zIndex: 50 }}>
-                <MetricPicker
-                  onSelect={addAdditional}
-                  onClose={addPickerClose}
-                  exclude={addlMetrics}
-                  valdMetrics={valdMetrics}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {addlMetrics.length === 0 ? (
-          <p className="text-xs text-gray-300 italic">
-            No additional metrics added. Use the button above to track metrics specific to this athlete.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {addlMetrics.map(key => (
-              <KpiCard
-                key={`addl-${key}`}
-                metricKey={key}
-                entries={entries}
-                matEntries={maturationEntries}
-                customMetrics={customMetrics}
-                valdMetrics={valdMetrics}
-                valdEntriesFor={valdEntriesFor}
-                valdDefFor={valdDefFor}
-                onSwap={newKey => swapAdditional(key, newKey)}
-                onRemove={() => removeAdditional(key)}
-                includedInReport={reportSet.has(key)}
-                onToggleReport={toggleReportMetric}
-                toggleWarning={reportWarning && !reportSet.has(key) ? reportWarning : null}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ── Section 4: Performance Table ─────────────────────────── */}

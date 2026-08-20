@@ -135,6 +135,51 @@ export const METRIC_CATEGORIES = [
 export const ALL_METRICS = METRIC_CATEGORIES.flatMap(c => c.metrics);
 export const METRIC_MAP  = Object.fromEntries(ALL_METRICS.map(m => [m.key, m]));
 
+// Metrics where a lower value is the better outcome (sprint times etc.) —
+// moved here (from PerformanceTestingTab.jsx) so both the tab and the KPI
+// board registry can share one source of truth.
+export const LOWER_IS_BETTER = new Set([
+  'sprint10m', 'sprint20m', 'sprint40m', 'mod505', 'reactionTime',
+]);
+
+// Metrics that render as dual-line (L teal / R gold) charts with an LSI
+// readout, rather than a single-value chart. Explicit allowlist per spec.
+export const DUAL_LINE_METRICS = new Set([
+  'gripStrength',
+  'hamstring0', 'hamstring30', 'hamstring90',
+  'hipFlexionSupine90', 'hipExtensionProne90',
+  'adduction0', 'adduction90',
+  'imtpPeakForceLR',
+  'slBridgeCapacity',
+  'calfRaiseMax',
+  'sidePlank',
+  'cmjHeight',
+  'slDropJumpRSI',
+  'mod505',
+  'medBallRotationalPush',
+  'medBallRotationalThrow',
+]);
+
+// Special derived metrics that aren't in METRIC_MAP (computed from a source
+// metric + bodyweight at read time).
+export const SPECIAL_METRICS = {
+  cmjRelPower: {
+    key: 'cmjRelPower', label: 'CMJ W/kg', unit: 'W/kg',
+    sourceKey: 'cmjPeakPower', categoryKey: 'power',
+  },
+  imtpRelForce: {
+    key: 'imtpRelForce', label: 'IMTP Relative Force', unit: 'N/kg',
+    sourceKey: 'imtpPeakForce', categoryKey: 'strength',
+  },
+};
+
+// Display label overrides for specific metric keys.
+export const LABEL_OVERRIDES = {
+  cmjRelPower:   'CMJ W/kg',
+  imtpRelForce:  'IMTP Rel Force',
+  adduction0:    'Adductor Squeeze',
+};
+
 // Sub-column structure for a metric
 export function getSubCols(metric) {
   const sides = metric.bilateral ? ['L', 'R'] : [null];
