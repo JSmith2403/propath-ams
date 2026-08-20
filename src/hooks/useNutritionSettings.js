@@ -8,12 +8,19 @@ import { supabase } from '../lib/supabase';
  * require_photo defaulting to true so a future enable doesn't
  * accidentally accept text-only meal entries.
  *
- *   settings:    { meal_logging_enabled, require_photo } | null while loading
+ *   settings:    { meal_logging_enabled, require_photo, water_daily_target } | null while loading
  *   loading:     boolean
  *   updating:    boolean  (true while a save is in flight)
- *   update(patch) — upserts the patch; optimistic.
+ *   update(patch) — upserts the patch; optimistic. authenticated-only
+ *                    at the RLS level (coach-side toggles).
+ *   updateWaterTarget(n) — sets water_daily_target via a narrow
+ *                    SECURITY DEFINER RPC so the anon-role athlete app
+ *                    can change it without a blanket write grant on
+ *                    the coach-controlled columns.
  *   refresh()    — re-fetches from the server.
  */
+const DEFAULT_SETTINGS = { meal_logging_enabled: false, require_photo: true, water_daily_target: 6 };
+
 export function useNutritionSettings(athleteId) {
   const [settings, setSettings] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -23,7 +30,7 @@ export function useNutritionSettings(athleteId) {
   useEffect(() => {
     if (!athleteId) {
       setLoading(false);
-      setSettings({ meal_logging_enabled: false, require_photo: true });
+      setSettings(DEFAULT_SETTINGS);
       return;
     }
     let cancelled = false;
@@ -31,7 +38,7 @@ export function useNutritionSettings(athleteId) {
       setLoading(true);
       const { data, error } = await supabase
         .from('nutrition_settings')
-        .select('meal_logging_enabled, require_photo')
+        .select('meal_logging_enabled, require_photo, water_daily_target')
         .eq('athlete_id', athleteId)
         .maybeSingle();
       if (cancelled) return;
@@ -40,7 +47,7 @@ export function useNutritionSettings(athleteId) {
       }
       // Default = disabled / photo required. Matches the brief's
       // "if no row exists, treat it as disabled" rule.
-      setSettings(data || { meal_logging_enabled: false, require_photo: true });
+      setSettings(data || DEFAULT_SETTINGS);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -58,6 +65,7 @@ export function useNutritionSettings(athleteId) {
       athlete_id: athleteId,
       meal_logging_enabled: settings?.meal_logging_enabled ?? false,
       require_photo:        settings?.require_photo        ?? true,
+      water_daily_target:   settings?.water_daily_target    ?? 6,
       ...patch,
       updated_at: new Date().toISOString(),
     };
@@ -73,5 +81,18 @@ export function useNutritionSettings(athleteId) {
     return { ok: true };
   }, [athleteId, settings]);
 
-  return { settings, loading, updating, update, refresh };
+  const updateWaterTarget = useCallback(async (n) => {
+    if (!athleteId) return { ok: false, error: new Error('No athlete id') };
+    const prev = settings;
+    setSettings(s => ({ ...(s || {}), water_daily_target: n }));
+    const { error } = await supabase.rpc('set_water_daily_target', { p_athlete_id: athleteId, p_target: n });
+    if (error) {
+      console.error('[useNutritionSettings] updateWaterTarget failed', error);
+      setSettings(prev);
+      return { ok: false, error };
+    }
+    return { ok: true };
+  }, [athleteId, settings]);
+
+  return { settings, loading, updating, update, updateWaterTarget, refresh };
 }

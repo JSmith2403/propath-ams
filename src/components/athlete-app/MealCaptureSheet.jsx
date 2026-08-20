@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Apple, Camera, Loader2, Moon, Plus, Sun, Trash2, X } from 'lucide-react';
+import { Apple, Camera, GlassWater, Loader2, Moon, Plus, Sun, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { compressImage, imageSize } from '../../utils/imageCompress';
 
@@ -7,10 +7,11 @@ const GOLD = '#A58D69';
 const MAX_PHOTOS = 4;
 
 const MEAL_OPTIONS = [
-  { key: 'breakfast', label: 'Breakfast', icon: Sun   },
-  { key: 'lunch',     label: 'Lunch',     icon: Sun   },
-  { key: 'snack',     label: 'Snack',     icon: Apple },
-  { key: 'dinner',    label: 'Dinner',    icon: Moon  },
+  { key: 'breakfast', label: 'Breakfast', icon: Sun        },
+  { key: 'lunch',     label: 'Lunch',     icon: Sun        },
+  { key: 'snack',     label: 'Snack',     icon: Apple      },
+  { key: 'dinner',    label: 'Dinner',    icon: Moon       },
+  { key: 'drink',     label: 'Drink',     icon: GlassWater },
 ];
 
 /**
@@ -24,7 +25,7 @@ const MEAL_OPTIONS = [
  * Inputs:
  *   athleteId      — for athlete_id + storage path prefix
  *   logDate        — ISO YYYY-MM-DD of the day being logged
- *   initialMealKey — 'breakfast' | 'lunch' | 'snack' | 'dinner'
+ *   initialMealKey — 'breakfast' | 'lunch' | 'snack' | 'dinner' | 'drink'
  *   resolveSnackSlot — fn that returns 'snack_1' / 'snack_2' / 'snack_3'
  *                      when the user picks "Snack". null = none free.
  *   requirePhoto   — blocks submit when no photo attached
@@ -192,7 +193,7 @@ export default function MealCaptureSheet({
           {/* Meal type chips */}
           <div>
             <p className="text-[10px] uppercase tracking-widest font-bold text-ink-400 mb-2">Meal</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {MEAL_OPTIONS.map(opt => {
                 const on = mealKey === opt.key;
                 const Icon = opt.icon;

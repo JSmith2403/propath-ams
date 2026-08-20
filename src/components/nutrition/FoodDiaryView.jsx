@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Calendar, Filter, MoreHorizontal,
-  Sun, Apple, Moon, Coffee, Leaf, Image as ImageIcon, Check, Loader2,
+  Sun, Apple, Moon, Coffee, Leaf, GlassWater, Image as ImageIcon, Check, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useMealEntries } from '../../hooks/useMealEntries';
@@ -10,14 +10,15 @@ const GOLD = '#A58D69';
 
 // Stable display order — meal_type → label, time hint, icon.
 const MEAL_LABELS = {
-  breakfast: { label: 'Breakfast', icon: Sun    },
-  snack_1:   { label: 'Snack 1',   icon: Apple  },
-  lunch:     { label: 'Lunch',     icon: Coffee },
-  snack_2:   { label: 'Snack 2',   icon: Leaf   },
-  dinner:    { label: 'Dinner',    icon: Moon   },
-  snack_3:   { label: 'Snack 3',   icon: Coffee },
+  breakfast: { label: 'Breakfast', icon: Sun        },
+  snack_1:   { label: 'Snack 1',   icon: Apple      },
+  lunch:     { label: 'Lunch',     icon: Coffee     },
+  snack_2:   { label: 'Snack 2',   icon: Leaf       },
+  dinner:    { label: 'Dinner',    icon: Moon       },
+  snack_3:   { label: 'Snack 3',   icon: Coffee     },
+  drink:     { label: 'Drink',     icon: GlassWater },
 };
-const MEAL_ORDER = ['breakfast','snack_1','lunch','snack_2','dinner','snack_3'];
+const MEAL_ORDER = ['breakfast','snack_1','lunch','snack_2','dinner','snack_3','drink'];
 
 function fmtTime(iso) {
   if (!iso) return '';
