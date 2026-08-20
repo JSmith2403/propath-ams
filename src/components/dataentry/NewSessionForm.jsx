@@ -146,7 +146,7 @@ export default function NewSessionForm({ athletes, onCreated, onCancel, globalCu
 
   const addCustomMetric = () => {
     if (!customName.trim()) return;
-    const uid = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+    const uid = `cm_${crypto.randomUUID()}`;
     const m = {
       key: uid,
       label: customName.trim(),

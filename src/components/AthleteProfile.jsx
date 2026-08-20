@@ -61,7 +61,7 @@ function TabLoader() {
 }
 
 function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+  return crypto.randomUUID();
 }
 
 export default function AthleteProfile({

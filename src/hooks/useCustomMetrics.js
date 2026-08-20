@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 const SETTINGS_KEY = 'custom_metrics';
 
 function uid() {
-  return `cm_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+  return `cm_${crypto.randomUUID()}`;
 }
 
 async function persistMetrics(metricsMap) {

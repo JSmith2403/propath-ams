@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 
 const SETTINGS_KEY = 'providers';
 
-function uid() { return `prov_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`; }
+function uid() { return `prov_${crypto.randomUUID()}`; }
 
 const SEED_PROVIDERS = [
   { id: 'prov_seed_1', name: 'Nelly Okonkwo',   pillars: ['nutrition'], sessionRate: 120, accessLevel: 'internal' },

@@ -1,9 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Dumbbell } from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
-import AthleteWeekView   from './AthleteWeekView';
 import AthleteWeekViewV2 from './AthleteWeekViewV2';
-import { isFeatureOn }   from '../../utils/featureFlags';
 
 function startOfDay(d) {
   const x = new Date(d);
@@ -285,31 +283,14 @@ const WeekTile = forwardRef(function WeekTile({
       {isOpen && (
         <div className="border-t border-gray-100">
           {athlete ? (
-            // Feature flag: calendar_deemphasised_empty_days
-            //   false (default) → AthleteWeekView   — current UI, unchanged
-            //   true            → AthleteWeekViewV2 — empty days lose card chrome,
-            //                                         labels fade, hover hint
-            // Toggle in src/utils/featureFlags.js or via the localStorage
-            // override documented at the top of that file.
-            isFeatureOn('calendar_deemphasised_empty_days') ? (
-              <AthleteWeekViewV2
-                athlete={athlete}
-                viewDate={parseDate(weekISO)}
-                onChangeDate={() => {}}
-                onClickPlanned={onClickPlanned}
-                hideToolbar
-                hideCompleted={state === 'past'}
-              />
-            ) : (
-              <AthleteWeekView
-                athlete={athlete}
-                viewDate={parseDate(weekISO)}
-                onChangeDate={() => {}}
-                onClickPlanned={onClickPlanned}
-                hideToolbar
-                hideCompleted={state === 'past'}
-              />
-            )
+            <AthleteWeekViewV2
+              athlete={athlete}
+              viewDate={parseDate(weekISO)}
+              onChangeDate={() => {}}
+              onClickPlanned={onClickPlanned}
+              hideToolbar
+              hideCompleted={state === 'past'}
+            />
           ) : (
             <div className="px-4 py-6 text-xs italic text-gray-400">
               Loading week…

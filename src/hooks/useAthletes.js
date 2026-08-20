@@ -84,7 +84,7 @@ function ensureAthlete(a) {
 }
 
 function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return crypto.randomUUID();
 }
 
 async function persistAthlete(athlete) {

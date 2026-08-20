@@ -3,7 +3,7 @@ import { FileText, Layers, Plus } from 'lucide-react';
 import BlockBuilderModal from './builder/BlockBuilderModal';
 import { saveBlockTemplate } from '../../../utils/programmeTemplates';
 
-function tempId(prefix) { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
+function tempId(prefix) { return `${prefix}-${crypto.randomUUID()}`; }
 
 function makeDraft({ defaultSessionCount = 1 } = {}) {
   return {

@@ -13,7 +13,7 @@ const MAX_WEEKS    = 12;
 const MIN_SESSIONS = 1;
 const MAX_SESSIONS = 7;
 
-function tempId(prefix) { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
+function tempId(prefix) { return `${prefix}-${crypto.randomUUID()}`; }
 
 function emptyWeekPrescriptions(weeks) {
   return Array.from({ length: weeks }, (_, i) => ({
@@ -316,9 +316,7 @@ export default function BlockBuilderModal({
         };
       }
       // Link: assign a shared id. Reuse a's existing id if any, otherwise b's, else generate.
-      const groupId = a.superset_group_id || b.superset_group_id || (crypto.randomUUID
-        ? crypto.randomUUID()
-        : `ss-${Math.random().toString(36).slice(2, 12)}`);
+      const groupId = a.superset_group_id || b.superset_group_id || crypto.randomUUID();
       return {
         ...sec,
         exercises: sec.exercises.map(e => {
