@@ -158,5 +158,30 @@ export function useKpiBoard(athleteId) {
     if (error) console.error('[useKpiBoard] resizeMetric failed', error);
   }, [athleteId]);
 
-  return { board, loading, addMetric, removeMetric, resizeMetric };
+  // Drag-and-drop reordering — orderedKeys is the full board in its new
+  // metric_key order. Reassigns sequential positions and persists all
+  // of them in one go.
+  const reorderBoard = useCallback(async (orderedKeys) => {
+    if (!athleteId) return;
+    const prev = board;
+    const byKey = new Map(prev.map(b => [b.metric_key, b]));
+    const next = orderedKeys
+      .map((key, i) => byKey.has(key) ? { ...byKey.get(key), position: i } : null)
+      .filter(Boolean);
+    setBoard(next);
+
+    const results = await Promise.all(next.map(row =>
+      supabase.from('athlete_kpi_board')
+        .update({ position: row.position, updated_at: new Date().toISOString() })
+        .eq('athlete_id', athleteId)
+        .eq('metric_key', row.metric_key)
+    ));
+    const failed = results.find(r => r.error);
+    if (failed) {
+      console.error('[useKpiBoard] reorderBoard failed', failed.error);
+      setBoard(prev);
+    }
+  }, [athleteId, board]);
+
+  return { board, loading, addMetric, removeMetric, resizeMetric, reorderBoard };
 }
