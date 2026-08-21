@@ -1,5 +1,5 @@
 import { ArrowLeft, Apple, GlassWater, Loader2, Moon, Sun } from 'lucide-react';
-import { useMealStructureGuidance, BLOCK_TYPES } from '../../hooks/useMealStructureGuidance';
+import { useTodayMealStructure, BLOCK_TYPES } from '../../hooks/useMealStructures';
 
 const GOLD = '#A58D69';
 
@@ -12,14 +12,13 @@ const TYPE_ICONS = {
 };
 
 /**
- * GuidanceSheet — athlete-facing view of the recommended-plate
- * guidance set by the nutritionist in the Meal Structure & Guidance
- * sub-tab. General note first, then the coach's chronological run of
- * meal blocks in the order they built them, then hydration. Empty
- * blocks/notes are skipped so the athlete sees only what matters.
+ * GuidanceSheet — athlete-facing view of whichever meal structure
+ * applies today (the coach may have set up several, scoped to
+ * different days — see useMealStructures). General note first, then
+ * the blocks in the coach's chronological order, then hydration.
  */
 export default function GuidanceSheet({ athleteId, onClose }) {
-  const { content, loading, isEmpty } = useMealStructureGuidance(athleteId);
+  const { today, loading, hasGuidanceContent } = useTodayMealStructure(athleteId);
 
   return (
     <div className="fixed inset-0 z-[60] bg-ink-50 overflow-y-auto"
@@ -29,7 +28,10 @@ export default function GuidanceSheet({ athleteId, onClose }) {
           <button onClick={onClose} className="p-1.5 rounded hover:bg-ink-50" aria-label="Back">
             <ArrowLeft size={18} className="text-ink-500" />
           </button>
-          <h2 className="text-base font-bold text-ink-900">Recommended food structure</h2>
+          <div>
+            <h2 className="text-base font-bold text-ink-900">Recommended food structure</h2>
+            {today?.name && <p className="text-micro text-ink-400">{today.name}</p>}
+          </div>
         </div>
 
         <div className="px-4 py-4 space-y-3">
@@ -37,7 +39,7 @@ export default function GuidanceSheet({ athleteId, onClose }) {
             <div className="py-10 text-center text-xs text-ink-400 flex items-center justify-center gap-2">
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
-          ) : isEmpty ? (
+          ) : !hasGuidanceContent ? (
             <div className="rounded-xl bg-white border border-ink-100 p-6 text-center text-xs italic text-ink-400"
                  style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               Your nutritionist hasn't added recommended structure guidance yet —
@@ -45,7 +47,7 @@ export default function GuidanceSheet({ athleteId, onClose }) {
             </div>
           ) : (
             <>
-              {content.general.trim() && (
+              {String(today.general || '').trim() && (
                 <section className="rounded-xl bg-white border border-ink-100 overflow-hidden"
                   style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                   <div className="px-4 pt-3 pb-2 border-b border-ink-100">
@@ -54,12 +56,12 @@ export default function GuidanceSheet({ athleteId, onClose }) {
                     </p>
                   </div>
                   <p className="px-4 py-3 text-sm text-ink-800 whitespace-pre-wrap leading-relaxed">
-                    {content.general}
+                    {today.general}
                   </p>
                 </section>
               )}
 
-              {content.blocks
+              {(today.blocks || [])
                 .filter(b => String(b.text || '').trim())
                 .map((block, i) => {
                   const meta = BLOCK_TYPES.find(t => t.key === block.type);
@@ -76,7 +78,7 @@ export default function GuidanceSheet({ athleteId, onClose }) {
                           <Icon size={13} />
                         </div>
                         <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: GOLD }}>
-                          {i + 1}. {meta?.label || block.type}
+                          {i + 1}. {meta?.label || 'Meal / Snack'}
                         </p>
                       </div>
                       <p className="px-4 py-3 text-sm text-ink-800 whitespace-pre-wrap leading-relaxed">
@@ -86,7 +88,7 @@ export default function GuidanceSheet({ athleteId, onClose }) {
                   );
                 })}
 
-              {content.hydration.trim() && (
+              {String(today.hydration || '').trim() && (
                 <section className="rounded-xl bg-white border border-ink-100 overflow-hidden"
                   style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                   <div className="px-4 pt-3 pb-2 border-b border-ink-100">
@@ -95,7 +97,7 @@ export default function GuidanceSheet({ athleteId, onClose }) {
                     </p>
                   </div>
                   <p className="px-4 py-3 text-sm text-ink-800 whitespace-pre-wrap leading-relaxed">
-                    {content.hydration}
+                    {today.hydration}
                   </p>
                 </section>
               )}

@@ -7,7 +7,7 @@ const PillarTab     = lazy(() => import('./PillarTab'));
 const NutritionTab  = lazy(() => import('./NutritionTab'));
 const FoodDiaryView     = lazy(() => import('../nutrition/FoodDiaryView'));
 const RecipesAdminView  = lazy(() => import('../nutrition/RecipesAdminView'));
-const GuidanceEditor    = lazy(() => import('../nutrition/GuidanceEditor'));
+const MealStructureBuilder = lazy(() => import('../nutrition/MealStructureBuilder'));
 
 const SUBTABS = [
   { id: 'overview',    label: 'Overview'                  },
@@ -103,7 +103,7 @@ export default function NutritionDomainTab({
         )}
 
         {active === 'guidance' && (
-          <GuidanceEditor athleteId={athleteId} athleteName={athleteName} />
+          <MealStructureBuilder athleteId={athleteId} athleteName={athleteName} />
         )}
 
         {active === 'recipes' && (
@@ -113,5 +113,3 @@ export default function NutritionDomainTab({
     </div>
   );
 }
-
-// GuidancePlaceholder removed — GuidanceEditor now mounts here.

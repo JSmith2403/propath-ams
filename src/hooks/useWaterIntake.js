@@ -3,10 +3,10 @@ import { supabase } from '../lib/supabase';
 
 const GLASS_ML = 500;
 
+// en-CA gives YYYY-MM-DD directly in local calendar terms — see the
+// matching note in NutritionTab.jsx's todayIso().
 function todayIso() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  return new Date().toLocaleDateString('en-CA');
 }
 
 /**
