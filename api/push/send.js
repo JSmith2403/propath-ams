@@ -24,6 +24,7 @@
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '../_lib/verifyUser.js';
+import { sendPushToAthlete } from '../_lib/push.js';
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -82,47 +83,10 @@ export default async function handler(req, res) {
 
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-  const { data: subs, error: fetchErr } = await supabaseAdmin
-    .from('push_subscriptions')
-    .select('id, endpoint, keys_p256dh, keys_auth')
-    .eq('athlete_id', athleteId);
-
-  if (fetchErr) {
-    res.status(500).json({ ok: false, error: fetchErr.message });
-    return;
+  try {
+    const result = await sendPushToAthlete(supabaseAdmin, athleteId, { title, body: messageBody, url });
+    res.status(200).json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
-
-  if (!subs || subs.length === 0) {
-    res.status(200).json({ ok: true, sent: 0, message: 'Athlete has no registered devices.' });
-    return;
-  }
-
-  const payload = JSON.stringify({ title, body: messageBody, url });
-  const deadIds = [];
-  let sent = 0;
-
-  await Promise.all(subs.map(async (sub) => {
-    const pushSubscription = {
-      endpoint: sub.endpoint,
-      keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth },
-    };
-    try {
-      await webpush.sendNotification(pushSubscription, payload);
-      sent++;
-    } catch (err) {
-      // 404/410 = the subscription is dead (uninstalled, permission revoked,
-      // endpoint expired) — clean it up so future sends don't keep retrying it.
-      if (err.statusCode === 404 || err.statusCode === 410) {
-        deadIds.push(sub.id);
-      } else {
-        console.error('[push/send] failed for subscription', sub.id, err.statusCode, err.message);
-      }
-    }
-  }));
-
-  if (deadIds.length) {
-    await supabaseAdmin.from('push_subscriptions').delete().in('id', deadIds);
-  }
-
-  res.status(200).json({ ok: true, sent, removed: deadIds.length, total: subs.length });
 }

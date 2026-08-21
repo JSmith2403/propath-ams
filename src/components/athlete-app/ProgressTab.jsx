@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { TrendingUp, Plus, CheckCircle2, User } from 'lucide-react';
 import { ComposedChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { METRIC_MAP, SPECIAL_METRICS, LABEL_OVERRIDES, DUAL_LINE_METRICS, LOWER_IS_BETTER } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
+import { useAthleteGoals } from '../../hooks/useAthleteGoals';
+import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META } from '../../utils/goalTree';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
 const GOLD  = '#A58D69';
@@ -12,12 +14,207 @@ const TEAL  = '#437E8D';
 const AMBER = '#f59e0b';
 const FADE  = '#e5e7eb';
 
+// Athlete-friendly translation of the coach's internal RAG vocabulary —
+// display-layer only, doesn't touch RAG_CONFIG itself.
+const RAG_ATHLETE_LABEL = {
+  green: { label: 'On track',        color: '#22c55e' },
+  amber: { label: 'Needs attention', color: '#f59e0b' },
+  red:   { label: 'Priority focus',  color: '#ef4444' },
+  grey:  { label: 'Not yet assessed', color: '#9ca3af' },
+};
+
+function ReadOnlyGoalNode({ node }) {
+  const domainMeta = DOMAIN_META[node.domain];
+  const statusMeta = GOAL_STATUS_META[node.status];
+  return (
+    <div>
+      <div className="p-3 rounded-lg border border-ink-100 bg-white">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="text-micro font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${domainMeta.color}1a`, color: domainMeta.color }}>
+            {domainMeta.label}
+          </span>
+          <span className="text-micro font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: statusMeta.bg, color: statusMeta.color }}>
+            {statusMeta.label}
+          </span>
+          {node.target_date && (
+            <span className="text-micro text-ink-400 ml-auto">
+              {new Date(node.target_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            </span>
+          )}
+        </div>
+        <p className="text-meta text-ink-800">{node.description}</p>
+      </div>
+      {node.children?.length > 0 && (
+        <div className="ml-4 mt-2 space-y-2 pl-3 border-l-2 border-ink-100">
+          {node.children.map(child => <ReadOnlyGoalNode key={child.id} node={child} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddGoalSheet({ onAdd, onClose }) {
+  const [tier, setTier] = useState('short');
+  const [domain, setDomain] = useState('physical');
+  const [description, setDescription] = useState('');
+  const [targetDate, setTargetDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!description.trim()) return;
+    setSaving(true);
+    await onAdd({ tier, domain, description: description.trim(), targetDate: targetDate || null });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div className="w-full bg-white rounded-t-2xl p-5 space-y-4" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <p className="text-body font-bold text-ink-900">Add a goal</p>
+
+        <div>
+          <label className="text-micro font-bold uppercase text-ink-400 block mb-1.5">Timeframe</label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {TIER_ORDER.map(t => (
+              <button key={t} onClick={() => setTier(t)}
+                className="py-2 rounded-lg text-micro font-bold text-center border"
+                style={{ borderColor: tier === t ? GOLD : '#e5e5e7', backgroundColor: tier === t ? 'rgba(165,141,105,0.1)' : '#fff', color: tier === t ? GOLD : '#6b7280' }}>
+                {TIER_META[t].short}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-micro font-bold uppercase text-ink-400 block mb-1.5">Area</label>
+          <select value={domain} onChange={e => setDomain(e.target.value)}
+            className="w-full text-sm border border-ink-200 rounded-lg px-3 py-2.5 bg-white">
+            {Object.entries(DOMAIN_META).map(([key, m]) => <option key={key} value={key}>{m.label}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-micro font-bold uppercase text-ink-400 block mb-1.5">Your goal</label>
+          <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
+            placeholder="What do you want to achieve?"
+            className="w-full text-sm border border-ink-200 rounded-lg px-3 py-2.5 resize-none bg-white" />
+        </div>
+
+        <div>
+          <label className="text-micro font-bold uppercase text-ink-400 block mb-1.5">Target date (optional)</label>
+          <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)}
+            className="w-full text-sm border border-ink-200 rounded-lg px-3 py-2.5 bg-white" />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={submit} disabled={!description.trim() || saving}
+            className="flex-1 py-3 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+            style={{ backgroundColor: GOLD }}>
+            {saving ? 'Saving…' : 'Add Goal'}
+          </button>
+          <button onClick={onClose} className="px-4 py-3 rounded-lg text-sm font-semibold text-ink-500">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Quarterly report + goals section ──────────────────────────────────────
+function ReportSection({ athleteId }) {
+  const { plan, coachTree, athleteOwnGoals, loading, hasPlan, reportSent, addAthleteGoal } = useAthleteGoals(athleteId);
+  const [showAdd, setShowAdd] = useState(false);
+
+  if (loading || !hasPlan) return null;
+
+  return (
+    <div className="rounded-xl p-4 bg-white border border-ink-100 shadow-card mb-4">
+      <p className="text-meta font-semibold" style={{ color: GOLD }}>{plan.period_label}</p>
+
+      {reportSent ? (
+        <>
+          <p className="text-h3 leading-tight text-ink-900 mt-0.5">Your Quarterly Report</p>
+          {plan.narrative && (
+            <p className="text-meta italic leading-snug text-ink-700 mt-2">{plan.narrative}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2.5 mt-3">
+            {Object.entries(DOMAIN_META).map(([key, meta]) => {
+              const status = plan.rag_summary?.[key] || 'grey';
+              const r = RAG_ATHLETE_LABEL[status];
+              return (
+                <div key={key} className="rounded-lg p-2.5 bg-ink-50">
+                  <p className="text-micro font-bold uppercase text-ink-400">{meta.label}</p>
+                  <p className="text-meta font-bold mt-0.5" style={{ color: r.color }}>{r.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-h3 leading-tight text-ink-900 mt-0.5">This Quarter's Goals</p>
+          <p className="text-meta text-ink-500 mt-1">Your coach hasn't finished this quarter's report yet — you can already add your own goals below.</p>
+        </>
+      )}
+
+      <div className="flex items-center justify-between mt-4 mb-2">
+        <p className="text-body font-bold text-ink-900">Goals</p>
+        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 text-meta font-bold" style={{ color: GOLD }}>
+          <Plus size={13} /> Add
+        </button>
+      </div>
+
+      {coachTree.length === 0 && athleteOwnGoals.length === 0 && (
+        <p className="text-meta text-ink-400 text-center py-4">No goals set for this quarter yet.</p>
+      )}
+
+      <div className="space-y-2">
+        {coachTree.map(node => <ReadOnlyGoalNode key={node.id} node={node} />)}
+      </div>
+
+      {athleteOwnGoals.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-ink-100 space-y-2">
+          <p className="text-micro font-bold uppercase text-ink-400 flex items-center gap-1.5">
+            <User size={11} /> Submitted by you
+          </p>
+          {athleteOwnGoals.map(g => {
+            const domainMeta = DOMAIN_META[g.domain];
+            return (
+              <div key={g.id} className="p-3 rounded-lg bg-ink-50">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-micro font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${domainMeta.color}1a`, color: domainMeta.color }}>
+                    {domainMeta.label}
+                  </span>
+                  <span className="text-micro text-ink-400">{TIER_META[g.tier].label}</span>
+                  {g.linked_goal_id ? (
+                    <span className="text-micro font-semibold flex items-center gap-1 ml-auto" style={{ color: '#22c55e' }}>
+                      <CheckCircle2 size={11} /> In your plan
+                    </span>
+                  ) : (
+                    <span className="text-micro text-ink-400 ml-auto">Awaiting review</span>
+                  )}
+                </div>
+                <p className="text-meta text-ink-800">{g.description}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showAdd && <AddGoalSheet onAdd={addAthleteGoal} onClose={() => setShowAdd(false)} />}
+    </div>
+  );
+}
+
 /**
- * ProgressTab — read-only view of whatever performance metrics the
- * coach has pinned (the "Show on athlete progress" toggle on each KPI
- * Dashboard tile). Reads performance_test_results / vald_test_results
- * directly (both anon-SELECT, scoped by athleteId) rather than through
- * any coach-only path.
+ * ProgressTab — the athlete's single "how am I doing" surface: the
+ * quarterly report (once the coach sends it) + goals, followed by
+ * whatever performance metrics the coach has pinned (the "Show on
+ * athlete progress" toggle on each KPI Dashboard tile). Reads
+ * performance_test_results / vald_test_results directly (both anon-
+ * SELECT, scoped by athleteId) rather than through any coach-only path.
  */
 export default function ProgressTab({ athleteId, progressMetrics = [] }) {
   const { customMetrics } = useCustomMetrics();
@@ -50,35 +247,37 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
     });
   }, [progressMetrics, entries, valdEntriesFor, valdDefFor, customMetrics]);
 
-  if (!progressMetrics.length) {
-    return (
-      <div className="px-4 pt-12 pb-6 flex flex-col items-center text-center">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gold-50">
-          <TrendingUp size={28} className="text-gold-600" />
-        </div>
-        <p className="text-h3 mb-1 text-ink-900">Track Progress</p>
-        <p className="text-meta max-w-xs text-ink-500">
-          Your coach hasn't pinned any metrics to track here yet — check back once they've set some up.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="px-4 pt-4 pb-24">
-      <h2 className="text-base font-bold text-ink-900 mb-1">Your Progress</h2>
-      <p className="text-meta text-ink-500 mb-4">
-        Metrics your coach is tracking with you — updates as new results come in.
-      </p>
+      <ReportSection athleteId={athleteId} />
+
+      {progressMetrics.length > 0 && (
+        <>
+          <h2 className="text-base font-bold text-ink-900 mb-1">Testing Data</h2>
+          <p className="text-meta text-ink-500 mb-4">
+            Metrics your coach is tracking with you — updates as new results come in.
+          </p>
+        </>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 rounded-full border-4 animate-spin"
                style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: GOLD }} />
         </div>
-      ) : (
+      ) : progressMetrics.length > 0 ? (
         <div className="space-y-3">
           {cards.map(card => <ProgressCard key={card.metricKey} {...card} />)}
+        </div>
+      ) : (
+        <div className="pt-8 flex flex-col items-center text-center">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gold-50">
+            <TrendingUp size={28} className="text-gold-600" />
+          </div>
+          <p className="text-h3 mb-1 text-ink-900">Track Progress</p>
+          <p className="text-meta max-w-xs text-ink-500">
+            Your coach hasn't pinned any metrics to track here yet — check back once they've set some up.
+          </p>
         </div>
       )}
     </div>

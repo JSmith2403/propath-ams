@@ -1,27 +1,28 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import OverviewTab from './tabs/OverviewTab';
-import WorkingOnSection from './WorkingOnSection';
-import { RAG_DOMAINS } from '../data/athletes';
 
 // Lazy-load heavy tabs to keep initial bundle lean
-const PillarTab               = lazy(() => import('./tabs/PillarTab'));
 const MaturationTab           = lazy(() => import('./tabs/MaturationTab'));
 const MobilityTab             = lazy(() => import('./tabs/MobilityTab'));
 const PhysicalDevelopmentTab  = lazy(() => import('./tabs/PhysicalDevelopmentTab'));
+const GoalsTab                 = lazy(() => import('./tabs/GoalsTab'));
 const PhysioTab               = lazy(() => import('./tabs/PhysioTab'));
-const NutritionTab            = lazy(() => import('./tabs/NutritionTab'));
 const NutritionDomainTab      = lazy(() => import('./tabs/NutritionDomainTab'));
 const PsychTab                = lazy(() => import('./tabs/PsychTab'));
 const ReportTab               = lazy(() => import('./tabs/ReportTab'));
 const WellnessTab             = lazy(() => import('./tabs/WellnessTab'));
 
+// RAG status, notes, and "Working On" for every domain now live in
+// Goals & Development — Psychological/Nutritional keep only their
+// non-RAG content (ACSI-28 / meal-logging surfaces), and Lifestyle
+// (which had nothing else) is retired as a tab entirely.
 const TABS = [
   { id: 'overview',       label: 'Overview'             },
+  { id: 'goals',          label: 'Goals & Development'  },
   { id: 'physical-dev',   label: 'Physical Development' },
   { id: 'rag-psych',      label: 'Psychological'        },
   { id: 'rag-nutrition',  label: 'Nutritional'          },
-  { id: 'rag-lifestyle',  label: 'Lifestyle'            },
   { id: 'wellness',       label: 'Wellness'             },
   { id: 'maturation',     label: 'Maturation'           },
   { id: 'mobility',       label: 'Mobility'             },
@@ -68,20 +69,19 @@ export default function AthleteProfile({
   athlete, onBack, allAthletes = [],
   role,
   initialTab, initialHighlight,
-  onUpdate, onUpdateRag, onAddRagEntry, onSaveQuarterlyReview, onUpdatePhoto,
+  onUpdate, onUpdateRag, onAddRagEntry, onUpdatePhoto,
   // Phase 2
   onAddMaturationEntry, onAddMobilityEntry, onAddPerformanceEntry,
   onAddPhysioEntry, onAddNutritionEntry, onAddAcsi28Entry, onAddPsychNote,
-  onSavePsychWorkingOn, onSaveNutritionWorkingOn,
-  onSavePhysicalWorkingOn, onSaveLifestyleWorkingOn, onSavePerformanceBrag, onSaveReportMetrics,
-  onAddCheckIn, onUpdateCheckIn, onDeleteCheckIn,
+  onSavePerformanceBrag, onSaveReportMetrics,
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   // Physical Development sub-tab state — persisted across top-level tab
-  // switches for the lifetime of the open profile. Defaults to 'overview'
-  // on first entry per Brief 2 Part A.
-  const [physicalDevSubTab, setPhysicalDevSubTab] = useState('overview');
+  // switches for the lifetime of the open profile. Defaults to
+  // 'programme' now that Overview (RAG/notes) has moved to Goals &
+  // Development.
+  const [physicalDevSubTab, setPhysicalDevSubTab] = useState('programme');
   // Deep-link focus for the Programme sub-tab — bumped (and ProgrammeView
   // re-applies) every time the user clicks a gym session pill on the
   // Overview Calendar. Shape: { viewMode, viewDate, nonce } | null.
@@ -91,19 +91,6 @@ export default function AthleteProfile({
   // Keep localAthlete in sync when the athlete prop updates externally
   // (e.g. after initial session sync populates phase2 performance entries)
   useEffect(() => { setLocalAthlete(athlete); }, [athlete]);
-
-  // Backfill ids on any check-in that's missing one. Legacy entries created
-  // before id-stamping was universal otherwise can't be edited or deleted
-  // because the row matchers below all key off entry.id.
-  useEffect(() => {
-    const list = athlete?.checkIns || [];
-    const missing = list.filter(e => !e.id);
-    if (missing.length === 0) return;
-    const fixed = list.map(e => e.id ? e : { ...e, id: uid() });
-    setLocalAthlete(a => ({ ...a, checkIns: fixed }));
-    // Persist once via the parent updater so the backfill survives reload.
-    if (onUpdate) onUpdate(athlete.id, { ...athlete, checkIns: fixed });
-  }, [athlete?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // { domain: string, entryId: string } | null
   const [highlightEntry, setHighlightEntry] = useState(initialHighlight || null);
@@ -139,16 +126,6 @@ export default function AthleteProfile({
     onUpdateRag(localAthlete.id, domain, status);
   };
 
-  const handleSaveReview = review => {
-    const list = localAthlete.quarterlyReviews || [];
-    const idx = list.findIndex(r => r.id === review.id);
-    const updated = idx >= 0
-      ? list.map(r => r.id === review.id ? review : r)
-      : [...list, review];
-    setLocalAthlete(a => ({ ...a, quarterlyReviews: updated }));
-    onSaveQuarterlyReview(localAthlete.id, review);
-  };
-
   // Deep link from Overview → Calendar (gym session click) → Physical
   // Development → Programme sub-tab → Week view focused on dateISO.
   const handleNavigateToProgrammeWeek = (dateISO) => {
@@ -158,35 +135,7 @@ export default function AthleteProfile({
     setProgrammeFocus({ viewMode: 'week', viewDate: focusDate, nonce: Date.now() });
   };
 
-  // Navigate from an overview entry to the pillar section + highlight.
-  // Physical now lives inside Physical Development → Overview sub-tab.
-  const handleNavigateToPillar = (domain, entryId) => {
-    if (domain === 'physical') {
-      setActiveTab('physical-dev');
-      setPhysicalDevSubTab('overview');
-    } else {
-      setActiveTab(`rag-${domain}`);
-    }
-    setHighlightEntry({ domain, entryId });
-  };
-
   const p2 = localAthlete.phase2 || {};
-
-  const handleSavePsychWorkingOn = (workingOn) => {
-    setLocalAthlete(a => ({
-      ...a,
-      phase2: { ...a.phase2, psych: { ...a.phase2?.psych, workingOn } },
-    }));
-    onSavePsychWorkingOn(localAthlete.id, workingOn);
-  };
-
-  const handleSaveNutritionWorkingOn = (workingOn) => {
-    setLocalAthlete(a => ({
-      ...a,
-      phase2: { ...a.phase2, nutrition: { ...a.phase2?.nutrition, workingOn } },
-    }));
-    onSaveNutritionWorkingOn(localAthlete.id, workingOn);
-  };
 
   const handleDeleteRagEntry = (domain, entryId) => {
     setLocalAthlete(a => ({
@@ -210,163 +159,55 @@ export default function AthleteProfile({
     onDeletePhysioEntry(localAthlete.id, entryId);
   };
 
-  const handleAddCheckIn = (entry) => {
-    const newEntry = { ...entry, id: uid() };
-    setLocalAthlete(a => ({
-      ...a,
-      checkIns: [newEntry, ...(a.checkIns || [])],
-    }));
-    onAddCheckIn(localAthlete.id, newEntry);
-  };
-
-  // Defensive matcher — prefers id when present, falls back to the
-  // entry payload (date+author+noteType+note) so legacy rows that
-  // never got an id can still be edited or deleted before backfill
-  // completes its round-trip to storage.
-  const matchesEntry = (e, target) =>
-    (target?.id && e.id === target.id)
-    || (!target?.id
-        && e.date === target?.date
-        && e.author === target?.author
-        && e.noteType === target?.noteType
-        && e.note === target?.note);
-
-  const handleUpdateCheckIn = (target, patch) => {
-    setLocalAthlete(a => ({
-      ...a,
-      checkIns: (a.checkIns || []).map(e => matchesEntry(e, target) ? { ...e, ...patch } : e),
-    }));
-    if (target?.id) onUpdateCheckIn?.(localAthlete.id, target.id, patch);
-  };
-
-  const handleDeleteCheckIn = (target) => {
-    setLocalAthlete(a => ({
-      ...a,
-      checkIns: (a.checkIns || []).filter(e => !matchesEntry(e, target)),
-    }));
-    if (target?.id) onDeleteCheckIn?.(localAthlete.id, target.id);
-  };
-
-  const handleSavePhysicalWorkingOn = (workingOn) => {
-    setLocalAthlete(a => ({
-      ...a,
-      phase2: { ...a.phase2, physical: { ...a.phase2?.physical, workingOn } },
-    }));
-    onSavePhysicalWorkingOn(localAthlete.id, workingOn);
-  };
-
-  const handleSaveLifestyleWorkingOn = (workingOn) => {
-    setLocalAthlete(a => ({
-      ...a,
-      phase2: { ...a.phase2, lifestyle: { ...a.phase2?.lifestyle, workingOn } },
-    }));
-    onSaveLifestyleWorkingOn(localAthlete.id, workingOn);
-  };
-
   const renderTab = () => {
     // ── Pillar tabs ───────────────────────────────────────────────────────
     if (activeTab.startsWith('rag-')) {
       const domain = activeTab.slice(4); // strip 'rag-'
-      const domainMeta = RAG_DOMAINS.find(d => d.key === domain);
 
-      // Nutrition is its own wrapper (sub-tabs at the very top, same
-      // pattern as Physical Development) so the Food Diary + Meal
-      // Structure & Guidance modules sit alongside Overview rather
-      // than buried inside it. NutritionDomainTab hosts PillarTab
-      // inside its Overview sub-tab so the RAG status + log are
-      // preserved exactly as before.
+      // Nutrition is its own wrapper (sub-tabs at the very top) for the
+      // meal-logging surfaces — RAG status/notes/working-on now live in
+      // Goals & Development instead of an Overview sub-tab here.
       if (domain === 'nutrition') {
-        return (
-          <NutritionDomainTab
-            athleteId={athlete.id}
-            athleteName={athlete.name}
-            workingOn={p2.nutrition?.workingOn || [
-              { title: '', description: '' },
-              { title: '', description: '' },
-              { title: '', description: '' },
-            ]}
-            onSaveWorkingOn={handleSaveNutritionWorkingOn}
-            ragStatus={localAthlete.rag?.nutrition || 'grey'}
-            ragLogEntries={localAthlete.ragLog?.nutrition || []}
-            highlightEntryId={highlightEntry?.domain === 'nutrition' ? highlightEntry.entryId : null}
-            onStatusChange={status => handleStatusChange('nutrition', status)}
-            onAddRagEntry={data => handleAddRagEntry('nutrition', data)}
-            onDeleteRagEntry={entryId => handleDeleteRagEntry('nutrition', entryId)}
-            onClearHighlight={() => setHighlightEntry(null)}
-          />
-        );
+        return <NutritionDomainTab athleteId={athlete.id} athleteName={athlete.name} />;
       }
 
-      let extraContent    = null;
-      let preContent      = null;
-      let pillarEntryTypes = undefined;
-
+      // Psychological is now just the ACSI-28 assessment log — RAG
+      // status/notes/working-on moved to Goals & Development.
       if (domain === 'psych') {
-        const psychWorkingOn = p2.psych?.workingOn || [
-          { title: '', description: '' },
-          { title: '', description: '' },
-          { title: '', description: '' },
-        ];
-        // Working On cards sit above the note log
-        preContent = (
+        return (
           <PsychTab
-            section="working-on"
-            workingOn={psychWorkingOn}
-            onSaveWorkingOn={handleSavePsychWorkingOn}
-          />
-        );
-        // ACSI assessments sit at the bottom of the tab (below the note log)
-        extraContent = (
-          <PsychTab
-            section="acsi"
             acsi28={p2.psych?.acsi28 || []}
             onAddAcsi28={entry => onAddAcsi28Entry(localAthlete.id, entry)}
           />
         );
-      } else if (domain === 'lifestyle') {
-        preContent = (
-          <WorkingOnSection
-            workingOn={p2.lifestyle?.workingOn}
-            onSave={handleSaveLifestyleWorkingOn}
-          />
-        );
       }
 
-      return (
-        <PillarTab
-          label={domainMeta?.label ?? domain}
-          domain={domain}
-          status={localAthlete.rag?.[domain] || 'grey'}
-          logEntries={localAthlete.ragLog?.[domain] || []}
-          onStatusChange={status => handleStatusChange(domain, status)}
-          onAddEntry={data => handleAddRagEntry(domain, data)}
-          onDeleteEntry={entryId => handleDeleteRagEntry(domain, entryId)}
-          highlightEntryId={highlightEntry?.domain === domain ? highlightEntry.entryId : null}
-          onClearHighlight={() => setHighlightEntry(null)}
-          preContent={preContent}
-          extraContent={extraContent}
-          entryTypes={pillarEntryTypes}
-          noteFormFirst={domain === 'psych' || domain === 'lifestyle'}
-        />
-      );
+      return null;
     }
 
     switch (activeTab) {
+      case 'goals':
+        return (
+          <GoalsTab
+            athleteId={athlete.id}
+            athleteName={athlete.name}
+            rag={localAthlete.rag || {}}
+            ragLog={localAthlete.ragLog || {}}
+            onStatusChange={handleStatusChange}
+            onAddRagEntry={handleAddRagEntry}
+            onDeleteRagEntry={handleDeleteRagEntry}
+            highlightEntry={highlightEntry}
+            onClearHighlight={() => setHighlightEntry(null)}
+          />
+        );
       case 'overview':
         return (
           <OverviewTab
-            athlete={athlete}
             role={role}
             onUpdate={onUpdate}
             onUpdatePhoto={onUpdatePhoto}
             localAthlete={localAthlete}
             setLocalAthlete={setLocalAthlete}
-            onAddRagEntry={handleAddRagEntry}
-            onSaveReview={handleSaveReview}
-            onNavigateToPillar={handleNavigateToPillar}
-            onAddCheckIn={handleAddCheckIn}
-            onUpdateCheckIn={handleUpdateCheckIn}
-            onDeleteCheckIn={handleDeleteCheckIn}
             onNavigateToProgrammeWeek={handleNavigateToProgrammeWeek}
           />
         );
@@ -395,15 +236,6 @@ export default function AthleteProfile({
             phase2={p2}
             allAthletes={allAthletes}
             role={role}
-            // Overview (Physical pillar)
-            ragStatus={localAthlete.rag?.physical || 'grey'}
-            ragLogEntries={localAthlete.ragLog?.physical || []}
-            highlightEntryId={highlightEntry?.domain === 'physical' ? highlightEntry.entryId : null}
-            onStatusChange={status => handleStatusChange('physical', status)}
-            onAddRagEntry={data => handleAddRagEntry('physical', data)}
-            onDeleteRagEntry={entryId => handleDeleteRagEntry('physical', entryId)}
-            onClearHighlight={() => setHighlightEntry(null)}
-            onSavePhysicalWorkingOn={handleSavePhysicalWorkingOn}
             // Testing (Performance Testing)
             onAddPerformanceEntry={(metric, entry) => onAddPerformanceEntry(localAthlete.id, metric, entry)}
             onSavePerformanceBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}

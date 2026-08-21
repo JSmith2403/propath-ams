@@ -1,16 +1,14 @@
 import { lazy, Suspense } from 'react';
 import { TabBar } from '../ui';
-import WorkingOnSection from '../WorkingOnSection';
 
-// Lazy-load the heavy children — Overview's PillarTab, Testing's
-// PerformanceTestingTab, and Programme's ProgrammeView.
-const PillarTab             = lazy(() => import('./PillarTab'));
+// Lazy-load the heavy children — Testing's PerformanceTestingTab and
+// Programme's ProgrammeView. RAG status/notes moved to the Goals &
+// Development tab; this tab is now purely training data.
 const PerformanceTestingTab = lazy(() => import('./PerformanceTestingTab'));
 const ProgrammeView         = lazy(() => import('../programming/ProgrammeView'));
 const LoggedSessionsTab     = lazy(() => import('./LoggedSessionsTab'));
 
 const SUBTABS = [
-  { id: 'overview',  label: 'Overview'      },
   { id: 'programme', label: 'Programme'     },
   { id: 'logged',    label: 'Progress'      },  // hosts the Progress Dashboard above the session log
   { id: 'testing',   label: 'Testing Data'  },
@@ -29,9 +27,12 @@ function SubTabLoader() {
 
 /**
  * PhysicalDevelopmentTab — host for three sub-tabs:
- *   • Overview   — existing Physical pillar content (RAG, Working On, log)
- *   • Programme  — placeholder until Brief 2 Part B
- *   • Testing    — existing Performance Testing tab content
+ *   • Programme  — training programme builder
+ *   • Progress   — logged session history
+ *   • Testing    — performance testing data
+ *
+ * RAG status/notes now live in the Goals & Development tab instead of
+ * an Overview sub-tab here.
  *
  * Sub-tab state is owned by the parent (AthleteProfile) so that switching
  * away to another top-level tab and back returns the user to the same
@@ -51,16 +52,6 @@ export default function PhysicalDevelopmentTab({
   allAthletes = [],
   role,
 
-  // Overview (Physical pillar)
-  ragStatus,
-  ragLogEntries,
-  highlightEntryId,
-  onStatusChange,
-  onAddRagEntry,
-  onDeleteRagEntry,
-  onClearHighlight,
-  onSavePhysicalWorkingOn,
-
   // Testing (Performance Testing)
   onAddPerformanceEntry,
   onSavePerformanceBrag,
@@ -71,27 +62,6 @@ export default function PhysicalDevelopmentTab({
       <TabBar tabs={SUBTABS} active={subTab} onChange={onChangeSubTab} className="mb-6 no-print" />
 
       <Suspense fallback={<SubTabLoader />}>
-        {subTab === 'overview' && (
-          <PillarTab
-            label="Physical"
-            domain="physical"
-            status={ragStatus}
-            logEntries={ragLogEntries}
-            onStatusChange={onStatusChange}
-            onAddEntry={onAddRagEntry}
-            onDeleteEntry={onDeleteRagEntry}
-            highlightEntryId={highlightEntryId}
-            onClearHighlight={onClearHighlight}
-            preContent={(
-              <WorkingOnSection
-                workingOn={phase2.physical?.workingOn}
-                onSave={onSavePhysicalWorkingOn}
-              />
-            )}
-            noteFormFirst
-          />
-        )}
-
         {subTab === 'programme' && (
           <ProgrammeView
             athlete={athlete}

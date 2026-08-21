@@ -53,15 +53,13 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const {
     athletes, archivedAthletes, loading, error: athletesError, getAthlete,
     addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete, updateRag, addRagEntry,
-    saveQuarterlyReview, updatePhoto,
+    updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
-    savePsychWorkingOn, saveNutritionWorkingOn,
-    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag, saveReportMetrics,
+    savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
     syncSessionData,
-    addCheckIn, updateCheckIn, deleteCheckIn,
   } = useAthletes({ seedEnabled: !isExternal });
 
   // Re-sync all saved sessions once after athletes load (admin/co_admin only).
@@ -123,10 +121,14 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   const handleBack = () => { setView('roster'); setSelectedId(null); };
 
+  // RAG/notes for every domain now live in Goals & Development — only
+  // physio (a separate assessment log, not part of the goals system)
+  // still routes to its own tab.
   const PILLAR_TAB_MAP = {
-    physical:  'physical-dev',
-    psych:     'rag-psych',
-    nutrition: 'rag-nutrition',
+    physical:  'goals',
+    psych:     'goals',
+    nutrition: 'goals',
+    lifestyle: 'goals',
     physio:    'physio',
   };
 
@@ -223,7 +225,6 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onUpdate={updateAthlete}
             onUpdateRag={updateRag}
             onAddRagEntry={addRagEntry}
-            onSaveQuarterlyReview={saveQuarterlyReview}
             onUpdatePhoto={updatePhoto}
             onAddMaturationEntry={addMaturationEntry}
             onAddMobilityEntry={addMobilityEntry}
@@ -232,15 +233,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onAddNutritionEntry={addNutritionEntry}
             onAddAcsi28Entry={addAcsi28Entry}
             onAddPsychNote={addPsychNote}
-            onSavePsychWorkingOn={savePsychWorkingOn}
-            onSaveNutritionWorkingOn={saveNutritionWorkingOn}
-            onSavePhysicalWorkingOn={savePhysicalWorkingOn}
-            onSaveLifestyleWorkingOn={saveLifestyleWorkingOn}
             onSavePerformanceBrag={savePerformanceBrag}
             onSaveReportMetrics={saveReportMetrics}
-            onAddCheckIn={addCheckIn}
-            onUpdateCheckIn={updateCheckIn}
-            onDeleteCheckIn={deleteCheckIn}
             onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
             onUpdatePhysioEntry={updatePhysioEntry}
             onDeletePhysioEntry={canDelete ? deletePhysioEntry : undefined}

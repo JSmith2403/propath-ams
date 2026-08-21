@@ -21,22 +21,15 @@ function _diag(...args) {
 // "briefly shows slightly stale data" instead of "shows nothing."
 let _athletesCache = null; // Array | null
 
-const EMPTY_WORKING_ON = () => [
-  { title: '', description: '' },
-  { title: '', description: '' },
-  { title: '', description: '' },
-];
-
 const DEFAULT_PHASE2 = () => ({
   maturation: { entries: [] },
   mobility: { entries: {} },
   performance: { entries: {} },
   physio: { entries: [] },
-  physical: { workingOn: EMPTY_WORKING_ON() },
-  lifestyle: { workingOn: EMPTY_WORKING_ON() },
+  physical: {},
+  lifestyle: {},
   performanceBrag: {},
   nutrition: {
-    workingOn: EMPTY_WORKING_ON(),
     entries: {
       screeningNotes: [],
       hydrationNotes: [],
@@ -51,7 +44,6 @@ const DEFAULT_PHASE2 = () => ({
     goalSettingLog: [],
     mentalPerformanceNotes: [],
     generalObservations: [],
-    workingOn: EMPTY_WORKING_ON(),
   },
 });
 
@@ -362,18 +354,6 @@ export function useAthletes({ seedEnabled = true } = {}) {
       ragLog: { ...a.ragLog, [domain]: [entry, ...(a.ragLog?.[domain] || [])] },
     })), [update]);
 
-  const saveQuarterlyReview = useCallback((id, review) =>
-    update(id, a => {
-      const list = a.quarterlyReviews || [];
-      const idx  = list.findIndex(r => r.id === review.id);
-      return {
-        ...a,
-        quarterlyReviews: idx >= 0
-          ? list.map(r => r.id === review.id ? review : r)
-          : [...list, review],
-      };
-    }), [update]);
-
   const updatePhoto = useCallback((id, url) =>
     update(id, a => ({ ...a, photo: url })), [update]);
 
@@ -441,47 +421,6 @@ export function useAthletes({ seedEnabled = true } = {}) {
       },
     })), [p2update]);
 
-  const savePsychWorkingOn = useCallback((id, workingOn) =>
-    p2update(id, p2 => ({
-      ...p2,
-      psych: { ...p2.psych, workingOn },
-    })), [p2update]);
-
-  const saveNutritionWorkingOn = useCallback((id, workingOn) =>
-    p2update(id, p2 => ({
-      ...p2,
-      nutrition: { ...p2.nutrition, workingOn },
-    })), [p2update]);
-
-  const savePhysicalWorkingOn = useCallback((id, workingOn) =>
-    p2update(id, p2 => ({
-      ...p2,
-      physical: { ...(p2.physical || {}), workingOn },
-    })), [p2update]);
-
-  const saveLifestyleWorkingOn = useCallback((id, workingOn) =>
-    p2update(id, p2 => ({
-      ...p2,
-      lifestyle: { ...(p2.lifestyle || {}), workingOn },
-    })), [p2update]);
-
-  const addCheckIn = useCallback((id, entry) =>
-    update(id, a => ({
-      ...a,
-      checkIns: [entry, ...(a.checkIns || [])],
-    })), [update]);
-
-  const updateCheckIn = useCallback((id, entryId, patch) =>
-    update(id, a => ({
-      ...a,
-      checkIns: (a.checkIns || []).map(e => e.id === entryId ? { ...e, ...patch } : e),
-    })), [update]);
-
-  const deleteCheckIn = useCallback((id, entryId) =>
-    update(id, a => ({
-      ...a,
-      checkIns: (a.checkIns || []).filter(e => e.id !== entryId),
-    })), [update]);
 
   const deleteRagEntry = useCallback((id, domain, entryId) =>
     update(id, a => ({
@@ -684,13 +623,11 @@ export function useAthletes({ seedEnabled = true } = {}) {
     // Phase 1
     addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete,
     updateRag, addRagEntry,
-    saveQuarterlyReview, updatePhoto,
-    addCheckIn, updateCheckIn, deleteCheckIn,
+    updatePhoto,
     // Phase 2 — individual
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
     addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
-    savePsychWorkingOn, saveNutritionWorkingOn,
-    savePhysicalWorkingOn, saveLifestyleWorkingOn, savePerformanceBrag, saveReportMetrics,
+    savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     // Delete operations
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,

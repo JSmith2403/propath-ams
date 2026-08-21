@@ -3,6 +3,9 @@ import { Dumbbell, TrendingUp, Apple, BookOpen } from 'lucide-react';
 // Resources isn't a top-level tab — it's a section at the bottom of
 // Training. The button here just signals 'scroll me down to it' (handled
 // by the parent), so we never mark it as active.
+//
+// Progress hosts both the quarterly report (once the coach sends it)
+// and testing data — there's no separate Report tab, see ProgressTab.jsx.
 const TABS = [
   { id: 'train',     label: 'Training',  icon: Dumbbell   },
   { id: 'progress',  label: 'Progress',  icon: TrendingUp },

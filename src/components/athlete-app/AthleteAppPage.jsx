@@ -11,8 +11,8 @@ import NotificationPrompt from './NotificationPrompt';
 // Wellness lives on the Training screen, Resources lives at the bottom
 // of the Training screen as a section (the bottom-nav 'Resources' button
 // scroll-shortcuts to it). Readiness is deferred for v1.
-const ProgressTab   = lazy(() => import('./ProgressTab'));
-const NutritionTab  = lazy(() => import('./NutritionTab'));
+const ProgressTab     = lazy(() => import('./ProgressTab'));
+const NutritionTab    = lazy(() => import('./NutritionTab'));
 
 function Loading() {
   return (

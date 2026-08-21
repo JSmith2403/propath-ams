@@ -57,16 +57,18 @@ function calculateAge(dob) {
   return age;
 }
 
-// Days since the athlete's most recent Assessment or Check-in across every
-// note location on the profile (pillar notes + physio + Overview check-ins).
-// Observation entries do not count from any source.
+// Days since the athlete's most recent note across every note location on
+// the profile (Goals & Development notes + physio assessments + any
+// historical Overview check-ins).
 function daysSinceLastCheckIn(athlete) {
   const timestamps = [];
-  const counts = (t) => t === 'Assessment' || t === 'Check-in';
+  const countsPhysio = (t) => t === 'Assessment' || t === 'Check-in';
 
+  // Goals & Development notes don't carry a meaningful entry-type
+  // distinction any more — any logged note counts toward freshness.
   ['physical', 'psych', 'nutrition', 'lifestyle'].forEach(domain => {
     (athlete?.ragLog?.[domain] || []).forEach(e => {
-      if (counts(e.entryType) && e.timestamp) {
+      if (e.timestamp) {
         const t = new Date(e.timestamp).getTime();
         if (Number.isFinite(t)) timestamps.push(t);
       }
@@ -74,15 +76,17 @@ function daysSinceLastCheckIn(athlete) {
   });
 
   (athlete?.phase2?.physio?.entries || []).forEach(e => {
-    if (counts(e.noteType) && e.date) {
+    if (countsPhysio(e.noteType) && e.date) {
       const t = new Date(e.date).getTime();
       if (Number.isFinite(t)) timestamps.push(t);
     }
   });
 
+  // Historical only — the Overview check-in log has been retired in
+  // favour of Goals & Development's unified notes, so no new entries
+  // land here, but past ones still count toward "last contact" freshness.
   (athlete?.checkIns || []).forEach(e => {
-    const type = e.noteType ?? 'Check-in';
-    if (counts(type) && e.date) {
+    if (e.date) {
       const t = new Date(e.date).getTime();
       if (Number.isFinite(t)) timestamps.push(t);
     }

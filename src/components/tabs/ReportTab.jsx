@@ -5,6 +5,8 @@ import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { usePerformanceResults } from '../../hooks/usePerformanceResults';
+import { useDevelopmentPlans } from '../../hooks/useDevelopmentPlans';
+import { DOMAIN_META, TIER_META } from '../../utils/goalTree';
 import { renderBold } from '../../utils/renderBold';
 import logoPath from '../../assets/Propath_Primary Logo_Black.png';
 
@@ -347,34 +349,31 @@ function PerformanceSection({ performanceEntries, bragRatings, onSaveBrag, custo
 }
 
 // ─── Section 7: Areas to Address ─────────────────────────────────────────────
+// Pulls the current quarter's short-term/process goals per domain from
+// the Goals & Development tab — this used to read a separate "Working
+// On" blob per pillar, which is now retired in favour of the goal tree.
 
-const PILLARS = [
-  { key: 'physical',  label: 'Physical',     workingOnPath: p2 => p2?.physical?.workingOn },
-  { key: 'psych',     label: 'Psychological', workingOnPath: p2 => p2?.psych?.workingOn },
-  { key: 'nutrition', label: 'Nutritional',  workingOnPath: p2 => p2?.nutrition?.workingOn },
-  { key: 'lifestyle', label: 'Lifestyle',    workingOnPath: p2 => p2?.lifestyle?.workingOn },
-];
+function AreasToAddressSection({ plans, goalsForPlan }) {
+  const currentPlan = plans[0]; // ordered year/quarter desc
+  const goals = currentPlan ? goalsForPlan(currentPlan.id) : [];
 
-function AreasToAddressSection({ phase2 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {PILLARS.map(({ key, label, workingOnPath }) => {
-        const items = (workingOnPath(phase2) || []).filter(c => c.title || c.description);
+      {Object.entries(DOMAIN_META).map(([key, meta]) => {
+        const items = goals.filter(g =>
+          g.domain === key && g.owner === 'coach' && (g.tier === 'short' || g.tier === 'process')
+        );
         return (
           <div key={key} className="border border-gray-100 rounded-xl p-5">
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-600 mb-3 pb-2 border-b border-gray-50">
-              {label}
+              {meta.label}
             </h3>
             {items.length > 0 ? (
               <div className="space-y-3">
-                {items.map((card, i) => (
-                  <div key={i}>
-                    {card.title && (
-                      <p className="text-xs font-semibold text-gray-800 mb-0.5">{card.title}</p>
-                    )}
-                    {card.description && (
-                      <p className="text-xs text-gray-500 leading-relaxed">{card.description}</p>
-                    )}
+                {items.map(g => (
+                  <div key={g.id}>
+                    <p className="text-xs font-semibold text-gray-800 mb-0.5">{TIER_META[g.tier].label}</p>
+                    <p className="text-xs text-gray-500 leading-relaxed">{g.description}</p>
                   </div>
                 ))}
               </div>
@@ -393,6 +392,7 @@ function AreasToAddressSection({ phase2 }) {
 export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   const { customMetrics } = useCustomMetrics();
   const { entries: performanceResults } = usePerformanceResults(athlete?.id);
+  const { plans: developmentPlans, goalsForPlan } = useDevelopmentPlans(athlete?.id);
   const handlePrint = () => {
     const canvases = document.querySelectorAll('#report-content canvas');
     const restorations = [];
@@ -642,7 +642,7 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
         {/* ── Page 5 — Areas to Address ───────────────────────────────── */}
         <section className="report-page report-page-break">
           <Section title="Areas to Address">
-            <AreasToAddressSection phase2={phase2} />
+            <AreasToAddressSection plans={developmentPlans} goalsForPlan={goalsForPlan} />
           </Section>
         </section>
 

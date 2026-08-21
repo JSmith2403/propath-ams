@@ -5,12 +5,6 @@ import { ACSI_SUBSCALES } from '../../data/referenceData';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
-const EMPTY_CARDS = [
-  { title: '', description: '' },
-  { title: '', description: '' },
-  { title: '', description: '' },
-];
-
 // ─── ACSI-28 entry form ───────────────────────────────────────────────────────
 function AcsiForm({ onSave, onCancel }) {
   const [date, setDate]     = useState(TODAY);
@@ -83,100 +77,15 @@ function AcsiForm({ onSave, onCancel }) {
   );
 }
 
-// ─── Currently Working On cards ───────────────────────────────────────────────
-function WorkingOnCard({ card, onChange, onSave, isDirty }) {
-  return (
-    <div
-      className="bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 min-h-[180px]"
-      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
-    >
-      <input
-        type="text"
-        value={card.title}
-        onChange={e => onChange('title', e.target.value)}
-        onBlur={onSave}
-        placeholder="Focus area…"
-        className="text-sm font-semibold text-gray-900 w-full bg-transparent border-b border-transparent hover:border-gray-200 focus:border-gray-300 focus:outline-none transition-colors placeholder-gray-300"
-      />
-      <textarea
-        rows={4}
-        value={card.description}
-        onChange={e => onChange('description', e.target.value)}
-        onBlur={onSave}
-        placeholder="Describe current focus, targets, or notes…"
-        className="flex-1 text-sm text-gray-600 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-300 rounded px-1 py-1 focus:outline-none transition-colors resize-none placeholder-gray-300 leading-relaxed"
-      />
-      {isDirty && (
-        <button
-          onClick={onSave}
-          className="self-end text-xs font-semibold px-3 py-1.5 rounded hover:opacity-90 text-white transition-opacity"
-          style={{ backgroundColor: '#A58D69' }}
-        >
-          Save
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ─── Main export ──────────────────────────────────────────────────────────────
-// `section` prop controls which region to render:
-//   'working-on' — only the three Currently Working On cards
-//   'acsi'       — only the ACSI-28 block
-//   'full'       — both (backwards compat)
-export default function PsychTab({
-  acsi28 = [],
-  onAddAcsi28,
-  workingOn: initialWorkingOn,
-  onSaveWorkingOn,
-  section = 'full',
-}) {
+// RAG status/notes/"Working On" moved to Goals & Development — this tab
+// is now just the ACSI-28 assessment log.
+export default function PsychTab({ acsi28 = [], onAddAcsi28 }) {
   const [showAcsiForm, setShowAcsiForm] = useState(false);
   const [compareDate, setCompareDate]   = useState('');
 
-  // Local editable copy of the 3 working-on cards
-  const [cards, setCards] = useState(() => {
-    const src = initialWorkingOn || [];
-    return [0, 1, 2].map(i => ({
-      title:       src[i]?.title       || '',
-      description: src[i]?.description || '',
-    }));
-  });
-  // Track which cards have unsaved changes (relative to what was last persisted)
-  const [savedCards, setSavedCards] = useState(() => cards.map(c => ({ ...c })));
-
-  const updateCard = (i, field, val) =>
-    setCards(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
-
-  const saveCard = () => {
-    const updated = cards; // already updated in state
-    onSaveWorkingOn(updated);
-    setSavedCards(updated.map(c => ({ ...c })));
-  };
-
-  const isCardDirty = (i) =>
-    cards[i].title !== savedCards[i].title ||
-    cards[i].description !== savedCards[i].description;
-
   const sortedAcsi    = [...acsi28].sort((a, b) => new Date(b.date) - new Date(a.date));
   const comparableDates = sortedAcsi.slice(1).map(e => e.date);
-
-  const workingOnBlock = (
-    <div>
-      <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Currently Working On</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {cards.map((card, i) => (
-          <WorkingOnCard
-            key={i}
-            card={card}
-            onChange={(field, val) => updateCard(i, field, val)}
-            onSave={saveCard}
-            isDirty={isCardDirty(i)}
-          />
-        ))}
-      </div>
-    </div>
-  );
 
   const acsiBlock = (
     <div>
@@ -239,13 +148,5 @@ export default function PsychTab({
     </div>
   );
 
-  if (section === 'working-on') return workingOnBlock;
-  if (section === 'acsi')       return acsiBlock;
-
-  return (
-    <div className="space-y-8">
-      {acsiBlock}
-      {workingOnBlock}
-    </div>
-  );
+  return acsiBlock;
 }
