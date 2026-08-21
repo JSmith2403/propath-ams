@@ -87,6 +87,74 @@ function uid() {
   return crypto.randomUUID();
 }
 
+// ── performance_test_results dual-write ─────────────────────────────
+// Performance entries still live primarily in phase2.performance.entries
+// (the source of truth for the blob-based UI paths below), but every
+// write here is mirrored into the normalized performance_test_results
+// table so the athlete app (anon role, no access to the blob) can read
+// individual results for its own Progress tab. Matched on
+// (athlete_id, metric_key, legacy_entry_id) — the same entry.id these
+// blob entries have always carried — so upserts are idempotent and a
+// later cleanup pass can drop the blob write without touching this one.
+function toDateOnly(raw) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+async function upsertPerformanceResultRow(athleteId, metricKey, entry) {
+  const date = toDateOnly(entry?.date);
+  if (!date || !entry?.id) return;
+  const { error } = await supabase
+    .from('performance_test_results')
+    .upsert({
+      athlete_id: athleteId,
+      metric_key: metricKey,
+      date,
+      value: entry.value ?? null,
+      value_left: entry.left ?? null,
+      value_right: entry.right ?? null,
+      session_id: entry.sessionId ?? null,
+      legacy_entry_id: entry.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'athlete_id,metric_key,legacy_entry_id' });
+  if (error) console.error('[useAthletes] performance_test_results upsert failed', error);
+}
+
+// Mirrors stripSessionEntries + rebuild: this session's old rows for the
+// athlete are cleared first, then the fresh set (if any) is inserted —
+// so a corrected/cleared session value doesn't leave a ghost row behind.
+async function syncPerformanceResultsForSession(athleteId, sessionId, entries) {
+  const { error: delErr } = await supabase
+    .from('performance_test_results')
+    .delete()
+    .eq('athlete_id', athleteId)
+    .eq('session_id', sessionId);
+  if (delErr) {
+    console.error('[useAthletes] performance_test_results session cleanup failed', delErr);
+    return;
+  }
+  const rows = entries
+    .map(({ metricKey, entry }) => {
+      const date = toDateOnly(entry.date);
+      if (!date) return null;
+      return {
+        athlete_id: athleteId,
+        metric_key: metricKey,
+        date,
+        value: entry.value ?? null,
+        value_left: entry.left ?? null,
+        value_right: entry.right ?? null,
+        session_id: sessionId,
+        legacy_entry_id: entry.id,
+      };
+    })
+    .filter(Boolean);
+  if (!rows.length) return;
+  const { error: insErr } = await supabase.from('performance_test_results').insert(rows);
+  if (insErr) console.error('[useAthletes] performance_test_results session insert failed', insErr);
+}
+
 async function persistAthlete(athlete) {
   const { error } = await supabase
     .from('athletes')
@@ -442,12 +510,16 @@ export function useAthletes({ seedEnabled = true } = {}) {
       performanceBrag: { ...(p2.performanceBrag || {}), [metricKey]: color },
     })), [p2update]);
 
-  // Replace the list of metric keys to include in the Performance Testing
-  // section of the report (max 8 enforced at the caller).
+  // Replace the list of metric keys pinned to the athlete's own Progress
+  // tab in the athlete app (max 8 enforced at the caller). Was previously
+  // "include in report" (phase2.reportMetrics) — repurposed rather than
+  // added alongside, so it's stored under the new key going forward.
+  // ReportTab's Performance section falls back to BRAG-rated metrics
+  // when this is empty, so retiring the old meaning doesn't break it.
   const saveReportMetrics = useCallback((id, metricKeys) =>
     p2update(id, p2 => ({
       ...p2,
-      reportMetrics: Array.isArray(metricKeys) ? metricKeys : [],
+      progressMetrics: Array.isArray(metricKeys) ? metricKeys : [],
     })), [p2update]);
 
   const updateLatestEntry = useCallback((id, bucket, metricKey, field, value) =>
@@ -456,6 +528,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
         const list = [...(p2.performance?.entries[metricKey] || [])];
         if (list.length === 0) return p2;
         list[0] = { ...list[0], [field]: value };
+        upsertPerformanceResultRow(id, metricKey, list[0]);
         return { ...p2, performance: { entries: { ...p2.performance.entries, [metricKey]: list } } };
       }
       if (bucket === 'mobility') {
@@ -480,6 +553,8 @@ export function useAthletes({ seedEnabled = true } = {}) {
         const list = (p2.performance?.entries[metricKey] || []).map(
           e => e.id === entryId ? { ...e, ...patch } : e
         );
+        const patched = list.find(e => e.id === entryId);
+        if (patched) upsertPerformanceResultRow(athleteId, metricKey, patched);
         return { ...p2, performance: { entries: { ...p2.performance.entries, [metricKey]: list } } };
       }
       if (bucket === 'mobility') {
@@ -545,6 +620,8 @@ export function useAthletes({ seedEnabled = true } = {}) {
     const allMetricDefs = { ...METRIC_MAP, ...customMetrics };
 
     Object.entries(data).forEach(([athleteId, cellData]) => {
+      const touchedPerfEntries = []; // [{ metricKey, entry }] — dual-write to performance_test_results
+
       p2update(athleteId, p2 => {
         const cleaned    = stripSessionEntries(p2, sessionId);
         const perf       = { ...cleaned.performance?.entries };
@@ -560,12 +637,14 @@ export function useAthletes({ seedEnabled = true } = {}) {
           if (!syncTarget) {
             const entry = buildSessionEntry(metricDef, cell, date, sessionId);
             perf[metricKey] = [entry, ...(perf[metricKey] || [])];
+            touchedPerfEntries.push({ metricKey, entry });
             return;
           }
 
           if (syncTarget.type === 'performance') {
             const entry = buildSessionEntry(metricDef, cell, date, sessionId);
             perf[syncTarget.key] = [entry, ...(perf[syncTarget.key] || [])];
+            touchedPerfEntries.push({ metricKey: syncTarget.key, entry });
           } else if (syncTarget.type === 'mobility') {
             const entry = buildSessionEntry(metricDef, cell, date, sessionId);
             mob[syncTarget.key] = [entry, ...(mob[syncTarget.key] || [])];
@@ -586,6 +665,8 @@ export function useAthletes({ seedEnabled = true } = {}) {
           maturation:  { entries: matEntries },
         };
       });
+
+      syncPerformanceResultsForSession(athleteId, sessionId, touchedPerfEntries);
     });
   }, [p2update]);
 

@@ -2,7 +2,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import {
   ComposedChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { X } from 'lucide-react';
+import { X, GripVertical } from 'lucide-react';
 import { METRIC_MAP, SPECIAL_METRICS, LABEL_OVERRIDES, DUAL_LINE_METRICS, LOWER_IS_BETTER } from '../../data/sessionMetrics';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
@@ -63,8 +63,9 @@ function ResizeHandle({ onPointerDown }) {
 export default function KpiTile({
   metricKey, span = 1, entries, matEntries, customMetrics,
   valdEntriesFor, valdDefFor,
-  includedInReport, onToggleReport, toggleWarning,
+  shownOnProgress, onToggleProgress, toggleWarning,
   onRemove, onResize,
+  onDragStart, onDragEnter, onDragEnd, isDragging,
 }) {
   const isVALD = metricKey?.startsWith?.('vald:');
   const sourceKey  = SPECIAL_METRICS[metricKey]?.sourceKey ?? metricKey;
@@ -121,9 +122,20 @@ export default function KpiTile({
 
   return (
     <div
-      className={`group relative bg-white rounded-xl border border-gray-100 p-4 ${spanClass}`}
-      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={e => e.preventDefault()}
+      onDragEnd={onDragEnd}
+      className={`group relative bg-white rounded-xl border border-gray-100 p-4 h-full flex flex-col ${spanClass}`}
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)', opacity: isDragging ? 0.4 : 1, cursor: onDragStart ? 'grab' : 'default' }}
     >
+      {onDragStart && (
+        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-60 transition-opacity text-gray-300 pointer-events-none">
+          <GripVertical size={13} />
+        </div>
+      )}
+
       {onRemove && (
         <button onClick={onRemove}
           className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-300 hover:text-red-400 transition-opacity">
@@ -131,7 +143,7 @@ export default function KpiTile({
         </button>
       )}
 
-      <div className="mb-2 pr-5">
+      <div className="mb-2 pr-5 shrink-0">
         <p className="text-xs font-semibold text-gray-700 truncate">{label}</p>
         {(testLabel || chartData) && (
           <p className="text-[10px] text-gray-400">
@@ -141,13 +153,15 @@ export default function KpiTile({
       </div>
 
       {!chartData ? (
-        <div className="flex items-center justify-center py-8">
+        <div className="flex-1 flex items-center justify-center">
           <p className="text-xs text-gray-300 italic">No data recorded yet.</p>
         </div>
       ) : span === 1 ? (
-        // ── 1 column: dial ──────────────────────────────────────────
+        // ── 1 column: dial — centered in whatever height CSS grid
+        // stretches this tile to, so it doesn't sit stranded at the
+        // top when it shares a row with a taller multi-column tile.
         isDualLine ? (
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex-1 flex flex-col items-center justify-center gap-1">
             <Ring
               pct={chartData.lsi != null ? chartData.lsi / 100 : null}
               color={chartData.lsi != null ? lsiColour(chartData.lsi) : '#d1d5db'}
@@ -156,7 +170,7 @@ export default function KpiTile({
             />
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex-1 flex flex-col items-center justify-center gap-1">
             <Ring
               pct={
                 chartData.chartData.length >= 3
@@ -273,22 +287,24 @@ export default function KpiTile({
         </>
       )}
 
-      {onToggleReport && (
+      {onToggleProgress && (
         <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-gray-100">
           {toggleWarning && (
             <span className="text-xs mr-auto" style={{ color: '#b91c1c', fontSize: 10 }}>{toggleWarning}</span>
           )}
-          <span className="text-xs" style={{ color: '#6b7280', fontSize: 10 }}>Include in Report</span>
+          <span className="text-xs" style={{ color: '#6b7280', fontSize: 10 }} title="Shows this metric's progress live on the athlete's own app">
+            Show on athlete progress
+          </span>
           <button
             type="button"
             role="switch"
-            aria-checked={!!includedInReport}
-            onClick={() => onToggleReport(metricKey)}
+            aria-checked={!!shownOnProgress}
+            onClick={() => onToggleProgress(metricKey)}
             className="relative inline-flex items-center rounded-full transition-colors shrink-0"
-            style={{ height: 14, width: 26, backgroundColor: includedInReport ? TEAL : '#d1d5db' }}
+            style={{ height: 14, width: 26, backgroundColor: shownOnProgress ? TEAL : '#d1d5db' }}
           >
             <span className="inline-block rounded-full bg-white shadow transition-transform"
-              style={{ height: 10, width: 10, transform: includedInReport ? 'translateX(14px)' : 'translateX(2px)' }} />
+              style={{ height: 10, width: 10, transform: shownOnProgress ? 'translateX(14px)' : 'translateX(2px)' }} />
           </button>
         </div>
       )}

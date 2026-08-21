@@ -4,6 +4,7 @@ import InitialsAvatar from '../InitialsAvatar';
 import { COHORT_CONFIG } from '../../data/athletes';
 import { METRIC_MAP } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
+import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { renderBold } from '../../utils/renderBold';
 import logoPath from '../../assets/Propath_Primary Logo_Black.png';
 
@@ -391,6 +392,7 @@ function AreasToAddressSection({ phase2 }) {
 
 export default function ReportTab({ athlete, phase2, onSaveBrag }) {
   const { customMetrics } = useCustomMetrics();
+  const { entries: performanceResults } = usePerformanceResults(athlete?.id);
   const handlePrint = () => {
     const canvases = document.querySelectorAll('#report-content canvas');
     const restorations = [];
@@ -628,11 +630,11 @@ export default function ReportTab({ athlete, phase2, onSaveBrag }) {
           )}
           <Section title="Performance Testing">
             <PerformanceSection
-              performanceEntries={phase2?.performance?.entries || {}}
+              performanceEntries={performanceResults}
               bragRatings={phase2?.performanceBrag || {}}
               onSaveBrag={onSaveBrag}
               customMetrics={customMetrics}
-              reportMetrics={phase2?.reportMetrics || []}
+              reportMetrics={phase2?.progressMetrics || phase2?.reportMetrics || []}
             />
           </Section>
         </section>

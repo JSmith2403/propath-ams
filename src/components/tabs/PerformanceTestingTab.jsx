@@ -9,6 +9,7 @@ import { METRIC_CATEGORIES, METRIC_MAP, LABEL_OVERRIDES } from '../../data/sessi
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useKpiBoard } from '../../hooks/useKpiBoard';
+import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { extractScalar } from '../../utils/kpiStats';
 import KpiTile from '../kpi/KpiTile';
 import AddMetricTile from '../kpi/AddMetricTile';
@@ -235,7 +236,6 @@ function DiagnosticQuadrant({ athlete, entries, matEntries, thresholds, onSaveTh
 
 export default function PerformanceTestingTab({
   athlete,
-  entries = {},
   maturationEntries = [],
   bragRatings = {},
   reportMetrics = [],
@@ -244,6 +244,10 @@ export default function PerformanceTestingTab({
 }) {
   const { customMetrics } = useCustomMetrics();
   const athleteId = athlete?.id || '';
+
+  // Normalized performance test results (performance_test_results table) —
+  // replaces the old phase2.performance.entries blob as this tab's source.
+  const { entries } = usePerformanceResults(athleteId);
 
   // VALD imports for this athlete — surfaced in the KPI metric picker
   // alongside manual + custom metrics. Lets coaches chart any imported
@@ -254,7 +258,48 @@ export default function PerformanceTestingTab({
 
   // KPI board — server-synced pinned metrics (span 1-4), replacing the old
   // localStorage-only fixed-10-slot KPI Dashboard + Additional Metrics.
-  const { board, addMetric, removeMetric, resizeMetric } = useKpiBoard(athleteId);
+  const { board, addMetric, removeMetric, resizeMetric, reorderBoard } = useKpiBoard(athleteId);
+
+  // Drag-to-reorder — displayOrder holds a live preview (metric_key
+  // array) while a drag is in progress; reorderBoard only persists once
+  // on drag end, so hovering across several tiles mid-drag doesn't fire
+  // a write per tile.
+  const [dragKey, setDragKey] = useState(null);
+  const [displayOrder, setDisplayOrder] = useState(null);
+  const boardKeys = board.map(b => b.metric_key);
+  const orderedBoard = (displayOrder || boardKeys)
+    .map(k => board.find(b => b.metric_key === k))
+    .filter(Boolean);
+
+  const handleDragStart = useCallback((key) => {
+    setDragKey(key);
+    setDisplayOrder(boardKeys);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board]);
+
+  const handleDragEnter = useCallback((overKey) => {
+    setDragKey(currentDragKey => {
+      if (!currentDragKey || currentDragKey === overKey) return currentDragKey;
+      setDisplayOrder(prev => {
+        const cur = prev || boardKeys;
+        const from = cur.indexOf(currentDragKey);
+        const to = cur.indexOf(overKey);
+        if (from === -1 || to === -1) return cur;
+        const next = [...cur];
+        next.splice(from, 1);
+        next.splice(to, 0, currentDragKey);
+        return next;
+      });
+      return currentDragKey;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board]);
+
+  const handleDragEnd = useCallback(() => {
+    if (displayOrder) reorderBoard(displayOrder);
+    setDragKey(null);
+    setDisplayOrder(null);
+  }, [displayOrder, reorderBoard]);
 
   const persisted = useMemo(() => loadPerf(athleteId), [athleteId]);
   const defaultThresh = useMemo(() => getDefaultThresholds(athlete), [athlete]);
@@ -263,24 +308,27 @@ export default function PerformanceTestingTab({
 
   const [localBrag, setLocalBrag] = useState(() => ({ ...bragRatings }));
 
-  // Report-inclusion selection (max 8). Kept as a Set for cheap lookups.
-  const [reportSet, setReportSet] = useState(() => new Set(reportMetrics || []));
-  const [reportWarning, setReportWarning] = useState(null);
+  // Metrics pinned to the athlete's own Progress tab (max 8). Kept as a
+  // Set for cheap lookups. Still passed to the parent via
+  // onSaveReportMetrics/reportMetrics — that prop plumbing wasn't
+  // renamed, only what it's used for (see useAthletes.js saveReportMetrics).
+  const [progressSet, setProgressSet] = useState(() => new Set(reportMetrics || []));
+  const [progressWarning, setProgressWarning] = useState(null);
 
   // Sync local set when the prop changes (e.g. after Supabase load)
   useEffect(() => {
-    setReportSet(new Set(reportMetrics || []));
+    setProgressSet(new Set(reportMetrics || []));
   }, [reportMetrics.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleReportMetric = useCallback((key) => {
-    setReportSet(prev => {
+  const toggleProgressMetric = useCallback((key) => {
+    setProgressSet(prev => {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
       } else {
         if (next.size >= 8) {
-          setReportWarning('Maximum 8 metrics can be included in the report');
-          setTimeout(() => setReportWarning(null), 3000);
+          setProgressWarning('Maximum 8 metrics can be shown on the athlete\'s progress tab');
+          setTimeout(() => setProgressWarning(null), 3000);
           return prev;
         }
         next.add(key);
@@ -324,8 +372,8 @@ export default function PerformanceTestingTab({
       {/* ── Section 2: KPI Board ──────────────────────────────────── */}
       <div>
         <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">KPI Dashboard</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-board>
-          {board.map(row => (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 items-stretch" data-board>
+          {orderedBoard.map(row => (
             <KpiTile
               key={row.id}
               metricKey={row.metric_key}
@@ -336,11 +384,15 @@ export default function PerformanceTestingTab({
               valdMetrics={valdMetrics}
               valdEntriesFor={valdEntriesFor}
               valdDefFor={valdDefFor}
-              includedInReport={reportSet.has(row.metric_key)}
-              onToggleReport={toggleReportMetric}
-              toggleWarning={reportWarning && !reportSet.has(row.metric_key) ? reportWarning : null}
+              shownOnProgress={progressSet.has(row.metric_key)}
+              onToggleProgress={toggleProgressMetric}
+              toggleWarning={progressWarning && !progressSet.has(row.metric_key) ? progressWarning : null}
               onRemove={() => removeMetric(row.metric_key)}
               onResize={newSpan => resizeMetric(row.metric_key, newSpan)}
+              onDragStart={() => handleDragStart(row.metric_key)}
+              onDragEnter={() => handleDragEnter(row.metric_key)}
+              onDragEnd={handleDragEnd}
+              isDragging={dragKey === row.metric_key}
             />
           ))}
           <AddMetricTile

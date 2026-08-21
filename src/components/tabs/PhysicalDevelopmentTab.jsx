@@ -107,10 +107,9 @@ export default function PhysicalDevelopmentTab({
         {subTab === 'testing' && (
           <PerformanceTestingTab
             athlete={athlete}
-            entries={phase2.performance?.entries || {}}
             maturationEntries={phase2.maturation?.entries || []}
             bragRatings={phase2.performanceBrag || {}}
-            reportMetrics={phase2.reportMetrics || []}
+            reportMetrics={phase2.progressMetrics || phase2.reportMetrics || []}
             onSaveBrag={onSavePerformanceBrag}
             onSaveReportMetrics={onSaveReportMetrics}
             onAddEntry={onAddPerformanceEntry}

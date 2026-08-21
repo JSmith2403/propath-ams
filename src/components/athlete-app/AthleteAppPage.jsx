@@ -85,6 +85,8 @@ export default function AthleteAppPage() {
         // Null when wellness monitoring is toggled off for this athlete —
         // gates the mandatory daily check-in below.
         wellnessToken: tokenRow.wellness_token || null,
+        // Metric keys the coach has pinned to this athlete's Progress tab.
+        progressMetrics: Array.isArray(tokenRow.progress_metrics) ? tokenRow.progress_metrics : [],
       });
       // Remember this token so future PWA launches (start_url is "/")
       // can redirect the user back to their athlete app instead of
@@ -152,7 +154,9 @@ export default function AthleteAppPage() {
             />
           )}
           <Suspense fallback={<Loading />}>
-            {activeTab === 'progress'  && <ProgressTab />}
+            {activeTab === 'progress'  && (
+              <ProgressTab athleteId={athlete.id} progressMetrics={athlete.progressMetrics} />
+            )}
             {activeTab === 'nutrition' && <NutritionTab athleteId={athlete.id} />}
           </Suspense>
         </main>
