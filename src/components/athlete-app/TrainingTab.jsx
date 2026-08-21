@@ -5,6 +5,7 @@ import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import { getDailyQuote } from '../../utils/dailyQuote';
 import SessionCard from './SessionCard';
 import WellnessInline from './WellnessInline';
+import NutritionSummaryCard from './NutritionSummaryCard';
 
 // Lazy splits — none of these render on the athlete's first paint.
 //   SessionLogger     → only when they tap into a session.
@@ -32,7 +33,7 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-export default function TrainingTab({ athleteId, athleteName, scrollToResourcesNonce = 0 }) {
+export default function TrainingTab({ athleteId, athleteName, scrollToResourcesNonce = 0, onOpenNutrition }) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedISO, setSelectedISO] = useState(toISO(today));
@@ -223,6 +224,10 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
 
       {/* ── 3. Wellness CTA ─────────────────────────────────────────────────── */}
       <WellnessInline athleteId={athleteId} dateISO={selectedISO} />
+
+      {/* ── Nutrition shortcut — only ever shows today's status, so it's
+            skipped when looking at a different day in the week strip. */}
+      {isToday && <NutritionSummaryCard athleteId={athleteId} onOpen={onOpenNutrition} />}
 
       {/* ── 4. Session list ─────────────────────────────────────────────────── */}
       {loading ? (

@@ -151,6 +151,7 @@ export default function AthleteAppPage() {
               athleteId={athlete.id}
               athleteName={athlete.name}
               scrollToResourcesNonce={scrollToResourcesNonce}
+              onOpenNutrition={() => setActive('nutrition')}
             />
           )}
           <Suspense fallback={<Loading />}>
