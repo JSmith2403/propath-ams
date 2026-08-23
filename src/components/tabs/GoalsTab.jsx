@@ -491,7 +491,7 @@ export default function GoalsTab({
           athlete_id: athleteId,
           title: 'Your quarterly report is ready',
           body: `Your ${plan.period_label} report is now available on your Progress tab.`,
-          url: athleteToken?.token ? `/athlete/${athleteToken.token}` : '/',
+          url: athleteToken?.token ? `/athlete/${athleteToken.token}?tab=progress` : '/',
         }),
       });
     } catch (e) {
@@ -625,70 +625,9 @@ export default function GoalsTab({
         </button>
       </div>
 
-      {/* Unified notes log — all domains, filterable */}
-      <div className="bg-white rounded-lg border border-gray-100 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-            Notes Log <span className="text-gray-400 font-normal normal-case">({allNotes.length})</span>
-          </h2>
-          <button onClick={() => setShowAddNote(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 text-white rounded-lg" style={{ backgroundColor: GOLD }}>
-            <Plus size={12} /> Add note
-          </button>
-        </div>
-
-        <div className="flex gap-1 border-b border-gray-100 mb-4">
-          {['all', ...Object.keys(DOMAIN_META)].map(key => (
-            <button key={key} onClick={() => setNoteFilter(key)}
-              className="px-3 py-2 text-xs font-semibold border-b-2 transition-colors"
-              style={{ color: noteFilter === key ? GOLD : '#6b7280', borderColor: noteFilter === key ? GOLD : 'transparent' }}>
-              {key === 'all' ? 'All' : DOMAIN_META[key].label}
-            </button>
-          ))}
-        </div>
-
-        {recentNotes.length === 0 ? (
-          <p className="text-xs text-gray-300 py-6 text-center">No notes yet. Add one using the button above.</p>
-        ) : (
-          <div className="space-y-1">
-            {recentNotes.map(entry => {
-              const cfg = RAG_META[entry.status] || RAG_META.grey;
-              const isHighlighted = highlightEntry?.domain === entry.domain && highlightEntry?.entryId === entry.id;
-              return (
-                <div key={entry.id} id={`entry-${entry.id}`}
-                  className="group flex gap-3 border-b border-gray-50 last:border-0 rounded"
-                  style={{ padding: '12px 8px', backgroundColor: isHighlighted ? 'rgba(165,141,105,0.15)' : 'transparent' }}>
-                  <div className="pt-0.5 shrink-0">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-xs font-semibold text-gray-700">{entry.staff}</span>
-                      {noteFilter === 'all' && (
-                        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{DOMAIN_META[entry.domain]?.label}</span>
-                      )}
-                      <span className="text-xs text-gray-400 ml-auto">{formatTimestamp(entry.timestamp)}</span>
-                    </div>
-                    {entry.note
-                      ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note}</p>
-                      : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
-                  </div>
-                  <button
-                    onClick={() => { if (window.confirm('Delete this entry? This cannot be undone.')) onDeleteRagEntry?.(entry.domain, entry.id); }}
-                    className="shrink-0 self-start mt-0.5 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <p className="text-xs text-gray-400 text-center pt-3 mt-2 border-t border-gray-50">
-          Notes older than 4 months are hidden here — use the domain filters above to narrow down what you're looking for.
-        </p>
-      </div>
-
-      {/* Review meta / close */}
+      {/* Review meta / close — sits right below the Generate button so
+          the drafted narrative is immediately visible, not buried below
+          the notes log. */}
       {plan && (
         <div className="bg-white rounded-lg border border-gray-100 p-4 space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -780,6 +719,69 @@ export default function GoalsTab({
           )}
         </div>
       )}
+
+      {/* Unified notes log — all domains, filterable */}
+      <div className="bg-white rounded-lg border border-gray-100 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+            Notes Log <span className="text-gray-400 font-normal normal-case">({allNotes.length})</span>
+          </h2>
+          <button onClick={() => setShowAddNote(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 text-white rounded-lg" style={{ backgroundColor: GOLD }}>
+            <Plus size={12} /> Add note
+          </button>
+        </div>
+
+        <div className="flex gap-1 border-b border-gray-100 mb-4">
+          {['all', ...Object.keys(DOMAIN_META)].map(key => (
+            <button key={key} onClick={() => setNoteFilter(key)}
+              className="px-3 py-2 text-xs font-semibold border-b-2 transition-colors"
+              style={{ color: noteFilter === key ? GOLD : '#6b7280', borderColor: noteFilter === key ? GOLD : 'transparent' }}>
+              {key === 'all' ? 'All' : DOMAIN_META[key].label}
+            </button>
+          ))}
+        </div>
+
+        {recentNotes.length === 0 ? (
+          <p className="text-xs text-gray-300 py-6 text-center">No notes yet. Add one using the button above.</p>
+        ) : (
+          <div className="space-y-1">
+            {recentNotes.map(entry => {
+              const cfg = RAG_META[entry.status] || RAG_META.grey;
+              const isHighlighted = highlightEntry?.domain === entry.domain && highlightEntry?.entryId === entry.id;
+              return (
+                <div key={entry.id} id={`entry-${entry.id}`}
+                  className="group flex gap-3 border-b border-gray-50 last:border-0 rounded"
+                  style={{ padding: '12px 8px', backgroundColor: isHighlighted ? 'rgba(165,141,105,0.15)' : 'transparent' }}>
+                  <div className="pt-0.5 shrink-0">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-xs font-semibold text-gray-700">{entry.staff}</span>
+                      {noteFilter === 'all' && (
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{DOMAIN_META[entry.domain]?.label}</span>
+                      )}
+                      <span className="text-xs text-gray-400 ml-auto">{formatTimestamp(entry.timestamp)}</span>
+                    </div>
+                    {entry.note
+                      ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note}</p>
+                      : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
+                  </div>
+                  <button
+                    onClick={() => { if (window.confirm('Delete this entry? This cannot be undone.')) onDeleteRagEntry?.(entry.domain, entry.id); }}
+                    className="shrink-0 self-start mt-0.5 p-1 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 text-center pt-3 mt-2 border-t border-gray-50">
+          Notes older than 4 months are hidden here — use the domain filters above to narrow down what you're looking for.
+        </p>
+      </div>
 
       {editingDomain && (
         <EditTargetsModal

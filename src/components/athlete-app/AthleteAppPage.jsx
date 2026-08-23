@@ -1,5 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import TabBar from './TabBar';
@@ -25,12 +25,20 @@ function Loading() {
   );
 }
 
+const VALID_TABS = new Set(['train', 'progress', 'nutrition']);
+
 export default function AthleteAppPage() {
   const { token } = useParams();
+  // Lets a push notification (e.g. "Send to Athlete") deep-link straight
+  // into a specific tab, e.g. /athlete/<token>?tab=progress.
+  const [searchParams] = useSearchParams();
 
   const [status, setStatus]     = useState('loading'); // loading | invalid | ready
   const [athlete, setAthlete]   = useState(null);
-  const [activeTab, setActive]  = useState('train');
+  const [activeTab, setActive]  = useState(() => {
+    const requested = searchParams.get('tab');
+    return VALID_TABS.has(requested) ? requested : 'train';
+  });
   // Bumped each time the user taps the bottom-nav Resources button so
   // TrainingTab knows to scroll its #resources anchor into view.
   const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);

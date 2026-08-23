@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, Plus, CheckCircle2, User } from 'lucide-react';
+import { TrendingUp, Plus, CheckCircle2, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { ComposedChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { METRIC_MAP, SPECIAL_METRICS, LABEL_OVERRIDES, DUAL_LINE_METRICS, LOWER_IS_BETTER } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useAthleteGoals } from '../../hooks/useAthleteGoals';
-import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META } from '../../utils/goalTree';
+import { useAthleteReports } from '../../hooks/useAthleteReports';
+import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, currentYearQuarter } from '../../utils/goalTree';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
 const GOLD  = '#A58D69';
@@ -122,48 +123,19 @@ function AddGoalSheet({ onAdd, onClose }) {
   );
 }
 
-// ─── Quarterly report + goals section ──────────────────────────────────────
-function ReportSection({ athleteId }) {
-  const { plan, coachTree, athleteOwnGoals, loading, hasPlan, reportSent, addAthleteGoal } = useAthleteGoals(athleteId);
+// ─── Goals list shared by both the live (unsent) card and each report ────────
+function GoalsBlock({ coachTree, athleteOwnGoals, onAdd }) {
   const [showAdd, setShowAdd] = useState(false);
 
-  if (loading || !hasPlan) return null;
-
   return (
-    <div className="rounded-xl p-4 bg-white border border-ink-100 shadow-card mb-4">
-      <p className="text-meta font-semibold" style={{ color: GOLD }}>{plan.period_label}</p>
-
-      {reportSent ? (
-        <>
-          <p className="text-h3 leading-tight text-ink-900 mt-0.5">Your Quarterly Report</p>
-          {plan.narrative && (
-            <p className="text-meta italic leading-snug text-ink-700 mt-2">{plan.narrative}</p>
-          )}
-          <div className="grid grid-cols-2 gap-2.5 mt-3">
-            {Object.entries(DOMAIN_META).map(([key, meta]) => {
-              const status = plan.rag_summary?.[key] || 'grey';
-              const r = RAG_ATHLETE_LABEL[status];
-              return (
-                <div key={key} className="rounded-lg p-2.5 bg-ink-50">
-                  <p className="text-micro font-bold uppercase text-ink-400">{meta.label}</p>
-                  <p className="text-meta font-bold mt-0.5" style={{ color: r.color }}>{r.label}</p>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="text-h3 leading-tight text-ink-900 mt-0.5">This Quarter's Goals</p>
-          <p className="text-meta text-ink-500 mt-1">Your coach hasn't finished this quarter's report yet — you can already add your own goals below.</p>
-        </>
-      )}
-
+    <>
       <div className="flex items-center justify-between mt-4 mb-2">
         <p className="text-body font-bold text-ink-900">Goals</p>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 text-meta font-bold" style={{ color: GOLD }}>
-          <Plus size={13} /> Add
-        </button>
+        {onAdd && (
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 text-meta font-bold" style={{ color: GOLD }}>
+            <Plus size={13} /> Add
+          </button>
+        )}
       </div>
 
       {coachTree.length === 0 && athleteOwnGoals.length === 0 && (
@@ -203,7 +175,87 @@ function ReportSection({ athleteId }) {
         </div>
       )}
 
-      {showAdd && <AddGoalSheet onAdd={addAthleteGoal} onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddGoalSheet onAdd={onAdd} onClose={() => setShowAdd(false)} />}
+    </>
+  );
+}
+
+// ─── One sent report — collapsible, most recent expanded by default ─────────
+function ReportCard({ plan, coachTree, athleteOwnGoals, defaultOpen, onAdd }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="rounded-xl bg-white border border-ink-100 shadow-card overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between p-4 text-left">
+        <div>
+          <p className="text-meta font-semibold" style={{ color: GOLD }}>{plan.period_label}</p>
+          <p className="text-body font-bold text-ink-900 mt-0.5">Your Quarterly Report</p>
+        </div>
+        {open ? <ChevronUp size={18} className="text-ink-400 shrink-0" /> : <ChevronDown size={18} className="text-ink-400 shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4">
+          {plan.narrative && (
+            <p className="text-meta italic leading-snug text-ink-700 mb-3">{plan.narrative}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2.5">
+            {Object.entries(DOMAIN_META).map(([key, meta]) => {
+              const status = plan.rag_summary?.[key] || 'grey';
+              const r = RAG_ATHLETE_LABEL[status];
+              return (
+                <div key={key} className="rounded-lg p-2.5 bg-ink-50">
+                  <p className="text-micro font-bold uppercase text-ink-400">{meta.label}</p>
+                  <p className="text-meta font-bold mt-0.5" style={{ color: r.color }}>{r.label}</p>
+                </div>
+              );
+            })}
+          </div>
+          <GoalsBlock coachTree={coachTree} athleteOwnGoals={athleteOwnGoals} onAdd={onAdd} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Quarterly report + goals section ──────────────────────────────────────
+// Two sources: the live current-quarter plan (so athletes can add their own
+// goals before the coach sends anything), and the full history of reports
+// the coach has actually sent — so athletes can look back on past quarters,
+// not just the current one.
+function ReportSection({ athleteId }) {
+  const { plan: livePlan, coachTree: liveTree, athleteOwnGoals: liveOwnGoals, loading: liveLoading, hasPlan, reportSent, addAthleteGoal } = useAthleteGoals(athleteId);
+  const { reports, loading: reportsLoading } = useAthleteReports(athleteId);
+
+  if (liveLoading || reportsLoading) return null;
+  if (!hasPlan && reports.length === 0) return null;
+
+  const { year: curYear, quarter: curQuarter } = currentYearQuarter();
+
+  return (
+    <div className="space-y-3 mb-4">
+      {hasPlan && !reportSent && (
+        <div className="rounded-xl p-4 bg-white border border-ink-100 shadow-card">
+          <p className="text-meta font-semibold" style={{ color: GOLD }}>{livePlan.period_label}</p>
+          <p className="text-h3 leading-tight text-ink-900 mt-0.5">This Quarter's Goals</p>
+          <p className="text-meta text-ink-500 mt-1">Your coach hasn't finished this quarter's report yet — you can already add your own goals below.</p>
+          <GoalsBlock coachTree={liveTree} athleteOwnGoals={liveOwnGoals} onAdd={addAthleteGoal} />
+        </div>
+      )}
+
+      {reports.map((r, i) => {
+        const isCurrentQuarter = r.plan.year === curYear && r.plan.quarter === curQuarter;
+        return (
+          <ReportCard
+            key={r.plan.id}
+            plan={r.plan}
+            coachTree={r.coachTree}
+            athleteOwnGoals={r.athleteOwnGoals}
+            defaultOpen={i === 0}
+            onAdd={isCurrentQuarter ? addAthleteGoal : null}
+          />
+        );
+      })}
     </div>
   );
 }

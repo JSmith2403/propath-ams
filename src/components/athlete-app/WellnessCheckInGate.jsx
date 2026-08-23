@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Lock, HeartPulse } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Lock, HeartPulse } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import WellnessQuestionField, { countAnswered } from './WellnessQuestionField';
 
@@ -12,16 +12,17 @@ function todayLocal() { return new Date().toLocaleDateString('en-CA'); }
  * turned on (wellnessToken present) AND has at least one active
  * coach-selected question AND hasn't already submitted today.
  *
+ * All questions render on one scrollable page (rather than one-per-
+ * screen with swipe/arrows) so it's quick to scan and submit.
+ *
  * Renders `children` once the gate is clear (or never applied).
  */
 export default function WellnessCheckInGate({ athleteId, wellnessToken, children }) {
   const [state, setState] = useState('checking'); // checking | blocked | clear
   const [questions, setQuestions] = useState([]);
   const [responses, setResponses] = useState({});
-  const [index, setIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const scrollerRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,19 +58,6 @@ export default function WellnessCheckInGate({ athleteId, wellnessToken, children
   }, [athleteId, wellnessToken]);
 
   const setVal = (qid, v) => setResponses(prev => ({ ...prev, [qid]: v }));
-
-  const goTo = useCallback((i) => {
-    const node = scrollerRef.current;
-    if (!node) return;
-    const clamped = Math.max(0, Math.min(i, questions.length - 1));
-    node.scrollTo({ left: clamped * node.clientWidth, behavior: 'smooth' });
-  }, [questions.length]);
-
-  const handleScroll = () => {
-    const node = scrollerRef.current;
-    if (!node || !node.clientWidth) return;
-    setIndex(Math.round(node.scrollLeft / node.clientWidth));
-  };
 
   const allAnswered = questions.length > 0 && countAnswered(responses, questions) === questions.length;
 
@@ -111,57 +99,17 @@ export default function WellnessCheckInGate({ athleteId, wellnessToken, children
         </p>
       </div>
 
-      {/* Pager dots */}
-      <div className="flex items-center justify-center gap-1.5 pb-3 shrink-0">
-        {questions.map((q, i) => (
-          <span
-            key={q.id}
-            className={`h-1.5 rounded-full transition-all ${
-              i === index ? 'w-5 bg-gold-500' : 'w-1.5 bg-ink-200'
-            }`}
-          />
+      {/* Every question, stacked on one scrollable page */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 space-y-3 pb-2">
+        {questions.map(q => (
+          <div key={q.id} className="rounded-xl p-5 bg-white border border-ink-100 shadow-card">
+            <WellnessQuestionField
+              question={q}
+              value={responses[q.id]}
+              onChange={(v) => setVal(q.id, v)}
+            />
+          </div>
         ))}
-      </div>
-
-      {/* Horizontal, swipeable, one question per screen */}
-      <div className="relative flex-1 min-h-0">
-        <div
-          ref={scrollerRef}
-          onScroll={handleScroll}
-          className="h-full flex overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar"
-        >
-          {questions.map(q => (
-            <div key={q.id} className="w-full h-full shrink-0 snap-start flex items-center px-6">
-              <div className="w-full rounded-xl p-5 bg-white border border-ink-100 shadow-card">
-                <WellnessQuestionField
-                  question={q}
-                  value={responses[q.id]}
-                  onChange={(v) => setVal(q.id, v)}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Prev/next arrows — mouse/keyboard nav alongside native swipe */}
-        {index > 0 && (
-          <button
-            onClick={() => goTo(index - 1)}
-            aria-label="Previous question"
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center bg-white border border-ink-200 shadow-card active:scale-95 transition-all"
-          >
-            <ChevronLeft size={18} className="text-ink-600" />
-          </button>
-        )}
-        {index < questions.length - 1 && (
-          <button
-            onClick={() => goTo(index + 1)}
-            aria-label="Next question"
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center bg-white border border-ink-200 shadow-card active:scale-95 transition-all"
-          >
-            <ChevronRight size={18} className="text-ink-600" />
-          </button>
-        )}
       </div>
 
       {/* Footer — submit */}
