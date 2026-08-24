@@ -57,6 +57,52 @@ export function useMealEntries(athleteId, logDate) {
   return { entries, loading, refresh };
 }
 
+/**
+ * useMealLogDates — every date an athlete has at least one meal_entries
+ * row on, newest first, with a count. Only pulls the log_date column
+ * (no photos/descriptions) so it stays cheap regardless of history
+ * length. Powers the Food Diary "jump to a submission" list so the
+ * coach doesn't have to click through dates one at a time to find one.
+ *
+ * Shape: { dates, loading, refresh }
+ *   dates: [{ log_date, count }]
+ */
+export function useMealLogDates(athleteId) {
+  const [dates,   setDates]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tick,    setTick]    = useState(0);
+
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    if (!athleteId) { setDates([]); setLoading(false); return; }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('meal_entries')
+        .select('log_date')
+        .eq('athlete_id', athleteId)
+        .order('log_date', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        console.error('[useMealLogDates] fetch failed', error);
+        setDates([]); setLoading(false);
+        return;
+      }
+      const counts = new Map();
+      (data || []).forEach(({ log_date }) => {
+        counts.set(log_date, (counts.get(log_date) || 0) + 1);
+      });
+      setDates([...counts.entries()].map(([log_date, count]) => ({ log_date, count })));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, tick]);
+
+  return { dates, loading, refresh };
+}
+
 // Map a generic "Snack" press to the first unused snack slot for the
 // day. Returns null when all three slots are taken — callers should
 // reject the submit attempt in that case.

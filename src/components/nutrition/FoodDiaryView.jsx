@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Calendar, Filter, MoreHorizontal,
+  ChevronLeft, ChevronRight, Calendar, Filter, MoreHorizontal, History,
   Sun, Apple, Moon, Coffee, Leaf, GlassWater, Image as ImageIcon, Check, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useMealEntries } from '../../hooks/useMealEntries';
+import { useMealEntries, useMealLogDates } from '../../hooks/useMealEntries';
 
 const GOLD = '#A58D69';
 
@@ -33,6 +33,11 @@ function fmtIsoDate(d) {
   x.setHours(0, 0, 0, 0);
   return x.toISOString().slice(0, 10);
 }
+function fmtDateShort(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
 
 /**
  * FoodDiaryView — coach-facing Food Diary surface inside the
@@ -43,7 +48,9 @@ function fmtIsoDate(d) {
 export default function FoodDiaryView({ athleteId, athleteName }) {
   const [logDate, setLogDate] = useState(fmtIsoDate(new Date()));
   const { entries, loading, refresh } = useMealEntries(athleteId, logDate);
+  const { dates: logDates, loading: logDatesLoading } = useMealLogDates(athleteId);
   const [selectedId, setSelectedId] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Auto-select first meal when entries arrive / date changes.
   useEffect(() => {
@@ -95,6 +102,15 @@ export default function FoodDiaryView({ athleteId, athleteName }) {
           >
             <ChevronRight size={14} className="text-gray-500" />
           </button>
+          <SubmissionHistoryButton
+            dates={logDates}
+            loading={logDatesLoading}
+            open={historyOpen}
+            onToggle={() => setHistoryOpen(o => !o)}
+            onClose={() => setHistoryOpen(false)}
+            selectedDate={logDate}
+            onPick={(d) => { setLogDate(d); setHistoryOpen(false); }}
+          />
         </div>
         <button
           disabled
@@ -120,6 +136,86 @@ export default function FoodDiaryView({ athleteId, athleteName }) {
         />
         <SubmissionPanel entry={selected} onChanged={refresh} />
       </div>
+    </div>
+  );
+}
+
+// ─── Submission history dropdown ────────────────────────────────────
+// Every date this athlete has at least one logged meal, newest first —
+// click one to jump straight to it instead of clicking through dates
+// one at a time looking for data.
+function SubmissionHistoryButton({ dates, loading, open, onToggle, onClose, selectedDate, onPick }) {
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleDown = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) onClose();
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', handleDown);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleDown);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        onClick={onToggle}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs font-semibold transition-colors"
+        style={{
+          borderColor: open ? GOLD : '#e5e7eb',
+          color: open ? GOLD : '#6b7280',
+          backgroundColor: open ? 'rgba(165,141,105,0.08)' : 'transparent',
+        }}
+        title="Jump to a date this athlete has submitted on"
+      >
+        <History size={13} />
+        Submissions {!loading && `· ${dates.length}`}
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 rounded-lg bg-white shadow-lg z-30 flex flex-col"
+          style={{ border: '1px solid #e5e7eb', width: 240, maxHeight: 320 }}
+        >
+          <div className="px-3 py-2 border-b border-gray-100 text-[10px] font-bold uppercase tracking-widest text-gray-400 shrink-0">
+            Submission dates
+          </div>
+          <div className="overflow-y-auto py-1">
+            {loading ? (
+              <p className="px-3 py-4 text-[11px] italic text-gray-400">Loading…</p>
+            ) : dates.length === 0 ? (
+              <p className="px-3 py-4 text-[11px] italic text-gray-400">No submissions yet.</p>
+            ) : (
+              dates.map(({ log_date, count }) => {
+                const active = log_date === selectedDate;
+                return (
+                  <button
+                    key={log_date}
+                    onClick={() => onPick(log_date)}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors"
+                    style={{ backgroundColor: active ? 'rgba(165,141,105,0.10)' : 'transparent' }}
+                  >
+                    <span className="text-[11px] font-semibold truncate" style={{ color: active ? GOLD : '#1C1C1C' }}>
+                      {fmtDateShort(log_date)}
+                    </span>
+                    <span
+                      className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                      style={{ color: '#6b7280', backgroundColor: '#f3f4f6' }}
+                    >
+                      {count} {count === 1 ? 'meal' : 'meals'}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
