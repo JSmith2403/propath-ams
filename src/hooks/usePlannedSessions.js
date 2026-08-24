@@ -37,10 +37,12 @@ export function usePlannedSessions(athleteIds = []) {
           athlete_id,
           block_id,
           block_session_id,
+          standalone_session_id,
           week_number,
           planned_date,
           status,
-          block_sessions ( id, session_name, session_order )
+          block_sessions ( id, session_name, session_order ),
+          standalone_sessions ( id, session_name, coach_notes )
         `)
         .in('athlete_id', ids)
         .order('planned_date', { ascending: true });
@@ -68,7 +70,8 @@ export function usePlannedSessions(athleteIds = []) {
  */
 export function plannedSessionsAsEvents(planned) {
   return (planned || []).map(p => {
-    const sess = p.block_sessions || {};
+    const isStandalone = !!p.standalone_session_id;
+    const sess = isStandalone ? (p.standalone_sessions || {}) : (p.block_sessions || {});
     const sessionName = sess.session_name
       || (sess.session_order != null ? `Session ${sess.session_order + 1}` : 'Session');
     return {
@@ -79,11 +82,14 @@ export function plannedSessionsAsEvents(planned) {
       priority:         null,
       start_date:       p.planned_date,
       end_date:         null,
-      notes:            null,
+      notes:            isStandalone ? (sess.coach_notes || null) : null,
       is_team_event:    false,
       is_planned:       true,
-      _block_id:         p.block_id,
-      _block_session_id: p.block_session_id,
+      is_standalone:    isStandalone,
+      _planned_id:            p.id,
+      _block_id:              p.block_id,
+      _block_session_id:      p.block_session_id,
+      _standalone_session_id: p.standalone_session_id,
       _week_number:      p.week_number,
       _status:           p.status,
     };

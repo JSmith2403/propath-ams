@@ -2,20 +2,35 @@ import { useMemo, useRef, useState } from 'react';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
-import { usePlannedSessions } from '../../hooks/usePlannedSessions';
+import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
+import { copyPlannedSession } from '../../hooks/usePlannedSessionMutations';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
-import ProgrammeWeekList from './ProgrammeWeekList';
+import ProgrammeCalendar, {
+  _addDays   as addDays,
+  _dayDiff   as dayDiff,
+  _parseDate as parseDate,
+  _toISO     as toISO,
+} from './ProgrammeCalendar';
+import DayQuickAddMenu from './DayQuickAddMenu';
+import PlanSessionModal from './standalone/PlanSessionModal';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
+import { addDaysISO } from '../../utils/blockHelpers';
 import {
   loadAthleteBlock,
   saveAthleteBlock,
   saveBlockTemplate,
 } from '../../utils/programmeTemplates';
+
+function mondayOfISO(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  const offset = (d.getDay() + 6) % 7; // days since Monday
+  return addDaysISO(iso, -offset);
+}
 
 // Combine a fallback message with the supabase error so the user gets
 // real diagnostic info inline in the modal.
@@ -75,12 +90,45 @@ export default function ProgrammeView({
     removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
 
-  // Brief 5d/5e — planned training sessions, sourced into the new
-  // week-by-week list (Brief Part 4 replaced the calendar surface).
-  // `refreshPlanned` is invoked after any block mutation that resizes
-  // or relocates the timeline (add/remove week, delete block) so the
-  // calendar pills don't lag behind the schema.
+  // Planned training sessions (both block-based and standalone) — fed
+  // into the calendar as pills via plannedSessionsAsEvents. `refreshPlanned`
+  // is invoked after any mutation that resizes/relocates/adds sessions so
+  // the calendar pills don't lag behind the schema.
   const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(athleteIds);
+  const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
+
+  // ── Calendar view state ──────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState(initialFocus?.viewMode || 'month');
+  const [viewDate, setViewDate] = useState(() => initialFocus?.viewDate ? new Date(initialFocus.viewDate) : new Date());
+  // Re-apply the deep-link every time nonce changes (repeat clicks on the
+  // same date from Overview should still jump the calendar back to it).
+  const lastFocusNonce = useRef(initialFocus?.nonce);
+  if (initialFocus?.nonce !== undefined && initialFocus.nonce !== lastFocusNonce.current) {
+    lastFocusNonce.current = initialFocus.nonce;
+    if (initialFocus.viewMode) setViewMode(initialFocus.viewMode);
+    if (initialFocus.viewDate) setViewDate(new Date(initialFocus.viewDate));
+  }
+
+  // ── Copy/paste clipboard for planned sessions ────────────────────────────
+  const [clipboard, setClipboard] = useState(null); // { plannedId, name } | null
+
+  // ── Plan-a-session modal (standalone sessions) ───────────────────────────
+  // { mode: 'single', dateISO } | { mode: 'week', weekStartISO } | { mode: 'edit', existing }
+  const [planModal, setPlanModal] = useState(null);
+  const closePlanModal = () => setPlanModal(null);
+  const handlePlanSaved = () => { closePlanModal(); refreshPlanned(); };
+  const handlePlanDeleted = () => { closePlanModal(); refreshPlanned(); };
+
+  const handlePaste = async (targetISO) => {
+    if (!clipboard) return;
+    const res = await copyPlannedSession(clipboard.plannedId, targetISO);
+    if (!res.ok) {
+      showToast(`Couldn't paste. ${res.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    refreshPlanned();
+    showToast(`Pasted '${clipboard.name}'`);
+  };
 
   // ── Modal state ─────────────────────────────────────────────────────────
   // event === null means a fresh add. event === { start_date, ... } may carry
@@ -88,11 +136,26 @@ export default function ProgrammeView({
   const [modal, setModal] = useState(null);
 
   const openAdd       = () => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add',  event: null }); };
-  const openAddOnDate = (iso) => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add', event: { start_date: iso } }); };
   const openEdit      = (event) => {
     setEventSaveError(null);
-    // Brief 5d/5e — planned session pill: open the session builder
-    // for that block instead of the event editor.
+    // A standalone planned session — open the lightweight edit/delete
+    // modal rather than the full block builder (there's no block).
+    if (event?.is_planned && event?.is_standalone) {
+      if (!canEdit) return;
+      setPlanModal({
+        mode: 'edit',
+        existing: {
+          plannedId: event._planned_id,
+          standaloneSessionId: event._standalone_session_id,
+          name: event.event_name,
+          notes: event.notes,
+          dateISO: event.start_date,
+        },
+      });
+      return;
+    }
+    // Block-based planned session pill: open the session builder for
+    // that block instead of the event editor.
     if (event?.is_planned) {
       const target = blocks.find(b => b.id === event._block_id);
       if (target) openBlockBuilder(target);
@@ -109,11 +172,22 @@ export default function ProgrammeView({
   };
   const close         = () => { setModal(null); setEventSaveError(null); };
 
+  const handleMoveEvent = async (event, newStartISO) => {
+    if (!canEdit || event.is_planned || event.is_team_event) return;
+    const oldStart  = parseDate(event.start_date);
+    const oldEnd    = event.end_date ? parseDate(event.end_date) : null;
+    const newStart  = parseDate(newStartISO);
+    const duration  = oldEnd ? dayDiff(oldEnd, oldStart) : 0;
+    const newEndISO = oldEnd ? toISO(addDays(newStart, duration)) : null;
+    const res = await updateEventOptimistic(event.id, { start_date: newStartISO, end_date: newEndISO });
+    if (!res.ok) showToast(`Couldn't reschedule. ${res.error?.message || ''}`.trim(), 'error');
+  };
+
   // ── Block modal state ────────────────────────────────────────────────────
   const [blockModal,     setBlockModal]     = useState(null); // { mode, block }
   const [blockSaveError, setBlockSaveError] = useState(null);
   const [eventSaveError, setEventSaveError] = useState(null);
-  const openBlockAdd  = () => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'add', block: null }); };
+  const openBlockAdd  = (presetStartDate) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'add', block: presetStartDate ? { start_date: presetStartDate } : null }); };
   const openBlockEdit = (block) => { if (!canEdit) return; setBlockSaveError(null); setBlockModal({ mode: 'edit', block }); };
   const closeBlock    = () => { setBlockModal(null); setBlockSaveError(null); };
 
@@ -330,35 +404,47 @@ export default function ProgrammeView({
       <BlockTimelineBar
         blocks={blocks}
         canEdit={canEdit}
-        onAdd={openBlockAdd}
+        onAdd={() => openBlockAdd()}
         onClickBlock={openBlockBuilder}
         onEditBlockDetails={openBlockEdit}
-        onHoverRange={null}
         onAddWeek={handleAddWeek}
         onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
+        onBlankWeekClick={(weekStartISO) => setPlanModal({ mode: 'week', weekStartISO })}
         showHeading
       />
 
-      {/* Week-by-week list of planned sessions. Replaces the calendar
-          surface (Brief Part 4). Past completed sessions live in the
-          Logged Sessions sub-tab; the current week shows them greyed +
-          ticked; future weeks within 7 days expand by default. */}
-      <ProgrammeWeekList
-        athlete={athlete}
+      {/* Month calendar — sessions (block-based and standalone) plus
+          competitions/camps/testing days, all on one grid. Hovering a
+          blank day surfaces the quick-add menu (session / week / block);
+          hovering an existing session pill surfaces a copy icon so it
+          can be pasted onto another day via that same menu. */}
+      <ProgrammeCalendar
+        viewMode={viewMode}
+        onChangeView={setViewMode}
+        viewDate={viewDate}
+        onChangeDate={setViewDate}
+        canEdit={canEdit}
+        onAddEvent={openAdd}
+        onMoveEvent={handleMoveEvent}
+        events={[...events, ...plannedEvents]}
+        onClickEvent={openEdit}
+        pillColourMode="priority"
+        athleteContext
         blocks={blocks}
-        plannedRows={plannedRows}
-        loading={blocksLoading}
-        focusDate={initialFocus?.viewDate || null}
         blockColourMap={blockColourMap}
-        onClickPlanned={(planned) => {
-          const target = blocks.find(b => b.id === planned.block_id);
-          if (!target) return;
-          // Open the block builder focused on this specific session.
-          // Per-week exercise swaps and the scope dialog live inside
-          // SessionExerciseRow so the same flow works wherever the
-          // builder is opened from.
-          openBlockBuilder(target, { focusSessionTempId: `sess-${planned.block_session_id}` });
-        }}
+        renderDayHover={canEdit ? (iso, helpers) => (
+          <DayQuickAddMenu
+            dateISO={iso}
+            clipboard={clipboard}
+            onPlanSession={(d) => setPlanModal({ mode: 'single', dateISO: d })}
+            onPlanWeek={(d) => setPlanModal({ mode: 'week', weekStartISO: mondayOfISO(d) })}
+            onPlanBlock={(d) => openBlockAdd(d)}
+            onPaste={handlePaste}
+            keepAlive={helpers.keepAlive}
+            release={helpers.release}
+          />
+        ) : null}
+        onCopyPlanned={canEdit ? (event) => setClipboard({ plannedId: event._planned_id, name: event.event_name }) : null}
       />
 
       {/* Manage Blocks — collapsible secondary list */}
@@ -367,7 +453,7 @@ export default function ProgrammeView({
         events={events}
         loading={blocksLoading}
         canEdit={canEdit}
-        onAdd={openBlockAdd}
+        onAdd={() => openBlockAdd()}
         onEdit={openBlockEdit}
         onDelete={handleBlockDelete}
         onClickLinkedEvent={openEdit}
@@ -459,6 +545,34 @@ export default function ProgrammeView({
           onConfirm={handleConfirmRemoveWeek}
           onCancel={() => setRemoveWeekTarget(null)}
         />
+      )}
+
+      {planModal && (
+        <PlanSessionModal
+          mode={planModal.mode}
+          athleteId={athlete.id}
+          dateISO={planModal.dateISO}
+          weekStartISO={planModal.weekStartISO}
+          existing={planModal.existing}
+          onSaved={handlePlanSaved}
+          onDeleted={handlePlanDeleted}
+          onClose={closePlanModal}
+        />
+      )}
+
+      {/* Copy/paste clipboard indicator — bottom-left so it never
+          collides with the toast (bottom-right). Stays active across
+          multiple pastes; only clears on Cancel. */}
+      {clipboard && (
+        <div
+          className="fixed bottom-6 left-6 flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-semibold text-white shadow-lg z-[90]"
+          style={{ backgroundColor: '#1C1C1C' }}
+        >
+          <span>Copied &lsquo;{clipboard.name}&rsquo; — hover a day and choose Paste</span>
+          <button onClick={() => setClipboard(null)} className="underline opacity-80 hover:opacity-100">
+            Cancel
+          </button>
+        </div>
       )}
 
       {/* Toast — bottom-right of the viewport */}

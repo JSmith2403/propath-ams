@@ -261,7 +261,7 @@ function buildWeekSegments(events, weekStart, pillColourMode, athleteContext) {
 // birthday, or team) and — for competitions — a priority badge on the right.
 // The badge uses a priority-driven colour, not the athlete colour.
 
-function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext }) {
+function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext, onCopyPlanned }) {
   const { event, style, leftRounded, rightRounded } = seg;
   const radius = 4;
   const renderBadge = leftRounded && style.showBadge;
@@ -289,7 +289,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
     <div
       role="button"
       {...interactionHandlers}
-      className="absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold select-none"
+      className="group absolute flex items-center gap-1 px-1.5 overflow-hidden text-[10px] font-semibold select-none"
       style={{
         left: `calc(${(seg.startCol / 7) * 100}% + 2px)`,
         width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 4px)`,
@@ -351,6 +351,16 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
         >
           {event.priority}
         </span>
+      )}
+      {isPlanned && onCopyPlanned && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onCopyPlanned(event); }}
+          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: '#437E8D', fontSize: 10, lineHeight: 1, padding: '1px 2px' }}
+          title="Copy this session to another day"
+        >
+          ⧉
+        </button>
       )}
     </div>
   );
@@ -557,6 +567,12 @@ export default function ProgrammeCalendar({
   // render.
   blocks = [],
   blockColourMap = null,
+  // Optional: (iso, { keepAlive, release }) => ReactNode — takes over the
+  // per-day hover affordance entirely (replacing the default "+ Event"
+  // button) when supplied. See DayQuickAddMenu for the intended shape.
+  renderDayHover = null,
+  // Optional: (event) => void — adds a small copy icon to is_planned pills.
+  onCopyPlanned = null,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -651,8 +667,25 @@ export default function ProgrammeCalendar({
     });
   };
 
-  // ─── Hover state for the "+ Event" affordance ────────────────────────
+  // ─── Hover state for the day-cell affordance ─────────────────────────
+  // Clearing is delayed a beat so a `renderDayHover` menu portaled to
+  // <body> (outside this cell's DOM subtree, since the cell clips
+  // overflow) survives the mouse crossing the gap to reach it — the
+  // menu calls `keepAlive`/`release` on its own mouseenter/mouseleave
+  // to cancel or restart that grace timer.
   const [hoverDate, setHoverDate] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const setHoverDateSticky = (iso) => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    setHoverDate(iso);
+  };
+  const clearHoverDateDelayed = (iso) => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setHoverDate(prev => (prev === iso ? null : prev));
+    }, 200);
+  };
+  useEffect(() => () => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); }, []);
   const isDragging = !!drag?.started;
 
   // ─── "+N more" day popover ──────────────────────────────────────────
@@ -767,8 +800,8 @@ export default function ProgrammeCalendar({
                 <div
                   key={col}
                   data-date={iso}
-                  onMouseEnter={() => !isDragging && setHoverDate(iso)}
-                  onMouseLeave={() => setHoverDate(prev => prev === iso ? null : prev)}
+                  onMouseEnter={() => !isDragging && setHoverDateSticky(iso)}
+                  onMouseLeave={() => clearHoverDateDelayed(iso)}
                   className="relative px-1.5 py-1 border-r border-gray-100 overflow-hidden"
                   style={{
                     backgroundColor: cellBg,
@@ -794,8 +827,14 @@ export default function ProgrammeCalendar({
                     {day.getDate()}
                   </div>
 
-                  {/* Hover-to-add affordance */}
-                  {isHovered && onAddEventOnDate && (
+                  {/* Hover-to-add affordance — renderDayHover (training
+                      content quick-add) takes priority when supplied;
+                      otherwise falls back to the plain "+ Event" button. */}
+                  {isHovered && renderDayHover && renderDayHover(iso, {
+                    keepAlive: () => setHoverDateSticky(iso),
+                    release: () => clearHoverDateDelayed(iso),
+                  })}
+                  {isHovered && !renderDayHover && onAddEventOnDate && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onAddEventOnDate(iso); }}
                       className="absolute top-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded transition-opacity"
@@ -859,6 +898,7 @@ export default function ProgrammeCalendar({
                       onPointerDown={(e) => startDrag(e, seg)}
                       onPreviewClick={(ev) => onClickEvent && onClickEvent(ev)}
                       athleteContext={athleteContext}
+                      onCopyPlanned={onCopyPlanned}
                     />
                   </div>
                 );

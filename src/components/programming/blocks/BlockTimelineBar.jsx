@@ -1,149 +1,172 @@
-import { useMemo } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { Pencil, Plus, X } from 'lucide-react';
-import { parseDate, addDaysISO } from '../../../utils/blockHelpers';
+import { parseDate, addDaysISO, toISO } from '../../../utils/blockHelpers';
 import { colourForBlockIndex } from '../../../utils/blockColours';
 import { tintForColour } from '../../../utils/programmingColours';
 
-const BAR_HEIGHT  = 32;
-const STRIP_GAP   = 4;
-const STRIP_HEIGHT = 32;
-const ROW_HEIGHT  = BAR_HEIGHT + STRIP_GAP + STRIP_HEIGHT;
-const PILL_GAP_PX = 2;
-
-function daysBetween(a, b) {
-  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-}
+const CHIP_W   = 92;
+const CHIP_GAP = 6;
+const PAST_WEEKS   = 3;
+const FUTURE_WEEKS = 9;
 
 function shortDate(iso) {
   return parseDate(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-// ─── Week pill ───────────────────────────────────────────────────────────────
-function WeekPill({
-  weekNum,
-  weekStartISO,
-  weekEndISO,
-  colour,
-  isLast,
-  canEdit,
-  onHover,
-  onRemove,
-  removeDisabled,
-}) {
-  const tint  = tintForColour(colour, 0.30);
-  const enter = () => onHover && onHover({ start_date: weekStartISO, end_date: weekEndISO, colour });
-  const leave = () => onHover && onHover(null);
+/**
+ * Merge this athlete's blocks into a single chronological run of 7-day
+ * chips spanning `PAST_WEEKS` before today through `FUTURE_WEEKS` after —
+ * a block's own weeks (coloured, numbered) where one covers the date,
+ * a plain neutral chip everywhere else. No "needs attention" styling on
+ * the gaps — they're just blank.
+ */
+function buildTimeline(blocks, todayISO) {
+  const windowStart = addDaysISO(todayISO, -PAST_WEEKS * 7);
+  const windowEnd    = addDaysISO(todayISO,  FUTURE_WEEKS * 7);
+  const sorted = blocks.slice().sort((a, b) => a.start_date.localeCompare(b.start_date));
 
+  const chips = [];
+  let cursor = windowStart;
+
+  const fillBlank = (fromISO, toISOExclusive) => {
+    let d = fromISO;
+    while (d < toISOExclusive) {
+      chips.push({ type: 'blank', start: d });
+      d = addDaysISO(d, 7);
+    }
+  };
+
+  for (const block of sorted) {
+    if (block.end_date < windowStart) continue;
+    if (block.start_date > windowEnd) break;
+    if (block.start_date > cursor) fillBlank(cursor, block.start_date);
+
+    const weeks = Math.max(1, Number(block.duration_weeks) || 1);
+    for (let i = 0; i < weeks; i++) {
+      chips.push({
+        type: 'block',
+        block,
+        weekIndex: i,
+        weekCount: weeks,
+        start: addDaysISO(block.start_date, i * 7),
+      });
+    }
+    cursor = addDaysISO(block.end_date, 1);
+  }
+  if (cursor < windowEnd) fillBlank(cursor, windowEnd);
+
+  return chips;
+}
+
+function BlockChip({ chip, colour, canEdit, isFirstOfBlock, isLastOfBlock, onClickBlock, onEditBlockDetails, onRemoveLastWeek, removeDisabled }) {
+  const tint = tintForColour(colour, 0.30);
   return (
-    <div
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-      className="group relative flex flex-col items-center justify-center text-center px-1 overflow-hidden cursor-default"
-      style={{
-        flex: 1,
-        backgroundColor: tint,
-        color: '#1C1C1C',
-        borderRadius: 4,
-        minWidth: 0,
-        height: STRIP_HEIGHT,
-      }}
-      title={`Week ${weekNum} · ${shortDate(weekStartISO)}`}
+    <button
+      onClick={() => onClickBlock && onClickBlock(chip.block)}
+      className="group relative flex flex-col items-start justify-center text-left px-2.5 py-1.5 shrink-0 overflow-hidden transition-shadow hover:shadow-md"
+      style={{ width: CHIP_W, borderRadius: 8, backgroundColor: tint, cursor: canEdit ? 'pointer' : 'default' }}
+      title={`${chip.block.block_name} · Wk ${chip.weekIndex + 1}/${chip.weekCount}`}
     >
-      <span className="text-[10px] font-bold leading-tight truncate w-full">
-        Wk {weekNum}
+      <span className="text-[9.5px] font-bold leading-tight truncate w-full" style={{ color: colour }}>
+        {chip.block.block_name}
       </span>
-      <span className="text-[9px] leading-tight truncate w-full" style={{ opacity: 0.65 }}>
-        {shortDate(weekStartISO)}
+      <span className="text-[9.5px] leading-tight truncate w-full" style={{ color: colour, opacity: 0.85 }}>
+        Wk {chip.weekIndex + 1} / {chip.weekCount}{isLastOfBlock ? ' · ends' : ''}
+      </span>
+      <span className="text-[9px] leading-tight mt-1.5" style={{ color: '#6b7280', opacity: 0.75 }}>
+        {shortDate(chip.start)}
       </span>
 
-      {/* × on the LAST week pill, hover-revealed. Disabled if it's the
-          only week in the block (caller passes removeDisabled=true). */}
-      {isLast && canEdit && (
-        <button
-          onClick={(e) => { e.stopPropagation(); if (!removeDisabled && onRemove) onRemove(); }}
-          disabled={removeDisabled}
-          title={removeDisabled
-            ? 'Cannot delete the only week. Delete the entire block instead.'
-            : 'Remove this week'}
-          className="absolute top-0.5 right-0.5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      {isFirstOfBlock && canEdit && onEditBlockDetails && (
+        <span
+          role="button"
+          onClick={(e) => { e.stopPropagation(); onEditBlockDetails(chip.block); }}
+          className="absolute top-1 right-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.55)', color: colour }}
+          title="Edit block details (name, dates, target event)"
+        >
+          <Pencil size={10} />
+        </span>
+      )}
+      {isLastOfBlock && canEdit && onRemoveLastWeek && (
+        <span
+          role="button"
+          onClick={(e) => { e.stopPropagation(); if (!removeDisabled) onRemoveLastWeek(chip.block); }}
+          title={removeDisabled ? 'Cannot delete the only week. Delete the entire block instead.' : 'Remove this week'}
+          className="absolute bottom-1 right-1 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           style={{
-            width: 14,
-            height: 14,
-            borderRadius: 7,
-            backgroundColor: removeDisabled ? '#d1d5db' : '#1C1C1C',
-            color: '#fff',
+            width: 14, height: 14, borderRadius: 7,
+            backgroundColor: removeDisabled ? '#d1d5db' : '#1C1C1C', color: '#fff',
             cursor: removeDisabled ? 'not-allowed' : 'pointer',
           }}
         >
           <X size={9} strokeWidth={3} />
-        </button>
+        </span>
       )}
-    </div>
-  );
-}
-
-// ─── Add-week pill ───────────────────────────────────────────────────────────
-function AddWeekPill({ canEdit, onClick }) {
-  if (!canEdit) return null;
-  return (
-    <button
-      onClick={onClick}
-      title="Add a week"
-      className="flex items-center justify-center text-[10px] transition-colors hover:bg-gray-100"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        height: STRIP_HEIGHT,
-        border: '1px dashed #d1d5db',
-        borderRadius: 4,
-        color: '#6b7280',
-        background: 'transparent',
-      }}
-    >
-      <Plus size={12} />
     </button>
   );
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+function BlankChip({ chip, canEdit, onBlankWeekClick, isToday }) {
+  return (
+    <button
+      onClick={() => onBlankWeekClick && canEdit && onBlankWeekClick(chip.start)}
+      className="relative flex flex-col items-center justify-center shrink-0"
+      style={{
+        width: CHIP_W, minHeight: 52, borderRadius: 8,
+        border: '1px dashed #d1d5db', backgroundColor: 'transparent',
+        cursor: canEdit && onBlankWeekClick ? 'pointer' : 'default',
+      }}
+      title={canEdit && onBlankWeekClick ? `Plan something for the week of ${shortDate(chip.start)}` : undefined}
+    >
+      {isToday && (
+        <span className="absolute inset-y-0 left-1/2 w-0.5" style={{ backgroundColor: '#A58D69', top: -6, bottom: -6 }}>
+          <span
+            className="absolute whitespace-nowrap px-1 rounded text-[8.5px] font-bold uppercase tracking-wide"
+            style={{ top: -18, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#f7f1e6', color: '#8a7454' }}
+          >
+            Today
+          </span>
+        </span>
+      )}
+      <span className="text-[10px]" style={{ color: '#b5b5bc' }}>{shortDate(chip.start)}</span>
+    </button>
+  );
+}
 
 /**
- * BlockTimelineBar — proportional horizontal bar of training blocks with a
- * week strip beneath each one.
- *
- * Hover the bar → onHoverRange fires with the full block range.
- * Hover a week pill → onHoverRange fires with that week's 7-day range.
- * Click the bar → onClickBlock (Edit modal).
- * Click [+] in the strip → onAddWeek(block).
- * Click × on the last week → onRemoveLastWeek(block) (caller shows confirm).
+ * BlockTimelineBar (Surface 1 only) — a horizontally scrollable, "today"-
+ * anchored run of 7-day chips: coloured + numbered where a training block
+ * covers that week, plain and blank everywhere else. Auto-scrolls on
+ * mount/update so today sits near the left edge with a little of the
+ * recent past still visible, and the next several weeks scrollable
+ * to the right.
  *
  * Props:
- *   blocks            array
- *   canEdit           boolean
- *   onAdd             optional add-block trigger (timeline button); null hides
- *   onClickBlock      block edit
- *   onHoverRange      (range | null) — { start_date, end_date, colour }
- *   onAddWeek         (block) => void
- *   onRemoveLastWeek  (block) => void
- *   rowLabel          optional left-side label (athlete name on Surface 2)
- *   rowBackground     optional background for the row label area
- *   showHeading       whether to render the small "BLOCK TIMELINE" caption
+ *   blocks              array
+ *   canEdit             boolean
+ *   onAdd               optional add-block trigger (toolbar button); null hides
+ *   onClickBlock        open a block (builder)
+ *   onEditBlockDetails  pencil affordance on a block's first week chip
+ *   onAddWeek           (block) => void — dashed "+" chip after a block's last week
+ *   onRemoveLastWeek    (block) => void
+ *   onBlankWeekClick    (weekStartISO) => void — click a blank chip to plan that week
+ *   showHeading         whether to render the small "PROGRAMMING TIMELINE" caption
  */
 export default function BlockTimelineBar({
   blocks = [],
   canEdit = true,
   onAdd,
   onClickBlock,
-  onEditBlockDetails,   // pencil-hover affordance — secondary action (Brief 5a)
-  onHoverRange,
+  onEditBlockDetails,
   onAddWeek,
   onRemoveLastWeek,
-  rowLabel,
-  rowBackground,
+  onBlankWeekClick,
   showHeading = false,
 }) {
-  // Palette assignment is by display_order ascending so the same block
-  // keeps the same colour across renders.
+  const scrollRef = useRef(null);
+  const todayISO = useMemo(() => toISO(new Date()), []);
+
   const indexById = useMemo(() => {
     const ordered = blocks.slice().sort(
       (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
@@ -154,172 +177,102 @@ export default function BlockTimelineBar({
     return m;
   }, [blocks]);
 
-  const layout = useMemo(() => {
-    if (blocks.length === 0) return { items: [] };
-    const sorted = blocks.slice().sort((a, b) => a.start_date.localeCompare(b.start_date));
-    const earliest = parseDate(sorted[0].start_date);
-    let latestEnd = parseDate(sorted[0].end_date);
-    sorted.forEach(b => {
-      const e = parseDate(b.end_date);
-      if (e > latestEnd) latestEnd = e;
-    });
-    const totalDays = daysBetween(earliest, latestEnd) + 1;
+  const chips = useMemo(() => buildTimeline(blocks, todayISO), [blocks, todayISO]);
 
-    const items = sorted.map(b => {
-      const start = parseDate(b.start_date);
-      const end   = parseDate(b.end_date);
-      const startDay  = daysBetween(earliest, start);
-      const blockDays = daysBetween(start, end) + 1;
-      return {
-        block: b,
-        leftPct:  (startDay  / totalDays) * 100,
-        widthPct: (blockDays / totalDays) * 100,
-        colour:   colourForBlockIndex(indexById.get(b.id) ?? 0),
-      };
+  // Index of the chip whose week contains today, so we can mark it and
+  // scroll it into view.
+  const todayChipIndex = useMemo(() => {
+    let idx = chips.findIndex(c => {
+      const end = addDaysISO(c.start, 6);
+      return todayISO >= c.start && todayISO <= end;
     });
-    return { items };
-  }, [blocks, indexById]);
+    if (idx < 0) idx = chips.length - 1;
+    return idx;
+  }, [chips, todayISO]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = todayChipIndex * (CHIP_W + CHIP_GAP) - (CHIP_W + CHIP_GAP);
+    el.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
+  }, [todayChipIndex, chips.length]);
 
   return (
     <section className="space-y-1.5">
       {showHeading && (
-        <h3
-          className="text-[10px] font-bold uppercase tracking-widest"
-          style={{ color: '#9ca3af' }}
-        >
-          Block Timeline
+        <h3 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+          Programming Timeline
         </h3>
       )}
 
       <div className="flex items-stretch gap-2">
-        {rowLabel && (
-          <div
-            className="shrink-0 flex items-center px-3 text-[11px] font-semibold rounded truncate"
-            style={{
-              width: 130,
-              color: '#1C1C1C',
-              backgroundColor: rowBackground || '#f9fafb',
-              border: '1px solid #e5e7eb',
-            }}
-            title={rowLabel}
-          >
-            {rowLabel}
-          </div>
-        )}
-
         <div
-          className="flex-1 relative rounded"
-          style={{
-            height: ROW_HEIGHT,
-            backgroundColor: '#f9fafb',
-            border: '1px solid #e5e7eb',
-          }}
+          ref={scrollRef}
+          className="flex-1 flex overflow-x-auto rounded p-2"
+          style={{ gap: CHIP_GAP, backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', scrollBehavior: 'smooth' }}
         >
-          {layout.items.length === 0 ? (
-            <div
-              className="absolute inset-0 flex items-center justify-center px-3 text-[11px]"
-              style={{ color: '#9ca3af' }}
-            >
-              {canEdit && onAdd
-                ? "No blocks yet — add a block to start structuring training"
-                : "No blocks for this athlete"}
+          {chips.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center px-3 text-[11px]" style={{ color: '#9ca3af' }}>
+              {canEdit && onAdd ? 'No blocks yet — add a block to start structuring training' : 'No blocks for this athlete'}
             </div>
           ) : (
-            layout.items.map(item => {
-              const { block, leftPct, widthPct, colour } = item;
-              const weeks = Math.max(1, Number(block.duration_weeks) || 1);
-              const isOnlyWeek = weeks === 1;
-              const onHoverBar = (val) =>
-                onHoverRange && onHoverRange(val
-                  ? { start_date: block.start_date, end_date: block.end_date, colour }
-                  : null);
-
+            chips.map((chip) => {
+              if (chip.type === 'blank') {
+                const end = addDaysISO(chip.start, 6);
+                const isToday = todayISO >= chip.start && todayISO <= end;
+                return (
+                  <BlankChip
+                    key={`blank-${chip.start}`}
+                    chip={chip}
+                    canEdit={canEdit}
+                    onBlankWeekClick={onBlankWeekClick}
+                    isToday={isToday}
+                  />
+                );
+              }
+              const colour = colourForBlockIndex(indexById.get(chip.block.id) ?? 0);
+              const isLastOfBlock = chip.weekIndex === chip.weekCount - 1;
+              const isFirstOfBlock = chip.weekIndex === 0;
+              const end = addDaysISO(chip.start, 6);
+              const chipIsToday = todayISO >= chip.start && todayISO <= end;
               return (
-                <div
-                  key={block.id}
-                  className="absolute"
-                  style={{
-                    left:  `${leftPct}%`,
-                    width: `${widthPct}%`,
-                    top: 0,
-                    bottom: 0,
-                  }}
-                >
-                  {/* Block bar — top. Click opens the session builder
-                      for this athlete's snapshot; pencil hover-button
-                      opens the secondary block-details modal (name,
-                      dates, target event). */}
-                  <div
-                    className="group/bar absolute left-0 right-0"
-                    style={{ top: 0, height: BAR_HEIGHT }}
-                    onMouseEnter={() => onHoverBar(true)}
-                    onMouseLeave={() => onHoverBar(false)}
-                  >
-                    <button
-                      onClick={() => canEdit && onClickBlock && onClickBlock(block)}
-                      className="absolute inset-0 flex items-center px-2.5 text-[11px] font-semibold text-white overflow-hidden transition-shadow hover:shadow-md"
-                      style={{
-                        backgroundColor: colour,
-                        textAlign: 'left',
-                        cursor: canEdit ? 'pointer' : 'default',
-                        borderRadius: 4,
-                      }}
-                      title={`${block.block_name} · ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`}
-                    >
-                      <span className="truncate">
-                        {block.block_name} · {weeks}w
+                <Fragment key={`${chip.block.id}-wk-${chip.weekIndex}`}>
+                  <div className="relative shrink-0" style={{ width: CHIP_W }}>
+                    {chipIsToday && (
+                      <span className="absolute w-0.5" style={{ backgroundColor: '#A58D69', top: -6, bottom: -6, left: '50%' }}>
+                        <span
+                          className="absolute whitespace-nowrap px-1 rounded text-[8.5px] font-bold uppercase tracking-wide"
+                          style={{ top: -18, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#f7f1e6', color: '#8a7454' }}
+                        >
+                          Today
+                        </span>
                       </span>
-                    </button>
-                    {canEdit && onEditBlockDetails && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onEditBlockDetails(block); }}
-                        className="absolute top-1/2 -translate-y-1/2 right-1.5 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 transition-opacity"
-                        style={{
-                          width: 22, height: 22, borderRadius: 4,
-                          backgroundColor: 'rgba(255,255,255,0.20)',
-                          color: '#fff',
-                        }}
-                        title="Edit block details (name, dates, target event)"
-                      >
-                        <Pencil size={11} />
-                      </button>
                     )}
-                  </div>
-
-                  {/* Week strip — bottom */}
-                  <div
-                    className="absolute left-0 right-0 flex"
-                    style={{
-                      top: BAR_HEIGHT + STRIP_GAP,
-                      height: STRIP_HEIGHT,
-                      gap: PILL_GAP_PX,
-                    }}
-                  >
-                    {Array.from({ length: weeks }, (_, i) => {
-                      const wkStart = addDaysISO(block.start_date, i * 7);
-                      const wkEnd   = addDaysISO(block.start_date, (i + 1) * 7 - 1);
-                      const isLast  = i === weeks - 1;
-                      return (
-                        <WeekPill
-                          key={`${block.id}-wk-${i}`}
-                          weekNum={i + 1}
-                          weekStartISO={wkStart}
-                          weekEndISO={wkEnd}
-                          colour={colour}
-                          isLast={isLast}
-                          canEdit={canEdit}
-                          onHover={onHoverRange}
-                          onRemove={() => onRemoveLastWeek && onRemoveLastWeek(block)}
-                          removeDisabled={isOnlyWeek}
-                        />
-                      );
-                    })}
-                    <AddWeekPill
+                    <BlockChip
+                      chip={chip}
+                      colour={colour}
                       canEdit={canEdit}
-                      onClick={() => onAddWeek && onAddWeek(block)}
+                      isFirstOfBlock={isFirstOfBlock}
+                      isLastOfBlock={isLastOfBlock}
+                      onClickBlock={onClickBlock}
+                      onEditBlockDetails={onEditBlockDetails}
+                      onRemoveLastWeek={onRemoveLastWeek}
+                      removeDisabled={chip.weekCount === 1}
                     />
                   </div>
-                </div>
+                  {isLastOfBlock && canEdit && onAddWeek && (
+                    <button
+                      onClick={() => onAddWeek(chip.block)}
+                      title="Add a week"
+                      className="shrink-0 flex items-center justify-center transition-colors hover:bg-gray-100"
+                      style={{
+                        width: 22, borderRadius: 6, border: '1px dashed #d1d5db', color: '#6b7280', background: 'transparent',
+                      }}
+                    >
+                      <Plus size={11} />
+                    </button>
+                  )}
+                </Fragment>
               );
             })
           )}

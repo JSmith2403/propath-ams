@@ -17,7 +17,6 @@ import ProgrammeCalendar, {
 } from './ProgrammeCalendar';
 import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
-import BlockTimelineBar from './blocks/BlockTimelineBar';
 import ConfirmDialog    from './blocks/ConfirmDialog';
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
 import { buildBlockColourMap } from '../../utils/blockColours';
