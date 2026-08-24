@@ -176,6 +176,11 @@ export default function ProgrammeView({
   const [confirmDelete,  setConfirmDelete]  = useState(null); // block from builder
 
   const openBlockBuilder = async (block, opts = {}) => {
+    if (!block?.id) {
+      console.error('[ProgrammeView] openBlockBuilder called without a block id', block);
+      showToast("Couldn't open the builder — no block id.", 'error');
+      return;
+    }
     setBuilderError(null);
     setBuilderState({ loading: true, blockId: block.id, focusSessionTempId: opts.focusSessionTempId });
     const res = await loadAthleteBlock(block.id);
@@ -209,7 +214,7 @@ export default function ProgrammeView({
       showToast(`Couldn't start. ${res?.error?.message || ''}`.trim(), 'error');
       return;
     }
-    openBlockBuilder(res.row);
+    await openBlockBuilder(res.row);
   };
 
   const handleBuilderSave = async (draft) => {
@@ -308,7 +313,7 @@ export default function ProgrammeView({
       else setBlockSaveError(formatError(res.error, "Couldn't save block."));
     } else {
       const res = await addBlock(payload);
-      if (res?.ok) { closeBlock(); openBlockBuilder(res.row); }
+      if (res?.ok) { closeBlock(); await openBlockBuilder(res.row); }
       else setBlockSaveError(formatError(res?.error, "Couldn't add block."));
     }
   };

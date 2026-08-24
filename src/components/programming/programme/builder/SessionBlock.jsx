@@ -203,6 +203,17 @@ export default function SessionBlock({
 
       {!collapsed && (
         <>
+          {onUpdateDay && day == null && (
+            <div
+              className="sticky left-0 z-10 flex items-center gap-2 pl-12 pr-6 py-1.5"
+              style={{ width: ROW_STICKY_WIDTH + 360, minWidth: ROW_STICKY_WIDTH + 360, backgroundColor: '#FEF3E2' }}
+            >
+              <span className="text-[11px] font-semibold" style={{ color: '#B45309' }}>
+                No day picked above — this session won't appear on the calendar until you choose one.
+              </span>
+            </div>
+          )}
+
           {/* Session-level notes (sticky-left) */}
           <div
             className="sticky left-0 z-10 bg-white pl-12 pr-6 pt-3 pb-2"
