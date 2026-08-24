@@ -4,6 +4,37 @@ import SessionSection from './SessionSection';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import { colourForSection } from '../../../../utils/sectionColours';
 
+const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_NAMES   = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// Mon-Sun single-day picker — which weekday this session recurs on
+// every week of the block. Only rendered when onUpdateDay is supplied
+// (athlete mode; template sessions aren't tied to real dates).
+function DayPicker({ day, onUpdateDay }) {
+  return (
+    <div className="flex items-center gap-0.5 shrink-0" title="Which day this session lands on each week">
+      {DAY_LETTERS.map((letter, i) => {
+        const active = day === i;
+        return (
+          <button
+            key={i}
+            onClick={() => onUpdateDay(active ? null : i)}
+            className="w-5 h-5 rounded text-[9px] font-bold transition-colors"
+            style={{
+              backgroundColor: active ? '#A58D69' : '#fff',
+              color: active ? '#fff' : '#9ca3af',
+              border: `1px solid ${active ? '#A58D69' : '#e5e7eb'}`,
+            }}
+            title={DAY_NAMES[i]}
+          >
+            {letter}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * SessionBlock — one full session in the vertical stack.
  *
@@ -26,6 +57,8 @@ export default function SessionBlock({
   onUpdateNotes,
   onRemoveSession,
   onDuplicateSession,         // Phase 2: new action
+  day = null,                 // 0-6 Mon-indexed weekday this session lands on, or null
+  onUpdateDay,                // (day|null) => void — omitted outside athlete mode
   // section-level
   onAddSection,
   onRenameSection,
@@ -140,11 +173,12 @@ export default function SessionBlock({
             </button>
           )}
 
-          {/* Right cluster — counter + always-visible actions */}
+          {/* Right cluster — counter + day picker + always-visible actions */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-meta" style={{ color: '#9ca3af' }}>
               {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'}
             </span>
+            {onUpdateDay && <DayPicker day={day} onUpdateDay={onUpdateDay} />}
             {onDuplicateSession && (
               <button
                 onClick={onDuplicateSession}

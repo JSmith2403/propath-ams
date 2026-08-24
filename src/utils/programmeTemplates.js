@@ -463,6 +463,23 @@ export async function loadAthleteBlock(blockId) {
     }
   }
 
+  // Derive each session's assigned weekday from its earliest planned
+  // occurrence (if any) so the builder's day picker reflects reality
+  // when reopening an existing block.
+  let dayBySessionId = {};
+  if (sessionIds.length) {
+    const { data: planned } = await supabase
+      .from('planned_sessions')
+      .select('block_session_id, planned_date')
+      .in('block_session_id', sessionIds)
+      .order('planned_date', { ascending: true });
+    (planned || []).forEach(p => {
+      if (dayBySessionId[p.block_session_id] !== undefined) return;
+      const d = new Date(p.planned_date + 'T00:00:00');
+      dayBySessionId[p.block_session_id] = (d.getDay() + 6) % 7;
+    });
+  }
+
   // Library lookups for names/categories. Includes any per-week
   // override_exercise_id values so the builder can render the swapped
   // exercise's name on those week cells.
@@ -490,6 +507,7 @@ export async function loadAthleteBlock(blockId) {
       _existingId: sess.id,
       name: sess.session_name || `Session ${idx + 1}`,
       notes: sess.coach_notes || '',
+      day: dayBySessionId[sess.id] ?? null,
       sections: sessSections.map(sec => {
         const secExs   = exerciseRows.filter(e => e.section_id === sec.id);
         const secNotes = noteRows.filter(n => n.section_id === sec.id);
@@ -594,7 +612,7 @@ export async function saveAthleteBlock(blockId, draft) {
   //    new block_session at the same session_order takes over.
   const { data: tbRow, error: tbReadErr } = await supabase
     .from('training_blocks')
-    .select('athlete_id')
+    .select('athlete_id, start_date')
     .eq('id', blockId)
     .single();
   if (tbReadErr) return { ok: false, error: tbReadErr };
@@ -798,6 +816,44 @@ export async function saveAthleteBlock(blockId, draft) {
           .insert(recreate);
         if (insErr) console.error('[Block] planned_sessions recreate failed', insErr);
       }
+    }
+  }
+
+  // 5. Day-of-week assignment → planned_sessions. Each session with a
+  //    day picked gets one occurrence per week landing on that weekday
+  //    — this is what actually puts it on the athlete's calendar.
+  //    Skips any (session, week) combo the restore/recreate step above
+  //    already covers, so existing logged/completed occurrences are
+  //    never duplicated.
+  if (athleteId && tbRow.start_date) {
+    const { data: covered } = await supabase
+      .from('planned_sessions')
+      .select('block_session_id, week_number')
+      .eq('block_id', blockId);
+    const coveredSet = new Set((covered || []).map(p => `${p.block_session_id}|${p.week_number}`));
+
+    const blockWeeks = draft.block.duration_weeks;
+    const toCreate = [];
+    draft.sessions.forEach((sess, si) => {
+      const newId = newBlockSessionByOrder[si];
+      if (!newId || sess.day == null) return;
+      for (let wk = 1; wk <= blockWeeks; wk++) {
+        const key = `${newId}|${wk}`;
+        if (coveredSet.has(key)) continue;
+        coveredSet.add(key);
+        toCreate.push({
+          athlete_id:       athleteId,
+          block_id:         blockId,
+          block_session_id: newId,
+          week_number:      wk,
+          planned_date:     addDaysISO(tbRow.start_date, (wk - 1) * 7 + sess.day),
+          status:           'planned',
+        });
+      }
+    });
+    if (toCreate.length) {
+      const { error: dayErr } = await supabase.from('planned_sessions').insert(toCreate);
+      if (dayErr) console.error('[Block] day-assignment planned_sessions insert failed', dayErr);
     }
   }
 

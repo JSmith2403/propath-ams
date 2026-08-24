@@ -1,5 +1,12 @@
 import { supabase } from '../lib/supabase';
-import { parseDate } from '../utils/blockHelpers';
+import { parseDate, addDaysISO, mondayOfISO } from '../utils/blockHelpers';
+
+/** Reserved block_name used for the lightweight, auto-created 1-week
+ *  blocks behind "Plan for a week" / "Plan for 1 Session", and for
+ *  cross-week paste targets that don't land in an existing block. Never
+ *  applied to a coach-named block, so cleanup logic keyed on this name
+ *  can never touch real programming. */
+const FREEFORM_NAME = 'FreeForm';
 
 /**
  * usePlannedSessionMutations — per-athlete drag/drop + delete primitives
@@ -54,23 +61,11 @@ async function fetchBlockWindow(blockId) {
 export async function movePlannedSession(plannedId, newDateISO) {
   const { data: row, error: e1 } = await supabase
     .from('planned_sessions')
-    .select('block_id, standalone_session_id, planned_date')
+    .select('block_id, planned_date')
     .eq('id', plannedId)
     .single();
   if (e1) return { ok: false, error: e1 };
   if (row.planned_date === newDateISO) return { ok: true, noop: true };
-
-  // Standalone sessions have no block window to respect — any date is
-  // valid, and there's no week_number to recompute.
-  if (!row.block_id) {
-    const updates = { planned_date: newDateISO };
-    const { error } = await supabase.from('planned_sessions').update(updates).eq('id', plannedId);
-    if (error) return { ok: false, error };
-    if (row.standalone_session_id) {
-      await supabase.from('standalone_sessions').update({ session_date: newDateISO }).eq('id', row.standalone_session_id);
-    }
-    return { ok: true };
-  }
 
   const win = await fetchBlockWindow(row.block_id);
   if (!win.ok) return win;
@@ -87,64 +82,154 @@ export async function movePlannedSession(plannedId, newDateISO) {
   return { ok: true };
 }
 
+/**
+ * Find a training_block covering `dateISO`, or create a lightweight
+ * 1-week "FreeForm" one if none exists — the paste target for a
+ * session copied onto a week with no programme of its own yet.
+ */
+async function findOrCreateFreeFormBlock(athleteId, dateISO) {
+  const { data: existing, error: e1 } = await supabase
+    .from('training_blocks')
+    .select('id, start_date, end_date')
+    .eq('athlete_id', athleteId)
+    .lte('start_date', dateISO)
+    .gte('end_date', dateISO)
+    .limit(1)
+    .maybeSingle();
+  if (e1) return { ok: false, error: e1 };
+  if (existing) return { ok: true, block: existing };
+
+  const { data: maxRow } = await supabase
+    .from('training_blocks')
+    .select('display_order')
+    .eq('athlete_id', athleteId)
+    .order('display_order', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const startDate = mondayOfISO(dateISO);
+  const { data: created, error: e2 } = await supabase
+    .from('training_blocks')
+    .insert({
+      athlete_id: athleteId,
+      block_name: FREEFORM_NAME,
+      start_date: startDate,
+      end_date: addDaysISO(startDate, 6),
+      duration_weeks: 1,
+      display_order: (maxRow?.display_order || 0) + 1,
+    })
+    .select()
+    .single();
+  if (e2) return { ok: false, error: e2 };
+  return { ok: true, block: created };
+}
+
+/**
+ * Duplicate a block_session (+ its exercises + week-1 prescriptions —
+ * the only week that exists in a 1-week FreeForm target) into another
+ * block, returning the new block_session's id.
+ */
+async function cloneBlockSessionInto(sourceBlockSessionId, targetBlockId) {
+  const { data: srcSession, error: e1 } = await supabase
+    .from('block_sessions')
+    .select('session_name, coach_notes')
+    .eq('id', sourceBlockSessionId)
+    .single();
+  if (e1) return { ok: false, error: e1 };
+
+  const { data: lastOrderRow } = await supabase
+    .from('block_sessions')
+    .select('session_order')
+    .eq('block_id', targetBlockId)
+    .order('session_order', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: newSession, error: e2 } = await supabase
+    .from('block_sessions')
+    .insert({
+      block_id: targetBlockId,
+      session_name: srcSession.session_name,
+      session_order: (lastOrderRow?.session_order ?? -1) + 1,
+      coach_notes: srcSession.coach_notes,
+    })
+    .select()
+    .single();
+  if (e2) return { ok: false, error: e2 };
+
+  const { data: srcExercises, error: e3 } = await supabase
+    .from('session_exercises')
+    .select('id, exercise_id, display_order, group_label, group_colour, prescription_type, notes, is_warm_up')
+    .eq('block_session_id', sourceBlockSessionId)
+    .order('display_order', { ascending: true });
+  if (e3) return { ok: false, error: e3 };
+
+  if (srcExercises?.length) {
+    const { data: newExercises, error: e4 } = await supabase
+      .from('session_exercises')
+      .insert(srcExercises.map(({ id: _id, ...rest }) => ({ ...rest, block_session_id: newSession.id })))
+      .select();
+    if (e4) return { ok: false, error: e4 };
+
+    const oldToNewId = new Map(srcExercises.map((ex, i) => [ex.id, newExercises[i].id]));
+    const { data: srcPrescriptions } = await supabase
+      .from('exercise_week_prescriptions')
+      .select('session_exercise_id, sets, reps, target_value, rest_seconds')
+      .in('session_exercise_id', srcExercises.map(ex => ex.id))
+      .eq('week_number', 1);
+
+    const prescriptionRows = (srcPrescriptions || [])
+      .filter(p => oldToNewId.has(p.session_exercise_id))
+      .map(p => ({
+        session_exercise_id: oldToNewId.get(p.session_exercise_id),
+        week_number: 1,
+        sets: p.sets,
+        reps: p.reps,
+        target_value: p.target_value,
+        rest_seconds: p.rest_seconds,
+      }));
+    if (prescriptionRows.length) {
+      await supabase.from('exercise_week_prescriptions').insert(prescriptionRows);
+    }
+  }
+
+  return { ok: true, blockSessionId: newSession.id };
+}
+
 export async function copyPlannedSession(plannedId, newDateISO) {
   const { data: src, error: e1 } = await supabase
     .from('planned_sessions')
-    .select('athlete_id, block_id, block_session_id, standalone_session_id')
+    .select('athlete_id, block_id, block_session_id')
     .eq('id', plannedId)
     .single();
   if (e1) return { ok: false, error: e1 };
 
-  // Standalone sessions can be copied onto any date — no block window,
-  // no week_number. Copying duplicates the underlying standalone_session
-  // row too, so renaming the copy never touches the original.
-  if (!src.block_id) {
-    const { data: srcSession, error: e2 } = await supabase
-      .from('standalone_sessions')
-      .select('athlete_id, session_name, coach_notes')
-      .eq('id', src.standalone_session_id)
-      .single();
-    if (e2) return { ok: false, error: e2 };
-
-    const { data: newSession, error: e3 } = await supabase
-      .from('standalone_sessions')
-      .insert({
-        athlete_id:   srcSession.athlete_id,
-        session_name: srcSession.session_name,
-        session_date: newDateISO,
-        coach_notes:  srcSession.coach_notes,
-      })
-      .select()
-      .single();
-    if (e3) return { ok: false, error: e3 };
-
-    const { data, error } = await supabase
-      .from('planned_sessions')
-      .insert({
-        athlete_id:             src.athlete_id,
-        standalone_session_id:  newSession.id,
-        planned_date:           newDateISO,
-        status:                 'planned',
-      })
-      .select()
-      .single();
-    if (error) return { ok: false, error };
-    return { ok: true, data };
-  }
-
   const win = await fetchBlockWindow(src.block_id);
   if (!win.ok) return win;
-  const week = weekNumberWithin(win.start, win.end, newDateISO);
+  let week = weekNumberWithin(win.start, win.end, newDateISO);
+
+  let targetBlockId = src.block_id;
+  let targetBlockSessionId = src.block_session_id;
+
+  // Target date falls outside the source block's window — paste it
+  // into whatever block already covers that week, or spin up a
+  // lightweight FreeForm one, cloning the session's content across.
   if (week == null) {
-    return { ok: false, error: new Error('That date is outside this block.') };
+    const target = await findOrCreateFreeFormBlock(src.athlete_id, newDateISO);
+    if (!target.ok) return target;
+    week = weekNumberWithin(target.block.start_date, target.block.end_date, newDateISO);
+    const cloned = await cloneBlockSessionInto(src.block_session_id, target.block.id);
+    if (!cloned.ok) return cloned;
+    targetBlockId = target.block.id;
+    targetBlockSessionId = cloned.blockSessionId;
   }
 
   const { data, error } = await supabase
     .from('planned_sessions')
     .insert({
       athlete_id:       src.athlete_id,
-      block_id:         src.block_id,
-      block_session_id: src.block_session_id,
+      block_id:         targetBlockId,
+      block_session_id: targetBlockSessionId,
       week_number:      week,
       planned_date:     newDateISO,
       status:           'planned',
@@ -156,80 +241,45 @@ export async function copyPlannedSession(plannedId, newDateISO) {
 }
 
 export async function deletePlannedSession(plannedId) {
-  // Standalone sessions: delete the parent standalone_sessions row so
-  // it doesn't dangle — the FK cascade removes the planned_sessions row
-  // with it. Block sessions: delete the single occurrence as before.
   const { data: row } = await supabase
     .from('planned_sessions')
-    .select('standalone_session_id')
+    .select('block_id, block_session_id')
     .eq('id', plannedId)
     .single();
-
-  if (row?.standalone_session_id) {
-    const { error } = await supabase.from('standalone_sessions').delete().eq('id', row.standalone_session_id);
-    if (error) return { ok: false, error };
-    return { ok: true };
-  }
 
   const { error } = await supabase
     .from('planned_sessions')
     .delete()
     .eq('id', plannedId);
   if (error) return { ok: false, error };
-  return { ok: true };
-}
 
-/**
- * Create a single standalone session on a specific date — the
- * "Plan for 1 Session" calendar action. No block, no week number.
- */
-export async function createStandaloneSession({ athleteId, sessionName, sessionDateISO, coachNotes = null }) {
-  const { data: session, error: e1 } = await supabase
-    .from('standalone_sessions')
-    .insert({ athlete_id: athleteId, session_name: sessionName, session_date: sessionDateISO, coach_notes: coachNotes })
-    .select()
-    .single();
-  if (e1) return { ok: false, error: e1 };
-
-  const { data, error: e2 } = await supabase
-    .from('planned_sessions')
-    .insert({ athlete_id: athleteId, standalone_session_id: session.id, planned_date: sessionDateISO, status: 'planned' })
-    .select()
-    .single();
-  if (e2) return { ok: false, error: e2 };
-  return { ok: true, data, session };
-}
-
-/**
- * Create several standalone sessions in one go — the "Plan for a week"
- * action. `entries` is [{ dateISO, name }]. Each becomes its own
- * standalone_sessions + planned_sessions row (no shared parent — a
- * loose week of individually-named sessions, not a block).
- */
-export async function createStandaloneSessions(athleteId, entries) {
-  if (!entries?.length) return { ok: true, created: 0 };
-
-  const { data: sessions, error: e1 } = await supabase
-    .from('standalone_sessions')
-    .insert(entries.map(e => ({ athlete_id: athleteId, session_name: e.name, session_date: e.dateISO })))
-    .select();
-  if (e1) return { ok: false, error: e1 };
-
-  const { data, error: e2 } = await supabase
-    .from('planned_sessions')
-    .insert(sessions.map(s => ({ athlete_id: athleteId, standalone_session_id: s.id, planned_date: s.session_date, status: 'planned' })))
-    .select();
-  if (e2) return { ok: false, error: e2 };
-  return { ok: true, created: data?.length || 0 };
-}
-
-/** Rename / update notes on an existing standalone session. */
-export async function updateStandaloneSession(standaloneSessionId, patch) {
-  const { error } = await supabase
-    .from('standalone_sessions')
-    .update(patch)
-    .eq('id', standaloneSessionId);
-  if (error) return { ok: false, error };
+  // Housekeeping: an auto-created FreeForm block whose last session
+  // occurrence was just removed shouldn't linger as an empty chip on
+  // the timeline. Keyed strictly on the reserved FreeForm name, so a
+  // coach-named structured block is never touched by this cleanup.
+  if (row?.block_id) {
+    const { data: block } = await supabase
+      .from('training_blocks')
+      .select('block_name')
+      .eq('id', row.block_id)
+      .single();
+    if (block?.block_name === FREEFORM_NAME) {
+      const { count: remainingOccurrences } = await supabase
+        .from('planned_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('block_session_id', row.block_session_id);
+      if (!remainingOccurrences) {
+        await supabase.from('block_sessions').delete().eq('id', row.block_session_id);
+        const { count: remainingSessions } = await supabase
+          .from('block_sessions')
+          .select('id', { count: 'exact', head: true })
+          .eq('block_id', row.block_id);
+        if (!remainingSessions) {
+          await supabase.from('training_blocks').delete().eq('id', row.block_id);
+        }
+      }
+    }
+  }
   return { ok: true };
 }
 

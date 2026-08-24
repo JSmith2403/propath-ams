@@ -16,21 +16,20 @@ import ProgrammeCalendar, {
   _toISO     as toISO,
 } from './ProgrammeCalendar';
 import DayQuickAddMenu from './DayQuickAddMenu';
-import PlanSessionModal from './standalone/PlanSessionModal';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
-import { addDaysISO } from '../../utils/blockHelpers';
+import { mondayOfISO, addDaysISO } from '../../utils/blockHelpers';
 import {
   loadAthleteBlock,
   saveAthleteBlock,
   saveBlockTemplate,
 } from '../../utils/programmeTemplates';
 
-function mondayOfISO(iso) {
-  const d = new Date(iso + 'T00:00:00');
-  const offset = (d.getDay() + 6) % 7; // days since Monday
-  return addDaysISO(iso, -offset);
-}
+// Reserved name for the lightweight, auto-created 1-week blocks behind
+// "Plan for a week" / "Plan for 1 Session" — never shown to the coach
+// as a naming decision, and matches the reserved name in
+// usePlannedSessionMutations.js's own FreeForm cleanup logic.
+const FREEFORM_NAME = 'FreeForm';
 
 // Combine a fallback message with the supabase error so the user gets
 // real diagnostic info inline in the modal.
@@ -90,10 +89,11 @@ export default function ProgrammeView({
     removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
 
-  // Planned training sessions (both block-based and standalone) — fed
-  // into the calendar as pills via plannedSessionsAsEvents. `refreshPlanned`
-  // is invoked after any mutation that resizes/relocates/adds sessions so
-  // the calendar pills don't lag behind the schema.
+  // Planned training sessions (block-based, including lightweight
+  // FreeForm blocks) — fed into the calendar as pills via
+  // plannedSessionsAsEvents. `refreshPlanned` is invoked after any
+  // mutation that resizes/relocates/adds sessions so the calendar
+  // pills don't lag behind the schema.
   const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(athleteIds);
   const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
 
@@ -111,13 +111,6 @@ export default function ProgrammeView({
 
   // ── Copy/paste clipboard for planned sessions ────────────────────────────
   const [clipboard, setClipboard] = useState(null); // { plannedId, name } | null
-
-  // ── Plan-a-session modal (standalone sessions) ───────────────────────────
-  // { mode: 'single', dateISO } | { mode: 'week', weekStartISO } | { mode: 'edit', existing }
-  const [planModal, setPlanModal] = useState(null);
-  const closePlanModal = () => setPlanModal(null);
-  const handlePlanSaved = () => { closePlanModal(); refreshPlanned(); };
-  const handlePlanDeleted = () => { closePlanModal(); refreshPlanned(); };
 
   const handlePaste = async (targetISO) => {
     if (!clipboard) return;
@@ -138,24 +131,8 @@ export default function ProgrammeView({
   const openAdd       = () => { if (!canEdit) return; setEventSaveError(null); setModal({ mode: 'add',  event: null }); };
   const openEdit      = (event) => {
     setEventSaveError(null);
-    // A standalone planned session — open the lightweight edit/delete
-    // modal rather than the full block builder (there's no block).
-    if (event?.is_planned && event?.is_standalone) {
-      if (!canEdit) return;
-      setPlanModal({
-        mode: 'edit',
-        existing: {
-          plannedId: event._planned_id,
-          standaloneSessionId: event._standalone_session_id,
-          name: event.event_name,
-          notes: event.notes,
-          dateISO: event.start_date,
-        },
-      });
-      return;
-    }
-    // Block-based planned session pill: open the session builder for
-    // that block instead of the event editor.
+    // Planned session pill (block-based or a lightweight FreeForm
+    // block) — open the session builder instead of the event editor.
     if (event?.is_planned) {
       const target = blocks.find(b => b.id === event._block_id);
       if (target) openBlockBuilder(target);
@@ -210,6 +187,30 @@ export default function ProgrammeView({
     }
   };
   const closeBuilder = () => setBuilderState(null);
+
+  // "Plan for 1 Session" / "Plan for a week" — no naming form, no
+  // "block" language anywhere: silently create a lightweight 1-week
+  // FreeForm block and drop straight into the same exercise builder
+  // used for real blocks, where "Add Session" covers both cases
+  // (one session, or several across the week).
+  const createFreeFormAndOpen = async (dateISO, { weekMode = false } = {}) => {
+    if (!canEdit) return;
+    const startDate = weekMode ? mondayOfISO(dateISO) : dateISO;
+    const res = await addBlock({
+      athlete_id: athlete.id,
+      block_name: FREEFORM_NAME,
+      start_date: startDate,
+      end_date: addDaysISO(startDate, 6),
+      duration_weeks: 1,
+      target_event_id: null,
+      notes: null,
+    });
+    if (!res?.ok) {
+      showToast(`Couldn't start. ${res?.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    openBlockBuilder(res.row);
+  };
 
   const handleBuilderSave = async (draft) => {
     if (!builderState?.blockId) return { ok: false, error: new Error('Missing block id') };
@@ -307,7 +308,7 @@ export default function ProgrammeView({
       else setBlockSaveError(formatError(res.error, "Couldn't save block."));
     } else {
       const res = await addBlock(payload);
-      if (res?.ok) closeBlock();
+      if (res?.ok) { closeBlock(); openBlockBuilder(res.row); }
       else setBlockSaveError(formatError(res?.error, "Couldn't add block."));
     }
   };
@@ -409,11 +410,11 @@ export default function ProgrammeView({
         onEditBlockDetails={openBlockEdit}
         onAddWeek={handleAddWeek}
         onRemoveLastWeek={(block) => setRemoveWeekTarget(block)}
-        onBlankWeekClick={(weekStartISO) => setPlanModal({ mode: 'week', weekStartISO })}
+        onBlankWeekClick={(weekStartISO) => createFreeFormAndOpen(weekStartISO, { weekMode: true })}
         showHeading
       />
 
-      {/* Month calendar — sessions (block-based and standalone) plus
+      {/* Month calendar — block-based and FreeForm sessions plus
           competitions/camps/testing days, all on one grid. Hovering a
           blank day surfaces the quick-add menu (session / week / block);
           hovering an existing session pill surfaces a copy icon so it
@@ -436,8 +437,8 @@ export default function ProgrammeView({
           <DayQuickAddMenu
             dateISO={iso}
             clipboard={clipboard}
-            onPlanSession={(d) => setPlanModal({ mode: 'single', dateISO: d })}
-            onPlanWeek={(d) => setPlanModal({ mode: 'week', weekStartISO: mondayOfISO(d) })}
+            onPlanSession={(d) => createFreeFormAndOpen(d)}
+            onPlanWeek={(d) => createFreeFormAndOpen(d, { weekMode: true })}
             onPlanBlock={(d) => openBlockAdd(d)}
             onPaste={handlePaste}
             keepAlive={helpers.keepAlive}
@@ -544,19 +545,6 @@ export default function ProgrammeView({
           danger
           onConfirm={handleConfirmRemoveWeek}
           onCancel={() => setRemoveWeekTarget(null)}
-        />
-      )}
-
-      {planModal && (
-        <PlanSessionModal
-          mode={planModal.mode}
-          athleteId={athlete.id}
-          dateISO={planModal.dateISO}
-          weekStartISO={planModal.weekStartISO}
-          existing={planModal.existing}
-          onSaved={handlePlanSaved}
-          onDeleted={handlePlanDeleted}
-          onClose={closePlanModal}
         />
       )}
 

@@ -26,6 +26,7 @@ function defaultSession(idx) {
     tempId: tempId('sess'),
     name: `Session ${idx + 1}`,
     notes: '',
+    day: null, // 0-6 Mon-indexed weekday this session lands on each week
     sections: [
       { tempId: tempId('sec'), name: 'Warm-up', is_warm_up: true, display_order: 0, exercises: [] },
     ],
@@ -180,6 +181,7 @@ export default function BlockBuilderModal({
         ...src,
         tempId: tempId('sess'),
         name: `${src.name} (copy)`,
+        day: null, // coach re-picks — avoids two sessions silently sharing a day
         sections: src.sections.map(sec => ({
           ...sec,
           tempId: tempId('sec'),
@@ -214,6 +216,7 @@ export default function BlockBuilderModal({
 
   const renameSession = (idx, name) => mutateSession(idx, s => ({ ...s, name }));
   const updateSessionNotes = (idx, notes) => mutateSession(idx, s => ({ ...s, notes }));
+  const updateSessionDay = (idx, day) => mutateSession(idx, s => ({ ...s, day }));
 
   const renameSectionInSession = (idx, sectionId, name) => mutateSession(idx, s => ({
     ...s,
@@ -630,6 +633,16 @@ export default function BlockBuilderModal({
         {/* Body — vertical stack of session cards, single shared horizontal scroll.
             Background tint makes the white session cards pop. */}
         <div className="flex-1 overflow-auto" style={{ backgroundColor: '#f4f5f7' }}>
+          {athleteMode && (
+            <div className="px-6 pt-5 pb-1">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                Build the programme
+              </h4>
+              <p className="text-[11px] mt-0.5" style={{ color: '#9ca3af' }}>
+                Add sessions below, then pick the day each one lands on every week — that's what puts it on the athlete's calendar.
+              </p>
+            </div>
+          )}
           {draft.sessions.map((sess, idx) => (
             <SessionBlock
               key={sess.tempId}
@@ -644,6 +657,8 @@ export default function BlockBuilderModal({
               onUpdateNotes={(notes) => updateSessionNotes(idx, notes)}
               onRemoveSession={() => removeSession(idx)}
               onDuplicateSession={() => duplicateSession(idx)}
+              day={sess.day ?? null}
+              onUpdateDay={athleteMode ? (d) => updateSessionDay(idx, d) : undefined}
               onAddSection={() => addSectionToSession(idx)}
               onRenameSection={(secId, name) => renameSectionInSession(idx, secId, name)}
               onDeleteSection={(secId) => deleteSectionInSession(idx, secId)}

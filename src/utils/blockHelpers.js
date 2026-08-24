@@ -28,6 +28,13 @@ export function addDaysISO(iso, days) {
   return toISO(d);
 }
 
+/** Monday of the Mon-Sun week containing `iso`. */
+export function mondayOfISO(iso) {
+  const d = parseDate(iso);
+  const offset = (d.getDay() + 6) % 7; // days since Monday
+  return addDaysISO(iso, -offset);
+}
+
 /**
  * Next Monday strictly after today. If today is Monday, returns the
  * Monday seven days from now (treats "next Monday" as the upcoming
