@@ -15,7 +15,7 @@ const OVERVIEW_SUBTABS = [
 
 // ─── Athlete App activation panel ────────────────────────────────────────────
 function AthleteAppPanel({ athleteId }) {
-  const { tokenData, loading, activate, deactivate } = useAthleteApp(athleteId);
+  const { tokenData, loading, submitting, activate, deactivate } = useAthleteApp(athleteId);
   const [copied, setCopied] = useState(false);
 
   if (loading) return null;
@@ -47,8 +47,10 @@ function AthleteAppPanel({ athleteId }) {
           </p>
         </div>
         <button
+          type="button"
           onClick={handleToggle}
-          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+          disabled={submitting}
+          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ backgroundColor: isActive ? '#A58D69' : '#d1d5db' }}
           aria-label={isActive ? 'Deactivate' : 'Activate'}
         >

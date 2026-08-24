@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+
+const UNIQUE_VIOLATION = '23505';
 
 /**
  * Coach-side hook for managing an athlete's permanent app token.
@@ -56,7 +58,17 @@ export function useAthleteApp(athleteId) {
     }
   }, [athleteId]);
 
+  // Guards against a double-click (or any other near-simultaneous double
+  // call) firing two inserts for the same brand-new athlete — the first
+  // succeeds, the second used to hit athlete_app_tokens' unique
+  // athlete_id constraint and surface as a raw alert().
+  const activating = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const activate = useCallback(async () => {
+    if (activating.current) return;
+    activating.current = true;
+    setSubmitting(true);
     try {
       if (tokenData) {
         const { error } = await supabase
@@ -69,13 +81,28 @@ export function useAthleteApp(athleteId) {
         const { error } = await supabase
           .from('athlete_app_tokens')
           .insert({ athlete_id: athleteId, token: newToken, is_active: true });
-        if (error) throw error;
+        // A row already exists for this athlete (the guard above still
+        // leaves a window for a genuinely concurrent request, e.g. two
+        // browser tabs) — fall back to reactivating it instead of
+        // failing, since the desired end state is the same either way.
+        if (error && error.code === UNIQUE_VIOLATION) {
+          const { error: updErr } = await supabase
+            .from('athlete_app_tokens')
+            .update({ is_active: true })
+            .eq('athlete_id', athleteId);
+          if (updErr) throw updErr;
+        } else if (error) {
+          throw error;
+        }
       }
       await ensureWellnessToken(true);
       await fetchToken();
     } catch (err) {
       console.error('[AthleteApp] activate failed:', err);
       alert('Failed to activate athlete app: ' + (err.message || err));
+    } finally {
+      activating.current = false;
+      setSubmitting(false);
     }
   }, [athleteId, tokenData, fetchToken, ensureWellnessToken]);
 
@@ -90,5 +117,5 @@ export function useAthleteApp(athleteId) {
     await fetchToken();
   }, [tokenData, fetchToken, ensureWellnessToken]);
 
-  return { tokenData, loading, activate, deactivate };
+  return { tokenData, loading, submitting, activate, deactivate };
 }
