@@ -8,13 +8,12 @@
     <!-- ── PWA / install ─────────────────────────────────────────────── -->
     <link rel="manifest" href="/manifest.json" id="pwa-manifest" />
     <!--
-      iOS / Android capture the manifest at "Add to Home Screen" time
-      and use its start_url as the install URL. The default manifest
-      points at "/", which is wrong for athletes installing from
-      /athlete/<token>. This inline script runs before any external
-      JS, swapping the manifest <link> to a per-token endpoint that
-      returns start_url=/athlete/<token>. Synchronous so iOS sees the
-      right manifest URL on first paint.
+      Android/Chrome re-evaluates install eligibility dynamically (the
+      "Install" banner in InstallPrompt.jsx waits 10s before showing,
+      which is ample time), so swapping the manifest <link> here still
+      reliably gives Android the per-token start_url. iOS does NOT
+      behave this way — see the static apple-mobile-web-app-capable="no"
+      below instead, which is the actual fix for iOS.
     -->
     <script>
       (function () {
@@ -22,19 +21,8 @@
           var m = location.pathname.match(/^\/athlete\/([A-Za-z0-9_-]+)/);
           if (!m) return;
           var token = m[1];
-          // Per-token manifest (kept as belt-and-braces for browsers that
-          // do honour it; iOS does not when capable=no, see below).
           var link = document.getElementById('pwa-manifest');
           if (link) link.setAttribute('href', '/api/manifest/' + encodeURIComponent(token));
-          // PRIMARY FIX for iOS: flip apple-mobile-web-app-capable to "no".
-          // This tells iOS Safari "this isn't a PWA — just bookmark me."
-          // iOS then captures Add to Home Screen as a regular bookmark
-          // pointing at the EXACT current URL (not start_url), so the
-          // home-screen icon always opens the athlete's token URL.
-          // The trade-off: opens in Safari (with the address bar visible)
-          // rather than fullscreen — acceptable for the athlete cohort.
-          var pwa = document.getElementById('apple-pwa-capable');
-          if (pwa) pwa.setAttribute('content', 'no');
         } catch (e) { /* keep defaults on failure */ }
       })();
     </script>
@@ -44,7 +32,14 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
     <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
     <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" id="apple-pwa-capable" />
+    <!--
+      Static "no" (not toggled by JS — see the script above). iOS reads
+      this tag from the raw HTML at parse time, before any script runs,
+      so a client-side mutation loses the race and iOS locks in "yes"
+      regardless. Coach pages don't need a fullscreen iOS install
+      either, so there's no real trade-off to statically opting out.
+    -->
+    <meta name="apple-mobile-web-app-capable" content="no" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ProPath" />
 
