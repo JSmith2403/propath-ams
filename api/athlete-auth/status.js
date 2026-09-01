@@ -8,7 +8,7 @@
 // they already have an account — if the flag is off, the caller falls
 // straight back to today's token-only behaviour untouched.
 
-import { getSupabaseAdmin } from '../_lib/athleteAuth.js';
+import { getSupabaseAdmin, suggestUsername } from '../_lib/athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -50,5 +50,15 @@ export default async function handler(req, res) {
     .eq('athlete_id', tokenRow.athlete_id)
     .maybeSingle();
 
-  res.status(200).json({ ok: true, enabled: true, hasAccount: !!roleRow });
+  let suggestedUsername = null;
+  if (!roleRow) {
+    const { data: athleteRow } = await admin
+      .from('athletes')
+      .select('data, dob')
+      .eq('id', tokenRow.athlete_id)
+      .maybeSingle();
+    suggestedUsername = suggestUsername(athleteRow?.data?.name, athleteRow?.dob);
+  }
+
+  res.status(200).json({ ok: true, enabled: true, hasAccount: !!roleRow, suggestedUsername });
 }

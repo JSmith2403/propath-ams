@@ -23,6 +23,7 @@ export default function AthleteAppPage() {
   const { token } = useParams();
   const [status, setStatus]   = useState('loading'); // loading | invalid | needs-pin-setup | ready
   const [athlete, setAthlete] = useState(null);
+  const [suggestedUsername, setSuggestedUsername] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +77,7 @@ export default function AthleteAppPage() {
           return;
         }
         setAthlete(resolvedAthlete);
+        setSuggestedUsername(statusResult.suggestedUsername || '');
         setStatus('needs-pin-setup');
         return;
       }
@@ -108,7 +110,7 @@ export default function AthleteAppPage() {
   }
 
   if (status === 'needs-pin-setup') {
-    return <AthletePinSetup athleteName={athlete.name} token={token} />;
+    return <AthletePinSetup athleteName={athlete.name} token={token} suggestedUsername={suggestedUsername} />;
   }
 
   return <AthleteAppShell athlete={athlete} />;

@@ -15,8 +15,8 @@ const GOLD = '#A58D69';
  * setup.js — synthetic email, the PIN as a real password), then signs
  * in with it directly from the client, same call the coach login uses.
  */
-export default function AthletePinSetup({ athleteName, token }) {
-  const [username, setUsername] = useState('');
+export default function AthletePinSetup({ athleteName, token, suggestedUsername = '' }) {
+  const [username, setUsername] = useState(suggestedUsername);
   const [pin, setPin]           = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError]       = useState(null);
@@ -55,7 +55,9 @@ export default function AthletePinSetup({ athleteName, token }) {
       <img src={logo} alt="ProPath" style={{ width: '120px' }} className="mb-8" />
       <h1 className="text-h2 font-bold text-ink-900 mb-2">Hi {athleteName?.split(' ')[0] || 'there'} 👋</h1>
       <p className="text-meta text-ink-500 mb-6 max-w-xs">
-        Pick a username and a 6-digit PIN so you can open ProPath from your home screen without this link.
+        {suggestedUsername
+          ? "We've picked a username for you below — change it if you'd like. Then choose a 6-digit PIN so you can open ProPath from your home screen without this link."
+          : 'Pick a username and a 6-digit PIN so you can open ProPath from your home screen without this link.'}
       </p>
 
       <div className="w-full max-w-xs space-y-3 mb-4">

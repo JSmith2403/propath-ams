@@ -19,6 +19,20 @@ export function sanitizeUsername(raw) {
   return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
 }
 
+/** Name + DOB (DDMM) — e.g. "Pro Pathius" born 24 March → "ProPathius2403".
+ *  A starting suggestion the athlete can still edit before saving. */
+export function suggestUsername(name, dob) {
+  const clean = String(name || '').replace(/[^a-zA-Z]/g, '');
+  let suffix = '';
+  if (dob) {
+    const d = new Date(`${dob}T00:00:00`);
+    if (!isNaN(d.getTime())) {
+      suffix = String(d.getDate()).padStart(2, '0') + String(d.getMonth() + 1).padStart(2, '0');
+    }
+  }
+  return clean + suffix || null;
+}
+
 /**
  * Athlete display fields, matching the shape validate_athlete_token
  * (the original token-route RPC) already returns, so both entry
