@@ -1,6 +1,7 @@
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { NetworkOnly } from 'workbox-strategies';
+import { clientsClaim } from 'workbox-core';
 
 // Precache the build output — injected at build time by vite-plugin-pwa.
 precacheAndRoute(self.__WB_MANIFEST);
@@ -19,11 +20,19 @@ registerRoute(
 );
 
 // SPA fallback for navigations — same denylist as the previous config.
-// Athlete-app + wellness routes hit Supabase auth checks immediately on
-// load; let them go to the network rather than serving the SPA shell.
+// Athlete-app + wellness routes hit Supabase/session checks immediately
+// on load; let them go to the network rather than serving a (possibly
+// stale) cached SPA shell.
+//
+// /^\/athlete(\/|$)/ — NOT just /^\/athlete\// — matters here: the bare
+// /athlete route (no trailing slash, no token) is the stable PIN-login
+// entry point, and missing this once meant a stale cached shell could
+// serve an OLD build that predates that route, falling through to the
+// coach app's own login screen instead. Same class of bug as the two
+// earlier per-athlete-URL fixes — caught because it did exactly that.
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/index.html'), {
-    denylist: [/^\/api\//, /^\/athlete\//, /^\/wellness\//],
+    denylist: [/^\/api\//, /^\/athlete(\/|$)/, /^\/wellness\//],
   })
 );
 
@@ -64,5 +73,10 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // registerType: 'autoUpdate' — activate a new SW version immediately
-// instead of waiting for all tabs to close.
+// instead of waiting for all tabs to close. skipWaiting() alone only
+// makes the new SW become "active"; without clientsClaim() it still
+// wouldn't take control of an already-open tab until that tab's next
+// hard reload, leaving a window where an old SW (with old routing
+// rules) keeps serving already-open athlete-app tabs.
 self.skipWaiting();
+clientsClaim();
