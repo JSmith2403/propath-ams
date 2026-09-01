@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { supabase } from '../../lib/supabase';
 import AthleteAppShell, { Loading } from './AthleteAppShell';
 import AthletePinLogin from './AthletePinLogin';
-
-const SESSION_KEY = 'propath_athlete_session';
 
 /**
  * The stable /athlete route — same URL for every PIN-login athlete,
@@ -11,24 +10,28 @@ const SESSION_KEY = 'propath_athlete_session';
  * here, never from a per-athlete token URL, so there's nothing
  * athlete-specific for iOS to get wrong.
  *
- * Identity comes from a session token in localStorage, not the URL —
- * valid session → resolve + render the app; no/invalid session → show
- * the PIN login screen.
+ * Identity comes from a real Supabase Auth session (the same
+ * mechanism the coach login uses — see the conversation history for
+ * why the earlier custom session-token system was scrapped), not the
+ * URL. Valid session with role='athlete' → resolve + render the app;
+ * no session → the PIN login screen.
  */
 export default function AthleteStableEntry() {
-  const [status, setStatus]   = useState('loading'); // loading | needs-login | ready
+  const [status, setStatus]   = useState('loading'); // loading | needs-login | ready | wrong-role
   const [athlete, setAthlete] = useState(null);
 
-  const validate = async (sessionToken) => {
-    if (!sessionToken) { setStatus('needs-login'); return; }
+  const resolve = useCallback(async (session) => {
+    if (!session) { setStatus('needs-login'); return; }
     try {
-      const res = await fetch('/api/athlete-auth/session', {
+      const res = await fetch('/api/athlete-auth/me', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionToken }),
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Session invalid.');
+      if (!json.ok) throw new Error(json.error || 'Not an athlete account.');
       setAthlete({
         id: json.athlete.athlete_id,
         name: json.athlete.name || 'Athlete',
@@ -39,29 +42,20 @@ export default function AthleteStableEntry() {
       });
       setStatus('ready');
     } catch (_) {
-      try { localStorage.removeItem(SESSION_KEY); } catch (_e) {}
-      setStatus('needs-login');
+      setStatus('wrong-role');
     }
-  };
-
-  useEffect(() => {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSION_KEY); } catch (_) {}
-    validate(stored);
   }, []);
 
-  const handleLoggedIn = (sessionToken, athleteData) => {
-    try { localStorage.setItem(SESSION_KEY, sessionToken); } catch (_) {}
-    setAthlete({
-      id: athleteData.athlete_id,
-      name: athleteData.name || 'Athlete',
-      photo: athleteData.photo || null,
-      sport: athleteData.sport || '',
-      wellnessToken: athleteData.wellness_token || null,
-      progressMetrics: [],
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) resolve(session);
     });
-    setStatus('ready');
-  };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled) resolve(session);
+    });
+    return () => { cancelled = true; subscription.unsubscribe(); };
+  }, [resolve]);
 
   if (status === 'loading') {
     return (
@@ -71,8 +65,25 @@ export default function AthleteStableEntry() {
     );
   }
 
+  if (status === 'wrong-role') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-ink-50 text-center">
+        <p className="text-meta text-ink-500 max-w-xs">
+          That account isn't set up as an athlete. If this is a mistake, contact your coach.
+        </p>
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className="mt-4 text-meta font-semibold"
+          style={{ color: '#A58D69' }}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
   if (status === 'needs-login') {
-    return <AthletePinLogin onLoggedIn={handleLoggedIn} />;
+    return <AthletePinLogin />;
   }
 
   return <AthleteAppShell athlete={athlete} />;

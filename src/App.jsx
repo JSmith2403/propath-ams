@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import RecentUpdatesView from './components/recent/RecentUpdatesView';
@@ -11,6 +11,11 @@ import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import InstallPrompt from './components/InstallPrompt';
+// Lazy so a coach's page load never pays for the athlete-app bundle —
+// this only mounts for the rare case of a role='athlete' session
+// somehow landing on the coach app's own root (e.g. old install icon,
+// manual navigation). Their normal path is the /athlete route.
+const AthleteStableEntry = lazy(() => import('./components/athlete-app/AthleteStableEntry.jsx'));
 import { useAthletes } from './hooks/useAthletes';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -333,6 +338,14 @@ export default function App() {
 
   if (!session) {
     return <><DevBanner /><LoginScreen onSignIn={signIn} onResetPassword={sendPasswordReset} /></>;
+  }
+
+  // A real athlete-role session (see athlete-real-auth-2026-09-01.sql)
+  // landed on the coach app's own root — route them to their app
+  // instead of the coach shell. Their normal path is the /athlete
+  // route; this is a fallback for e.g. an old install icon.
+  if (role === 'athlete') {
+    return <Suspense fallback={<LoadingSpinner />}><AthleteStableEntry /></Suspense>;
   }
 
   return (

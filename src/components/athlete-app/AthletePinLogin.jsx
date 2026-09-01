@@ -1,37 +1,38 @@
 import { useState } from 'react';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
+import { supabase } from '../../lib/supabase';
 
 const GOLD = '#A58D69';
+const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
 
 /**
- * Login screen for the stable /athlete URL when no valid session is
- * stored on this device yet (new device, cleared storage, or never
- * set up). Asks for the login ID + PIN issued during AthletePinSetup.
+ * Login screen for the stable /athlete URL when there's no active
+ * Supabase session (new device, signed out, cleared storage). Calls
+ * supabase.auth.signInWithPassword() directly — the exact mechanism
+ * the coach login already uses — with a synthetic email built from
+ * the entered username, so the athlete never sees "email" at all.
+ *
+ * A successful sign-in fires Supabase's own onAuthStateChange, which
+ * AthleteStableEntry is already listening for — this component doesn't
+ * need to do anything else once the call succeeds.
  */
-export default function AthletePinLogin({ onLoggedIn }) {
-  const [loginCode, setLoginCode] = useState('');
+export default function AthletePinLogin() {
+  const [username, setUsername] = useState('');
   const [pin, setPin]             = useState('');
   const [error, setError]         = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    if (!loginCode.trim() || pin.length < 4) return;
+    if (!username.trim() || pin.length < 6) return;
     setSubmitting(true);
     setError(null);
-    try {
-      const res = await fetch('/api/athlete-auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ loginCode: loginCode.trim(), pin }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Sign in failed.');
-      onLoggedIn(json.sessionToken, json.athlete);
-    } catch (err) {
-      setError(err.message);
-    } finally {
+    const email = `${username.trim().toLowerCase()}@${ATHLETE_EMAIL_DOMAIN}`;
+    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password: pin });
+    if (signInErr) {
+      setError('Incorrect username or PIN.');
       setSubmitting(false);
     }
+    // On success, onAuthStateChange in AthleteStableEntry takes it from here.
   };
 
   return (
@@ -42,21 +43,20 @@ export default function AthletePinLogin({ onLoggedIn }) {
       <div className="w-full max-w-xs space-y-3 mb-4">
         <input
           type="text"
-          autoCapitalize="characters"
           autoFocus
-          value={loginCode}
-          onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
-          placeholder="Login ID"
-          className="w-full text-center text-lg tracking-widest rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Username"
+          className="w-full text-center text-lg rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
         />
         <input
           type="password"
           inputMode="numeric"
           value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           placeholder="PIN"
-          className="w-full text-center text-2xl tracking-[0.5em] rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
+          className="w-full text-center text-2xl tracking-[0.4em] rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
         />
       </div>
 
@@ -64,7 +64,7 @@ export default function AthletePinLogin({ onLoggedIn }) {
 
       <button
         onClick={submit}
-        disabled={submitting || !loginCode.trim() || pin.length < 4}
+        disabled={submitting || !username.trim() || pin.length < 6}
         className="w-full max-w-xs rounded-md py-3 text-body font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         style={{ backgroundColor: GOLD }}
       >

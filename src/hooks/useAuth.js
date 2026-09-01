@@ -59,6 +59,7 @@ export function useAuth() {
   const [role,             setRole]             = useState(DEV_BYPASS ? 'admin' : null);
   const [userName,         setUserName]         = useState(DEV_BYPASS ? 'Dev Admin' : '');
   const [allocations,      setAllocations]      = useState([]);
+  const [athleteId,        setAthleteId]        = useState(null); // role === 'athlete' only
   const [loading,          setLoading]          = useState(!DEV_BYPASS); // false immediately in dev
   const [needsPasswordSet, setNeedsPasswordSet] = useState(false);
 
@@ -124,6 +125,7 @@ export function useAuth() {
         setRole(null);
         setUserName('');
         setAllocations([]);
+        setAthleteId(null);
         setLoading(false);
       }
     });
@@ -138,7 +140,7 @@ export function useAuth() {
     _diag(`#${mountId} loadProfile START for`, userId);
     const { data: roleRow } = await supabase
       .from('user_roles')
-      .select('role, full_name')
+      .select('role, full_name, athlete_id')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -146,6 +148,7 @@ export function useAuth() {
     _diag(`#${mountId} loadProfile role resolved:`, userRole, roleRow ? '(row found)' : '(NO ROW — defaulted to external)');
     setRole(userRole);
     setUserName(roleRow?.full_name || '');
+    setAthleteId(userRole === 'athlete' ? (roleRow?.athlete_id || null) : null);
 
     let athleteAllocations = [];
     if (userRole === 'external') {
@@ -186,6 +189,7 @@ export function useAuth() {
     role,
     userName,
     allocations,
+    athleteId,
     loading,
     needsPasswordSet,
     signIn,
