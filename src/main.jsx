@@ -13,11 +13,15 @@ import './index.css'
 const App = lazy(() => import('./App.jsx'))
 
 // ── PWA athlete-app launch shortcut ──────────────────────────────────────────
-// The web manifest's start_url is "/" so any home-screen launch lands at
-// the AMS root. Athletes who installed from /athlete/:token would otherwise
-// see the coach login screen on every relaunch. If we have a remembered
-// token AND we're running in standalone mode AND the user is at "/", swap
-// the URL synchronously BEFORE React mounts so there's no flash.
+// Home-screen launches keep landing on "/" (the coach admin root) for
+// athletes despite everything tried on the manifest/start_url side —
+// iOS's actual Add to Home Screen behaviour here has proven inconsistent
+// across multiple attempts, in ways that couldn't be pinned down without
+// physical-device access. Rather than keep chasing that, this makes the
+// app self-correct at boot regardless of which URL the icon actually
+// captured: if we're standalone, at "/", and there's evidence of an
+// athlete on this device, redirect BEFORE React mounts so the coach
+// login never has a chance to flash up.
 ;(function redirectStandaloneAthlete() {
   try {
     if (window.location.pathname !== '/') return;
@@ -25,8 +29,29 @@ const App = lazy(() => import('./App.jsx'))
       window.matchMedia?.('(display-mode: standalone)').matches
       || window.navigator?.standalone === true;
     if (!isStandalone) return;
-    const token = localStorage.getItem('propath_athlete_token');
-    if (token) window.location.replace(`/athlete/${token}${window.location.search}`);
+
+    // Legacy token-only athletes (pin_login_enabled off) — unchanged.
+    const legacyToken = localStorage.getItem('propath_athlete_token');
+    if (legacyToken) {
+      window.location.replace(`/athlete/${legacyToken}${window.location.search}`);
+      return;
+    }
+
+    // Real-auth athletes: a Supabase session under the reserved athlete
+    // email domain means this device belongs to an athlete, full stop —
+    // send it to /athlete rather than ever rendering the coach shell.
+    // Reading the persisted session directly (not calling supabase.auth)
+    // keeps this synchronous, so it runs before any component mounts.
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
+      const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+      const email = parsed?.user?.email || parsed?.currentSession?.user?.email || '';
+      if (email.endsWith('@athletes.propath.internal')) {
+        window.location.replace('/athlete');
+      }
+      break;
+    }
   } catch (_) { /* best effort */ }
 })();
 
