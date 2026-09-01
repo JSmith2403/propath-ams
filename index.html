@@ -18,11 +18,20 @@
     <script>
       (function () {
         try {
+          var link = document.getElementById('pwa-manifest');
+          if (!link) return;
+          if (location.pathname === '/athlete') {
+            // Stable PIN-login entry point — same manifest for every
+            // athlete, start_url=/athlete. Static file, no per-token
+            // endpoint needed since there's nothing athlete-specific
+            // about this URL.
+            link.setAttribute('href', '/manifest-athlete.json');
+            return;
+          }
           var m = location.pathname.match(/^\/athlete\/([A-Za-z0-9_-]+)/);
           if (!m) return;
           var token = m[1];
-          var link = document.getElementById('pwa-manifest');
-          if (link) link.setAttribute('href', '/api/manifest/' + encodeURIComponent(token));
+          link.setAttribute('href', '/api/manifest/' + encodeURIComponent(token));
         } catch (e) { /* keep defaults on failure */ }
       })();
     </script>

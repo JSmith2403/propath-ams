@@ -18,7 +18,7 @@ export function useAthleteApp(athleteId) {
     if (!athleteId) return;
     const { data } = await supabase
       .from('athlete_app_tokens')
-      .select('id, token, is_active')
+      .select('id, token, is_active, pin_login_enabled')
       .eq('athlete_id', athleteId)
       .maybeSingle();
     setTokenData(data || null);
@@ -117,5 +117,35 @@ export function useAthleteApp(athleteId) {
     await fetchToken();
   }, [tokenData, fetchToken, ensureWellnessToken]);
 
-  return { tokenData, loading, submitting, activate, deactivate };
+  // ── PIN login (Phase 1 beta) — feature-flagged per athlete ──────────────
+  const togglePinLogin = useCallback(async (enabled) => {
+    if (!tokenData) return;
+    const { error } = await supabase
+      .from('athlete_app_tokens')
+      .update({ pin_login_enabled: enabled })
+      .eq('id', tokenData.id);
+    if (error) { console.error('[AthleteApp] togglePinLogin failed:', error); return; }
+    await fetchToken();
+  }, [tokenData, fetchToken]);
+
+  // Wipes the athlete's PIN + revokes their sessions server-side (needs
+  // the service-role key — athlete_credentials/athlete_sessions have no
+  // client-reachable RLS policies at all). Their original token link
+  // re-triggers PIN setup next time they open it.
+  const resetPin = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/athlete-auth/reset', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ athlete_id: athleteId }),
+    });
+    const json = await res.json();
+    if (!json.ok) console.error('[AthleteApp] resetPin failed:', json.error);
+    return json;
+  }, [athleteId]);
+
+  return { tokenData, loading, submitting, activate, deactivate, togglePinLogin, resetPin };
 }

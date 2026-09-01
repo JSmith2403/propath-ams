@@ -15,8 +15,10 @@ const OVERVIEW_SUBTABS = [
 
 // ─── Athlete App activation panel ────────────────────────────────────────────
 function AthleteAppPanel({ athleteId }) {
-  const { tokenData, loading, submitting, activate, deactivate } = useAthleteApp(athleteId);
+  const { tokenData, loading, submitting, activate, deactivate, togglePinLogin, resetPin } = useAthleteApp(athleteId);
   const [copied, setCopied] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   if (loading) return null;
 
@@ -32,6 +34,15 @@ function AthleteAppPanel({ athleteId }) {
   };
 
   const handleToggle = () => (isActive ? deactivate() : activate());
+  const pinLoginEnabled = tokenData?.pin_login_enabled ?? false;
+
+  const handleResetPin = async () => {
+    if (!confirm("Reset this athlete's PIN? They'll need to set a new one from their original link.")) return;
+    setResetting(true);
+    const res = await resetPin();
+    setResetting(false);
+    if (res?.ok) { setResetDone(true); setTimeout(() => setResetDone(false), 2000); }
+  };
 
   return (
     <div className="bg-white rounded-lg border border-gray-100 p-5"
@@ -62,19 +73,54 @@ function AthleteAppPanel({ athleteId }) {
       </div>
 
       {isActive ? (
-        <div className="flex items-center gap-2">
-          <input
-            readOnly value={shareUrl}
-            className="flex-1 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 border border-gray-200 text-gray-600 outline-none"
-          />
-          <button
-            onClick={handleCopy}
-            className="rounded-lg px-3 py-2 text-xs font-semibold text-white"
-            style={{ backgroundColor: '#A58D69' }}
-          >
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly value={shareUrl}
+              className="flex-1 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 border border-gray-200 text-gray-600 outline-none"
+            />
+            <button
+              onClick={handleCopy}
+              className="rounded-lg px-3 py-2 text-xs font-semibold text-white"
+              style={{ backgroundColor: '#A58D69' }}
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+
+          {/* PIN login — Phase 1 beta, off by default for every athlete.
+              Flip on to test the stable-URL/PIN flow without affecting
+              anyone else. */}
+          <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
+            <div>
+              <p className="text-xs font-semibold text-gray-700">PIN login (beta)</p>
+              <p className="text-[11px] text-gray-400">Stable home-screen install + 4-digit PIN, instead of the link-only flow.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => togglePinLogin(!pinLoginEnabled)}
+              className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+              style={{ backgroundColor: pinLoginEnabled ? '#A58D69' : '#d1d5db' }}
+              aria-label={pinLoginEnabled ? 'Disable PIN login' : 'Enable PIN login'}
+            >
+              <span
+                className="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform"
+                style={{ transform: pinLoginEnabled ? 'translateX(18px)' : 'translateX(3px)' }}
+              />
+            </button>
+          </div>
+
+          {pinLoginEnabled && (
+            <button
+              onClick={handleResetPin}
+              disabled={resetting}
+              className="mt-2 text-[11px] font-semibold disabled:opacity-50"
+              style={{ color: '#dc2626' }}
+            >
+              {resetting ? 'Resetting…' : resetDone ? 'PIN reset ✓' : "Reset this athlete's PIN"}
+            </button>
+          )}
+        </>
       ) : (
         <p className="text-xs text-gray-400">
           {tokenData

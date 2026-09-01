@@ -30,8 +30,12 @@ const App = lazy(() => import('./App.jsx'))
   } catch (_) { /* best effort */ }
 })();
 
-const WellnessFormPage = lazy(() => import('./components/wellness/WellnessFormPage.jsx'))
-const AthleteAppPage   = lazy(() => import('./components/athlete-app/AthleteAppPage.jsx'))
+const WellnessFormPage  = lazy(() => import('./components/wellness/WellnessFormPage.jsx'))
+const AthleteAppPage    = lazy(() => import('./components/athlete-app/AthleteAppPage.jsx'))
+// Stable, token-free entry point for PIN-login athletes (see
+// AthleteStableEntry's own doc comment) — this is what Add to Home
+// Screen should point at once an athlete has a PIN set up.
+const AthleteStableEntry = lazy(() => import('./components/athlete-app/AthleteStableEntry.jsx'))
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -43,6 +47,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           element={
             <Suspense fallback={null}>
               <WellnessFormPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/athlete"
+          element={
+            <Suspense fallback={null}>
+              <AthleteStableEntry />
             </Suspense>
           }
         />

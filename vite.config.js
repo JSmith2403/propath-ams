@@ -15,7 +15,7 @@ export default defineConfig({
     //     file; this config only tells the plugin where to find it.
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/*.png', 'favicon.svg', 'manifest.json'],
+      includeAssets: ['icons/*.png', 'favicon.svg', 'manifest.json', 'manifest-athlete.json'],
       manifest: false,
       strategies: 'injectManifest',
       srcDir: 'src',
