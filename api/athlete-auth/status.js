@@ -52,12 +52,14 @@ export default async function handler(req, res) {
 
   let suggestedUsername = null;
   if (!roleRow) {
+    // athletes has no separate dob column — the whole profile (name,
+    // dob, everything) lives inside the single `data` JSONB blob.
     const { data: athleteRow } = await admin
       .from('athletes')
-      .select('data, dob')
+      .select('data')
       .eq('id', tokenRow.athlete_id)
       .maybeSingle();
-    suggestedUsername = suggestUsername(athleteRow?.data?.name, athleteRow?.dob);
+    suggestedUsername = suggestUsername(athleteRow?.data?.name, athleteRow?.data?.dob);
   }
 
   res.status(200).json({ ok: true, enabled: true, hasAccount: !!roleRow, suggestedUsername });
