@@ -54,7 +54,7 @@ export default function SessionCard({ session, index = 0, defaultOpen = false, o
             {cleanName(session.session_name)}
           </p>
           <p className="text-meta mt-0.5 text-ink-500">
-            {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}
+            {exerciseCount === 0 ? 'Technical session' : `${exerciseCount} exercise${exerciseCount === 1 ? '' : 's'}`}
           </p>
         </div>
         <ChevronDown

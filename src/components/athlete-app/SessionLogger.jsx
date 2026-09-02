@@ -102,6 +102,15 @@ export default function SessionLogger({ session, athleteId, onClose }) {
     () => session.items.filter(i => i.kind === 'exercise'),
     [session.items]
   );
+  // Field/technical sessions (Prep, Rugby, Conditioning…) carry no
+  // exercise/set prescription at all — just coach notes describing the
+  // work. There's nothing to log set-by-set, so these skip straight to
+  // the duration + RPE finish flow instead of the exercise grid.
+  const isTechnical = exercises.length === 0;
+  const noteItems = useMemo(
+    () => session.items.filter(i => i.kind === 'note'),
+    [session.items]
+  );
 
   const { sessionLog, sets, loading, start, logSet, deleteSet, finish } =
     useSessionLogger({
@@ -188,7 +197,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
           onConfirm={async ({ rpe, durationMinutes, reflection }) => {
             // Snapshot stats from current sets BEFORE finish() runs
             // (which fires refresh() that empties `sets`).
-            setFinishedStats(computeSummaryStats(sets));
+            setFinishedStats(isTechnical ? null : computeSummaryStats(sets));
             const ok = await finish(rpe, durationMinutes, reflection);
             if (!ok) return;
             setFinishedRpe(rpe);
@@ -207,6 +216,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
         <SummaryPanel
           session={session}
           stats={finishedStats}
+          isTechnical={isTechnical}
           rpe={finishedRpe}
           durationMinutes={finishedDuration}
           reflection={finishedReflection}
@@ -246,53 +256,82 @@ export default function SessionLogger({ session, athleteId, onClose }) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full overflow-hidden bg-ink-100">
-            <div className="h-full transition-all bg-gold-500"
-              style={{ width: `${pct}%` }} />
+        {!isTechnical && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1 rounded-full overflow-hidden bg-ink-100">
+              <div className="h-full transition-all bg-gold-500"
+                style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-micro tabular-nums text-ink-500">
+              {totalLogged}/{totalExpected} sets
+            </span>
           </div>
-          <span className="text-micro tabular-nums text-ink-500">
-            {totalLogged}/{totalExpected} sets
-          </span>
-        </div>
+        )}
       </div>
 
       {/* Body */}
       <div className="px-4 py-4 space-y-4">
-        {exercises.map((ex, idx) => {
-          const next = exercises[idx + 1];
-          const prev = exercises[idx - 1];
-          // Superset chaining — two adjacent exercises share a
-          // superset_group_id. ExerciseLogger uses these to drop the
-          // gap between cards and run a gold spine down the left so
-          // the pair reads as one unit.
-          const linkedToPrev = !!(ex.superset_group_id
-            && prev?.superset_group_id === ex.superset_group_id);
-          const linkedToNext = !!(ex.superset_group_id
-            && next?.superset_group_id === ex.superset_group_id);
-          return (
-            <ExerciseLogger
-              key={ex.session_exercise_id}
-              exercise={ex}
-              index={idx}
-              upNext={next ? next.name : null}
-              sets={sets.filter(s => s.session_exercise_id === ex.session_exercise_id)}
-              linkedToPrev={linkedToPrev}
-              linkedToNext={linkedToNext}
-              previous={previousByExerciseId.get(ex.exercise_id) || null}
-              onLog={logSet}
-              onDelete={deleteSet}
-            />
-          );
-        })}
+        {isTechnical ? (
+          <>
+            {noteItems.length === 0 ? (
+              <p className="text-meta text-ink-500 text-center py-6">
+                No notes for this session — just complete it below when you're done.
+              </p>
+            ) : noteItems.map((note, i) => (
+              <p
+                key={i}
+                className="text-meta whitespace-pre-line leading-relaxed px-4 py-3 rounded-md bg-white border border-ink-100 text-ink-700"
+              >
+                {note.content}
+              </p>
+            ))}
 
-        <button
-          onClick={() => setPhase('finishing')}
-          className="w-full rounded-lg py-4 text-body font-bold tracking-wide active:scale-[0.99] flex items-center justify-center gap-2 bg-gold-500 text-white hover:bg-gold-600 transition-colors shadow-xs"
-          style={{ minHeight: 56 }}
-        >
-          <CheckCircle2 size={18} /> Finish Session
-        </button>
+            <button
+              onClick={() => setPhase('finishing')}
+              className="w-full rounded-lg py-4 text-body font-bold tracking-wide active:scale-[0.99] flex items-center justify-center gap-2 bg-gold-500 text-white hover:bg-gold-600 transition-colors shadow-xs"
+              style={{ minHeight: 56 }}
+            >
+              <CheckCircle2 size={18} /> Complete Session
+            </button>
+          </>
+        ) : (
+          <>
+            {exercises.map((ex, idx) => {
+              const next = exercises[idx + 1];
+              const prev = exercises[idx - 1];
+              // Superset chaining — two adjacent exercises share a
+              // superset_group_id. ExerciseLogger uses these to drop the
+              // gap between cards and run a gold spine down the left so
+              // the pair reads as one unit.
+              const linkedToPrev = !!(ex.superset_group_id
+                && prev?.superset_group_id === ex.superset_group_id);
+              const linkedToNext = !!(ex.superset_group_id
+                && next?.superset_group_id === ex.superset_group_id);
+              return (
+                <ExerciseLogger
+                  key={ex.session_exercise_id}
+                  exercise={ex}
+                  index={idx}
+                  upNext={next ? next.name : null}
+                  sets={sets.filter(s => s.session_exercise_id === ex.session_exercise_id)}
+                  linkedToPrev={linkedToPrev}
+                  linkedToNext={linkedToNext}
+                  previous={previousByExerciseId.get(ex.exercise_id) || null}
+                  onLog={logSet}
+                  onDelete={deleteSet}
+                />
+              );
+            })}
+
+            <button
+              onClick={() => setPhase('finishing')}
+              className="w-full rounded-lg py-4 text-body font-bold tracking-wide active:scale-[0.99] flex items-center justify-center gap-2 bg-gold-500 text-white hover:bg-gold-600 transition-colors shadow-xs"
+              style={{ minHeight: 56 }}
+            >
+              <CheckCircle2 size={18} /> Finish Session
+            </button>
+          </>
+        )}
       </div>
     </Overlay>
   );
@@ -530,7 +569,7 @@ function computeSummaryStats(sets) {
 // Designed for shareability: hero, single anchor stat, secondary grid,
 // optional reflection, brand mark in the same light frame. The whole
 // shareable region is captured into a PNG by the share button.
-function SummaryPanel({ session, stats, rpe, durationMinutes, reflection, onBackHome, onEdit }) {
+function SummaryPanel({ session, stats, isTechnical = false, rpe, durationMinutes, reflection, onBackHome, onEdit }) {
   const safeStats = stats || { totalVolume: 0, hasWeight: false, exercises: 0, sets: 0, reps: 0 };
 
   const sessionTitle = (session.session_name || 'Session').replace(/\s+[—–]\s+/g, ': ');
@@ -579,33 +618,40 @@ function SummaryPanel({ session, stats, rpe, durationMinutes, reflection, onBack
           )}
         </div>
 
-        {/* Hero stat — light cream card with centred dumbbell tile */}
-        <div className="px-4">
-          <div className="rounded-xl px-5 py-5 text-center"
-            style={{ backgroundColor: '#faf7f2', border: '1px solid #f1eadc' }}>
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-2.5"
-              style={{ backgroundColor: 'rgba(165,141,105,0.18)' }}>
-              <Dumbbell size={22} className="text-gold-600" />
-            </div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-ink-500 mb-1">
-              {heroStat.label}
-            </p>
-            <div className="flex justify-center items-baseline gap-1.5">
-              <span className="text-display font-bold tabular-nums leading-none text-ink-900">
-                {heroStat.value}
-              </span>
-              <span className="text-body font-bold text-gold-600">{heroStat.unit}</span>
+        {/* Hero stat — light cream card with centred dumbbell tile.
+            Technical sessions have no sets/reps to headline, so this
+            whole tile is skipped in favour of leading with Duration
+            and Intensity below. */}
+        {!isTechnical && (
+          <div className="px-4">
+            <div className="rounded-xl px-5 py-5 text-center"
+              style={{ backgroundColor: '#faf7f2', border: '1px solid #f1eadc' }}>
+              <div className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-2.5"
+                style={{ backgroundColor: 'rgba(165,141,105,0.18)' }}>
+                <Dumbbell size={22} className="text-gold-600" />
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-ink-500 mb-1">
+                {heroStat.label}
+              </p>
+              <div className="flex justify-center items-baseline gap-1.5">
+                <span className="text-display font-bold tabular-nums leading-none text-ink-900">
+                  {heroStat.value}
+                </span>
+                <span className="text-body font-bold text-gold-600">{heroStat.unit}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Secondary stats — centred-icon-above tiles */}
         <div className="px-4 pt-3 pb-3 space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            <CentreStat icon={Layers}    label="Exercises" value={String(safeStats.exercises)} />
-            <CentreStat icon={BarChart3} label="Sets"      value={String(safeStats.sets)} />
-            <CentreStat icon={Repeat}    label="Reps"      value={String(safeStats.reps)} />
-          </div>
+          {!isTechnical && (
+            <div className="grid grid-cols-3 gap-2">
+              <CentreStat icon={Layers}    label="Exercises" value={String(safeStats.exercises)} />
+              <CentreStat icon={BarChart3} label="Sets"      value={String(safeStats.sets)} />
+              <CentreStat icon={Repeat}    label="Reps"      value={String(safeStats.reps)} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <CentreStat
               icon={Clock} label="Duration"
