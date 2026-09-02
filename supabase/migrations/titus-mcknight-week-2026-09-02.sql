@@ -277,7 +277,7 @@ Total ~3.5-4km.'
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Cable Straight Arm Pulldown (Ribs Down)';
   IF v_ex IS NULL THEN
     INSERT INTO exercise_library (name, category, bilateral_unilateral)
-    VALUES (, , )', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    VALUES ('Cable Straight Arm Pulldown (Ribs Down)', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 3, 'reps_only') RETURNING id INTO v_se;
