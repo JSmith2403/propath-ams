@@ -115,8 +115,8 @@ Avoid: Kicking & rotational work beyond short passing'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Flat Bench Press';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Flat Bench Press', 'strength', 'bilateral', 'kg') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Flat Bench Press', 'strength', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 1, 'kg') RETURNING id INTO v_se;
@@ -125,8 +125,8 @@ Avoid: Kicking & rotational work beyond short passing'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Chest Supported Row';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Chest Supported Row', 'strength', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Chest Supported Row', 'strength', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 2, 'reps_only') RETURNING id INTO v_se;
@@ -135,8 +135,8 @@ Avoid: Kicking & rotational work beyond short passing'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Chin-Ups';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Chin-Ups', 'strength', 'bilateral', 'kg') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Chin-Ups', 'strength', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, notes)
   VALUES (v_session_id, v_ex, 3, 'kg', 'Assisted') RETURNING id INTO v_se;
@@ -145,8 +145,8 @@ Avoid: Kicking & rotational work beyond short passing'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Cable Face Pulls';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Cable Face Pulls', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Cable Face Pulls', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 4, 'reps_only') RETURNING id INTO v_se;
@@ -174,8 +174,8 @@ Join easy bits, keep it technical, low volume'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'SL Leg Press';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('SL Leg Press', 'accessory', 'unilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('SL Leg Press', 'accessory', 'unilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, notes)
   VALUES (v_session_id, v_ex, 1, 'reps_only', 'Per leg') RETURNING id INTO v_se;
@@ -184,8 +184,8 @@ Join easy bits, keep it technical, low volume'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'DB Step-up';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('DB Step-up', 'accessory', 'unilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('DB Step-up', 'accessory', 'unilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, notes)
   VALUES (v_session_id, v_ex, 2, 'reps_only', 'Per leg') RETURNING id INTO v_se;
@@ -194,8 +194,8 @@ Join easy bits, keep it technical, low volume'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Glute Bridge or Lateral Lunge';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Glute Bridge or Lateral Lunge', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Glute Bridge or Lateral Lunge', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, notes)
   VALUES (v_session_id, v_ex, 3, 'reps_only', 'Bodyweight or goblet') RETURNING id INTO v_se;
@@ -204,8 +204,8 @@ Join easy bits, keep it technical, low volume'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Seated Calf Raise';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Seated Calf Raise', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Seated Calf Raise', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 4, 'reps_only') RETURNING id INTO v_se;
@@ -214,8 +214,8 @@ Join easy bits, keep it technical, low volume'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Plank';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Plank', 'accessory', 'bilateral', 'time') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Plank', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 5, 'time') RETURNING id INTO v_se;
@@ -256,8 +256,8 @@ Total ~3.5-4km.'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = '3 Point Row';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('3 Point Row', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('3 Point Row', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 1, 'reps_only') RETURNING id INTO v_se;
@@ -266,8 +266,8 @@ Total ~3.5-4km.'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Lateral Raise';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Lateral Raise', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Lateral Raise', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 2, 'reps_only') RETURNING id INTO v_se;
@@ -276,8 +276,8 @@ Total ~3.5-4km.'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Cable Straight Arm Pulldown (Ribs Down)';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Cable Straight Arm Pulldown (Ribs Down)', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES (, , )', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type)
   VALUES (v_session_id, v_ex, 3, 'reps_only') RETURNING id INTO v_se;
@@ -290,8 +290,8 @@ Total ~3.5-4km.'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Cable Tricep Push-Down';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Cable Tricep Push-Down', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Cable Tricep Push-Down', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, superset_group_id)
   VALUES (v_session_id, v_ex, 4, 'reps_only', v_ssid) RETURNING id INTO v_se;
@@ -300,8 +300,8 @@ Total ~3.5-4km.'
 
   SELECT id INTO v_ex FROM exercise_library WHERE name = 'Cable Bicep Curl';
   IF v_ex IS NULL THEN
-    INSERT INTO exercise_library (name, category, bilateral_unilateral, default_prescription_type)
-    VALUES ('Cable Bicep Curl', 'accessory', 'bilateral', 'reps_only') RETURNING id INTO v_ex;
+    INSERT INTO exercise_library (name, category, bilateral_unilateral)
+    VALUES ('Cable Bicep Curl', 'accessory', 'bilateral') RETURNING id INTO v_ex;
   END IF;
   INSERT INTO session_exercises (block_session_id, exercise_id, display_order, prescription_type, superset_group_id)
   VALUES (v_session_id, v_ex, 5, 'reps_only', v_ssid) RETURNING id INTO v_se;
