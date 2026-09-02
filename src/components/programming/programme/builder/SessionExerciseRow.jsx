@@ -290,12 +290,21 @@ export default function SessionExerciseRow({
               />
             )}
 
-            <input
+            <textarea
               value={exercise.notes || ''}
               onChange={(e) => onChange({ notes: e.target.value })}
+              rows={1}
               placeholder="+ Add note"
-              className="flex-1 min-w-[60px] text-meta italic focus:outline-none placeholder:italic bg-transparent"
+              className="flex-1 min-w-[60px] text-meta italic focus:outline-none placeholder:italic bg-transparent resize-none"
               style={{ color: '#6b7280' }}
+              onInput={(e) => {
+                // Auto-grow with content, same pattern as NoteRow — starts
+                // as a single compact line, only grows once the coach
+                // actually types a multi-line instruction (e.g. a circuit
+                // or interval breakdown).
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
             />
           </div>
         </div>

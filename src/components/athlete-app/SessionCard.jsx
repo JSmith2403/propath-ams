@@ -112,7 +112,7 @@ export default function SessionCard({ session, index = 0, defaultOpen = false, o
                           </p>
                         )}
                         {row.notes && (
-                          <p className="text-meta mt-0.5 italic text-ink-500">{row.notes}</p>
+                          <p className="text-meta mt-0.5 italic whitespace-pre-line text-ink-500">{row.notes}</p>
                         )}
                       </div>
                     </div>

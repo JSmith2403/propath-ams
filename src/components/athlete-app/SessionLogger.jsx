@@ -892,7 +892,7 @@ function ExerciseLogger({
         </div>
 
         {exercise.notes && (
-          <p className="text-meta mt-2 italic px-1 text-ink-500">
+          <p className="text-meta mt-2 italic px-1 whitespace-pre-line text-ink-500">
             {exercise.notes}
           </p>
         )}
