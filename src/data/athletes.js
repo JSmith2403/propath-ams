@@ -12,6 +12,7 @@ export const SPORTS = [
   'Sprinting',
   'Golf',
   'Triathlon',
+  'Rugby',
 ];
 
 export const COHORTS = ['Elite', 'Gold', 'Mini'];
