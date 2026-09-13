@@ -93,6 +93,11 @@ export default function AthleteWeekViewV2({
   hideToolbar = false,
   hideCompleted = false,
   dimCompletedIds = null,
+  // Optional: () => void — fired alongside this view's own internal
+  // refresh after any successful mutation (move/copy/delete/add), so a
+  // parent showing a *different* view of the same planned_sessions
+  // (e.g. the month calendar) can refetch and stay in sync.
+  onChanged = null,
 }) {
   const weekStart = useMemo(() => startOfWeekMon(viewDate), [viewDate]);
   const days = useMemo(() => {
@@ -118,7 +123,7 @@ export default function AthleteWeekViewV2({
       newExerciseId:     libRow.id,
     });
     setReplaceTarget(null);
-    if (res.ok) refresh();
+    if (res.ok) { refresh(); onChanged && onChanged(); }
     else        console.error('[AthleteWeekViewV2] replace failed', res.error);
   };
   const handleClearOverride = async (exercise) => {
@@ -126,7 +131,7 @@ export default function AthleteWeekViewV2({
       sessionExerciseId: exercise.session_exercise_id,
       fromWeek:          exercise.week_number,
     });
-    if (res.ok) refresh();
+    if (res.ok) { refresh(); onChanged && onChanged(); }
   };
 
   // ── DnD + delete state ──────────────────────────────────────────
@@ -341,7 +346,7 @@ export default function AthleteWeekViewV2({
       return;
     }
     clearSelection();
-    refresh();
+    refresh(); onChanged && onChanged();
   };
 
   // Repeat = bulk-copy every selected session +7 days. Skipped sources
@@ -370,7 +375,7 @@ export default function AthleteWeekViewV2({
       });
     }
     clearSelection();
-    refresh();
+    refresh(); onChanged && onChanged();
   };
 
   // Copy = arm destination-pick mode. Next day click bulk-copies
@@ -393,7 +398,7 @@ export default function AthleteWeekViewV2({
       });
     }
     clearSelection();
-    refresh();
+    refresh(); onChanged && onChanged();
   };
 
   // ── Drag handlers ───────────────────────────────────────────────
@@ -430,7 +435,7 @@ export default function AthleteWeekViewV2({
       setToast({ kind: 'error', text: res.error?.message || 'Could not save change.' });
       return;
     }
-    refresh();
+    refresh(); onChanged && onChanged();
   };
 
   // ── Delete handler ──────────────────────────────────────────────
@@ -444,7 +449,7 @@ export default function AthleteWeekViewV2({
       setToast({ kind: 'error', text: res.error?.message || 'Could not delete.' });
       return;
     }
-    refresh();
+    refresh(); onChanged && onChanged();
   };
 
   const activeSession = activeDrag ? sessionById.get(activeDrag) : null;
@@ -772,7 +777,7 @@ export default function AthleteWeekViewV2({
           targetDateISO={addPopover.dayISO}
           anchorRect={addPopover.anchorRect}
           onClose={() => setAddPopover(null)}
-          onAdded={() => { setAddPopover(null); refresh(); }}
+          onAdded={() => { setAddPopover(null); refresh(); onChanged && onChanged(); }}
         />
       )}
 

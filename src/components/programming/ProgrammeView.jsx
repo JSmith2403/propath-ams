@@ -15,6 +15,7 @@ import ProgrammeCalendar, {
   _parseDate as parseDate,
   _toISO     as toISO,
 } from './ProgrammeCalendar';
+import AthleteWeekViewV2 from './AthleteWeekViewV2';
 import DayQuickAddMenu from './DayQuickAddMenu';
 import BlockBuilderModal from './programme/builder/BlockBuilderModal';
 import { buildBlockColourMap } from '../../utils/blockColours';
@@ -192,6 +193,15 @@ export default function ProgrammeView({
     }
   };
   const closeBuilder = () => setBuilderState(null);
+
+  // AthleteWeekViewV2 hands back a planned_sessions row (from
+  // usePlannedWeekDetail) rather than the calendar-pill event shape —
+  // it already carries block_id directly, so no _block_id lookup dance
+  // is needed like openEdit's is_planned branch does.
+  const handleClickPlannedFromWeekView = (session) => {
+    const target = blocks.find(b => b.id === session.block_id);
+    if (target) openBlockBuilder(target);
+  };
 
   // "Plan for 1 Session" / "Plan for a week" — no naming form, no
   // "block" language anywhere: silently create a lightweight 1-week
@@ -419,39 +429,56 @@ export default function ProgrammeView({
         showHeading
       />
 
-      {/* Month calendar — block-based and FreeForm sessions plus
+      {/* Month view: block-based and FreeForm sessions plus
           competitions/camps/testing days, all on one grid. Hovering a
           blank day surfaces the quick-add menu (session / week / block);
           hovering an existing session pill surfaces a copy icon so it
-          can be pasted onto another day via that same menu. */}
-      <ProgrammeCalendar
-        viewMode={viewMode}
-        onChangeView={setViewMode}
-        viewDate={viewDate}
-        onChangeDate={setViewDate}
-        canEdit={canEdit}
-        onAddEvent={openAdd}
-        onMoveEvent={handleMoveEvent}
-        events={[...events, ...plannedEvents]}
-        onClickEvent={openEdit}
-        pillColourMode="priority"
-        athleteContext
-        blocks={blocks}
-        blockColourMap={blockColourMap}
-        renderDayHover={canEdit ? (iso, helpers) => (
-          <DayQuickAddMenu
-            dateISO={iso}
-            clipboard={clipboard}
-            onPlanSession={(d) => createFreeFormAndOpen(d)}
-            onPlanWeek={(d) => createFreeFormAndOpen(d, { weekMode: true })}
-            onPlanBlock={(d) => openBlockAdd(d)}
-            onPaste={handlePaste}
-            keepAlive={helpers.keepAlive}
-            release={helpers.release}
-          />
-        ) : null}
-        onCopyPlanned={canEdit ? (event) => setClipboard({ plannedId: event._planned_id, name: event.event_name }) : null}
-      />
+          can be pasted onto another day via that same menu.
+
+          Week view swaps to the full session-breakdown week grid
+          (exercises, sets/reps, notes inline per day) with its own
+          drag-to-move/copy, bulk actions and add-session popover —
+          calendar events (competitions/camps/testing) don't overlay
+          here, only in month view. */}
+      {viewMode === 'week' ? (
+        <AthleteWeekViewV2
+          athlete={athlete}
+          viewDate={viewDate}
+          onChangeDate={setViewDate}
+          onChangeView={setViewMode}
+          onClickPlanned={handleClickPlannedFromWeekView}
+          onChanged={refreshPlanned}
+        />
+      ) : (
+        <ProgrammeCalendar
+          viewMode={viewMode}
+          onChangeView={setViewMode}
+          viewDate={viewDate}
+          onChangeDate={setViewDate}
+          canEdit={canEdit}
+          onAddEvent={openAdd}
+          onMoveEvent={handleMoveEvent}
+          events={[...events, ...plannedEvents]}
+          onClickEvent={openEdit}
+          pillColourMode="priority"
+          athleteContext
+          blocks={blocks}
+          blockColourMap={blockColourMap}
+          renderDayHover={canEdit ? (iso, helpers) => (
+            <DayQuickAddMenu
+              dateISO={iso}
+              clipboard={clipboard}
+              onPlanSession={(d) => createFreeFormAndOpen(d)}
+              onPlanWeek={(d) => createFreeFormAndOpen(d, { weekMode: true })}
+              onPlanBlock={(d) => openBlockAdd(d)}
+              onPaste={handlePaste}
+              keepAlive={helpers.keepAlive}
+              release={helpers.release}
+            />
+          ) : null}
+          onCopyPlanned={canEdit ? (event) => setClipboard({ plannedId: event._planned_id, name: event.event_name }) : null}
+        />
+      )}
 
       {/* Manage Blocks — collapsible secondary list */}
       <BlockList
