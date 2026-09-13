@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Copy } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2, Copy, Sparkles } from 'lucide-react';
 import SessionSection from './SessionSection';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import { colourForSection } from '../../../../utils/sectionColours';
@@ -57,6 +57,7 @@ export default function SessionBlock({
   onUpdateNotes,
   onRemoveSession,
   onDuplicateSession,         // Phase 2: new action
+  onImportProgramme,          // () => void — opens the paste/photo import panel
   day = null,                 // 0-6 Mon-indexed weekday this session lands on, or null
   onUpdateDay,                // (day|null) => void — omitted outside athlete mode
   // section-level
@@ -179,6 +180,17 @@ export default function SessionBlock({
               {exerciseCount} {exerciseCount === 1 ? 'exercise' : 'exercises'}
             </span>
             {onUpdateDay && <DayPicker day={day} onUpdateDay={onUpdateDay} />}
+            {onImportProgramme && (
+              <button
+                onClick={onImportProgramme}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-gold-50 transition-colors"
+                style={{ color: '#A58D69' }}
+                title="Paste or photograph a programme to add exercises here"
+              >
+                <Sparkles size={13} />
+                <span className="text-[11px] font-semibold">Import</span>
+              </button>
+            )}
             {onDuplicateSession && (
               <button
                 onClick={onDuplicateSession}

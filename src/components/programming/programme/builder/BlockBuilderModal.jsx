@@ -7,6 +7,7 @@ import { useBlockTemplates } from '../../../../hooks/useBlockTemplates';
 import { loadBlockTemplate } from '../../../../utils/programmeTemplates';
 import { currentWeekNumber } from '../../../../utils/blockGrid';
 import ExercisePicker from './ExercisePicker';
+import ImportProgrammePanel from './ImportProgrammePanel';
 
 const MIN_WEEKS    = 1;
 const MAX_WEEKS    = 12;
@@ -94,6 +95,13 @@ export default function BlockBuilderModal({
     if (!pickerTarget) return;
     addNoteToSection(pickerTarget.sessionIdx, pickerTarget.sectionId);
   };
+
+  // ── Import-from-text/image panel (paste-to-build) ───────────────────────
+  // importTarget = sessionIdx | null. Unlike the exercise picker (scoped
+  // to one section), this operates on the whole session — the parsed text
+  // carries its own section structure when it has one.
+  const [importTarget, setImportTarget] = useState(null);
+  const closeImportPanel = () => setImportTarget(null);
   const initialSnapshot = useRef(JSON.stringify(draft));
   const isDirty = useMemo(
     () => JSON.stringify(draft) !== initialSnapshot.current,
@@ -284,6 +292,60 @@ export default function BlockBuilderModal({
       };
     }),
   }));
+
+  // Folds an ImportProgrammePanel result into a session's draft — one
+  // state update for however many sections/exercises came out of the
+  // parse. Sections match by name (case-insensitive) onto ones already
+  // in the session; anything unmatched gets created. Superset labels are
+  // scoped per import batch, resolved to real uuids here.
+  const commitImportedItems = (idx, { sections: importedSections }) => mutateSession(idx, s => {
+    let nextSections = s.sections.map(sec => ({ ...sec, exercises: [...sec.exercises] }));
+    for (const importedSec of importedSections) {
+      let target = nextSections.find(sec => sec.name.toLowerCase() === importedSec.name.toLowerCase());
+      if (!target) {
+        target = {
+          tempId: tempId('sec'),
+          name: importedSec.name,
+          is_warm_up: false,
+          display_order: nextSections.length,
+          exercises: [],
+        };
+        nextSections = [...nextSections, target];
+      }
+      const supersetIdByKey = {};
+      const newSteps = importedSec.steps.map(step => {
+        if (step.kind === 'note') {
+          return { kind: 'note', tempId: tempId('note'), content: step.content };
+        }
+        let superset_group_id = null;
+        if (step.superset_key) {
+          if (!supersetIdByKey[step.superset_key]) supersetIdByKey[step.superset_key] = crypto.randomUUID();
+          superset_group_id = supersetIdByKey[step.superset_key];
+        }
+        return {
+          tempId: tempId('ex'),
+          exercise_id: step.exercise_id,
+          exercise_name: step.exercise_name,
+          category: step.category,
+          bilateral_unilateral: step.bilateral_unilateral,
+          default_prescription_type: 'kg',
+          prescription_type: step.prescription_type,
+          notes: step.notes,
+          superset_group_id,
+          week_prescriptions: Array.from({ length: weeks }, (_, i) => ({
+            week_number: i + 1,
+            sets: step.sets,
+            reps: step.reps,
+            target_value: step.target_value,
+            rest_seconds: null,
+          })),
+        };
+      });
+      const merged = { ...target, exercises: [...target.exercises, ...newSteps] };
+      nextSections = nextSections.map(sec => (sec.tempId === merged.tempId ? merged : sec));
+    }
+    return { ...s, sections: nextSections };
+  });
 
   const updateExercise = (idx, sectionId, exerciseId, patch) => mutateSession(idx, s => ({
     ...s,
@@ -657,6 +719,7 @@ export default function BlockBuilderModal({
               onUpdateNotes={(notes) => updateSessionNotes(idx, notes)}
               onRemoveSession={() => removeSession(idx)}
               onDuplicateSession={() => duplicateSession(idx)}
+              onImportProgramme={() => setImportTarget(idx)}
               day={sess.day ?? null}
               onUpdateDay={athleteMode ? (d) => updateSessionDay(idx, d) : undefined}
               onAddSection={() => addSectionToSession(idx)}
@@ -738,6 +801,15 @@ export default function BlockBuilderModal({
           onAdd={handlePickerAdd}
           onAddNote={handlePickerAddNote}
           onClose={closePicker}
+        />
+      )}
+
+      {importTarget != null && draft.sessions[importTarget] && (
+        <ImportProgrammePanel
+          sessionLabel={draft.sessions[importTarget].name}
+          existingSectionNames={draft.sessions[importTarget].sections.map(sec => sec.name)}
+          onCommit={(result) => commitImportedItems(importTarget, result)}
+          onClose={closeImportPanel}
         />
       )}
 
