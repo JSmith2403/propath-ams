@@ -216,10 +216,13 @@ export default function BlockTimelineBar({
               {canEdit && onAdd ? 'No blocks yet — add a block to start structuring training' : 'No blocks for this athlete'}
             </div>
           ) : (
-            chips.map((chip) => {
+            chips.map((chip, i) => {
+              // Only the single chip picked out by todayChipIndex gets the
+              // marker — overlapping FreeForm blocks can each independently
+              // cover today's date, which used to draw one gold line per
+              // overlap instead of one line total.
+              const isToday = i === todayChipIndex;
               if (chip.type === 'blank') {
-                const end = addDaysISO(chip.start, 6);
-                const isToday = todayISO >= chip.start && todayISO <= end;
                 return (
                   <BlankChip
                     key={`blank-${chip.start}`}
@@ -233,8 +236,7 @@ export default function BlockTimelineBar({
               const colour = colourForBlockIndex(indexById.get(chip.block.id) ?? 0);
               const isLastOfBlock = chip.weekIndex === chip.weekCount - 1;
               const isFirstOfBlock = chip.weekIndex === 0;
-              const end = addDaysISO(chip.start, 6);
-              const chipIsToday = todayISO >= chip.start && todayISO <= end;
+              const chipIsToday = isToday;
               return (
                 <Fragment key={`${chip.block.id}-wk-${chip.weekIndex}`}>
                   <div className="relative shrink-0" style={{ width: CHIP_W }}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, MoreVertical, Plus, Sparkles } from 'lucide-react';
+import { X, Minus, MoreVertical, Pencil, Plus, Sparkles } from 'lucide-react';
 import SessionBlock from './SessionBlock';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import ConfirmDialog from '../../blocks/ConfirmDialog';
@@ -607,8 +607,19 @@ export default function BlockBuilderModal({
           <div className="flex-1 min-w-0">
             {athleteMode ? (
               <>
-                <div className="text-lg font-bold truncate" style={{ color: '#1C1C1C' }}>
-                  {draft.block.name || 'Untitled block'}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="text-lg font-bold truncate" style={{ color: '#1C1C1C' }}>
+                    {draft.block.name || 'Untitled block'}
+                  </div>
+                  {onEditDetails && (
+                    <button
+                      onClick={onEditDetails}
+                      className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                      title="Edit block name, dates, or target event"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
                 </div>
                 {contextSubtitle && (
                   <div className="text-[11px] mt-0.5" style={{ color: '#9ca3af' }}>
@@ -667,7 +678,6 @@ export default function BlockBuilderModal({
                 open={moreOpen}
                 onToggle={() => setMoreOpen(o => !o)}
                 onClose={() => setMoreOpen(false)}
-                onEditDetails={onEditDetails}
                 onSaveAsTemplate={onSaveAsTemplate ? () => onSaveAsTemplate(draft) : null}
                 onDeleteBlock={onDeleteBlock}
               />
@@ -831,7 +841,7 @@ export default function BlockBuilderModal({
 // Three-dot menu shown in the modal header in athlete mode. Lists the
 // secondary actions: edit block details, save as new template, delete
 // block. Closes on outside click or item selection.
-function BlockMoreMenu({ open, onToggle, onClose, onEditDetails, onSaveAsTemplate, onDeleteBlock }) {
+function BlockMoreMenu({ open, onToggle, onClose, onSaveAsTemplate, onDeleteBlock }) {
   const wrapperRef = useRef(null);
 
   useEffect(() => {
@@ -859,15 +869,6 @@ function BlockMoreMenu({ open, onToggle, onClose, onEditDetails, onSaveAsTemplat
           className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 z-50"
           style={{ border: '1px solid #e5e7eb', minWidth: 200 }}
         >
-          {onEditDetails && (
-            <button
-              onClick={wrap(onEditDetails)}
-              className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors"
-              style={{ color: '#1C1C1C' }}
-            >
-              Edit block details
-            </button>
-          )}
           {onSaveAsTemplate && (
             <button
               onClick={wrap(onSaveAsTemplate)}

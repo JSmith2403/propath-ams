@@ -3,7 +3,7 @@ import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
-import { copyPlannedSession } from '../../hooks/usePlannedSessionMutations';
+import { copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
@@ -112,6 +112,21 @@ export default function ProgrammeView({
 
   // ── Copy/paste clipboard for planned sessions ────────────────────────────
   const [clipboard, setClipboard] = useState(null); // { plannedId, name } | null
+
+  // ── Delete a single planned session from month view ──────────────────────
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState(null); // event | null
+  const handleConfirmDeleteSession = async () => {
+    const target = confirmDeleteSession;
+    setConfirmDeleteSession(null);
+    if (!target) return;
+    const res = await deletePlannedSession(target._planned_id);
+    if (!res.ok) {
+      showToast(`Couldn't delete. ${res.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    refreshPlanned();
+    showToast(`Deleted '${target.event_name}'`);
+  };
 
   const handlePaste = async (targetISO) => {
     if (!clipboard) return;
@@ -477,6 +492,7 @@ export default function ProgrammeView({
             />
           ) : null}
           onCopyPlanned={canEdit ? (event) => setClipboard({ plannedId: event._planned_id, name: event.event_name }) : null}
+          onDeletePlanned={canEdit ? (event) => setConfirmDeleteSession(event) : null}
         />
       )}
 
@@ -560,6 +576,17 @@ export default function ProgrammeView({
           danger
           onConfirm={handleBuilderDeleteConfirm}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {confirmDeleteSession && (
+        <ConfirmDialog
+          title="Delete this session?"
+          body={`Removes "${confirmDeleteSession.event_name}" from ${athlete.name}'s plan on ${parseDate(confirmDeleteSession.start_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}. The session template stays available to re-add later.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleConfirmDeleteSession}
+          onCancel={() => setConfirmDeleteSession(null)}
         />
       )}
 

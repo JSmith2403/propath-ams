@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Cake, CalendarDays, ChevronLeft, ChevronRight, Dumbbell, Gauge, Plus, Tent,
-  Trophy, Volleyball, X,
+  Trash2, Trophy, Volleyball, X,
 } from 'lucide-react';
 
 // Event-type → lucide icon. Used inside event pills so users get a quick
@@ -261,7 +261,7 @@ function buildWeekSegments(events, weekStart, pillColourMode, athleteContext) {
 // birthday, or team) and — for competitions — a priority badge on the right.
 // The badge uses a priority-driven colour, not the athlete colour.
 
-function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext, onCopyPlanned }) {
+function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreviewClick, athleteContext, onCopyPlanned, onDeletePlanned }) {
   const { event, style, leftRounded, rightRounded } = seg;
   const radius = 4;
   const renderBadge = leftRounded && style.showBadge;
@@ -360,6 +360,16 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
           title="Copy this session to another day"
         >
           ⧉
+        </button>
+      )}
+      {isPlanned && onDeletePlanned && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDeletePlanned(event); }}
+          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: '#dc2626', padding: '1px 2px' }}
+          title="Delete this planned session"
+        >
+          <Trash2 size={10} />
         </button>
       )}
     </div>
@@ -573,6 +583,8 @@ export default function ProgrammeCalendar({
   renderDayHover = null,
   // Optional: (event) => void — adds a small copy icon to is_planned pills.
   onCopyPlanned = null,
+  // Optional: (event) => void — adds a delete icon to is_planned pills.
+  onDeletePlanned = null,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -899,6 +911,7 @@ export default function ProgrammeCalendar({
                       onPreviewClick={(ev) => onClickEvent && onClickEvent(ev)}
                       athleteContext={athleteContext}
                       onCopyPlanned={onCopyPlanned}
+                      onDeletePlanned={onDeletePlanned}
                     />
                   </div>
                 );
