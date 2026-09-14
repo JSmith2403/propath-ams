@@ -88,10 +88,10 @@ export default function ImportProgrammePanel({
     try {
       const base64 = await fileToBase64(file);
       const headers = await authHeaders();
-      const res = await fetch('/api/programme/parse-image', {
+      const res = await fetch('/api/programme/parse', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ image_base64: base64, media_type: file.type }),
+        body: JSON.stringify({ mode: 'ocr', image_base64: base64, media_type: file.type }),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Could not read the image.');
@@ -117,10 +117,10 @@ export default function ImportProgrammePanel({
     setResult(null);
     try {
       const headers = await authHeaders();
-      const res = await fetch('/api/programme/parse-text', {
+      const res = await fetch('/api/programme/parse', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify({ mode: 'parse', text: trimmed }),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Could not parse that text.');
