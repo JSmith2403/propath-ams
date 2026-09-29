@@ -57,4 +57,50 @@ export function useWaterIntake(athleteId) {
   return { glasses, loading, setGlasses };
 }
 
+/**
+ * useWaterIntakeRange — read-only water_intake_logs for an inclusive
+ * [startISO, endISO] window, keyed by log_date. Powers the Food Diary
+ * week grid's per-day water row (coach-side; unlike useWaterIntake
+ * this never writes).
+ *
+ *   { glassesByDate, loading, refresh } — glassesByDate: { [log_date]: glasses }
+ */
+export function useWaterIntakeRange(athleteId, startISO, endISO) {
+  const [glassesByDate, setGlassesByDate] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [tick,    setTick]    = useState(0);
+
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    if (!athleteId || !startISO || !endISO) {
+      setGlassesByDate({}); setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('water_intake_logs')
+        .select('log_date, glasses')
+        .eq('athlete_id', athleteId)
+        .gte('log_date', startISO)
+        .lte('log_date', endISO);
+      if (cancelled) return;
+      if (error) {
+        console.error('[useWaterIntakeRange] fetch failed', error);
+        setGlassesByDate({}); setLoading(false);
+        return;
+      }
+      const map = {};
+      (data || []).forEach(r => { map[r.log_date] = r.glasses; });
+      setGlassesByDate(map);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, startISO, endISO, tick]);
+
+  return { glassesByDate, loading, refresh };
+}
+
 export { GLASS_ML };

@@ -36,9 +36,9 @@ function SubTabLoader() {
  * rest of the AMS (gold underline, ink-200 baseline).
  *
  *   Food Diary                   → MealLoggingSettings panel (Snap-and-
- *                                  Send on/off) + FoodDiaryView, three-
- *                                  column meal review per the supplied
- *                                  mockup.
+ *                                  Send on/off) + FoodDiaryView, a 7-day
+ *                                  week grid with a dotted Month view
+ *                                  for jumping between weeks.
  *   Meal Structure & Guidance    → the chronological structure builder.
  *   Recipes                      → recipe library admin.
  *

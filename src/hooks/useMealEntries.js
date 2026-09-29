@@ -103,6 +103,60 @@ export function useMealLogDates(athleteId) {
   return { dates, loading, refresh };
 }
 
+/**
+ * useMealEntriesRange — like useMealEntries but for an inclusive
+ * [startISO, endISO] window instead of a single day. Powers the Food
+ * Diary week grid, which needs all 7 days' meals (+ photos) in one
+ * fetch rather than one request per column.
+ *
+ * Shape: { entries, loading, refresh } — same entry shape as
+ * useMealEntries, just a flat list spanning every day in range;
+ * callers group by `log_date` themselves.
+ */
+export function useMealEntriesRange(athleteId, startISO, endISO) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tick,    setTick]    = useState(0);
+
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    if (!athleteId || !startISO || !endISO) {
+      setEntries([]); setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('meal_entries')
+        .select(`
+          id, log_date, meal_type, description, notes, status,
+          submitted_at, created_by,
+          meal_photos ( id, storage_path, thumbnail_path, width, height )
+        `)
+        .eq('athlete_id', athleteId)
+        .gte('log_date', startISO)
+        .lte('log_date', endISO)
+        .order('submitted_at', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error('[useMealEntriesRange] fetch failed', error);
+        setEntries([]); setLoading(false);
+        return;
+      }
+      setEntries((data || []).map(e => ({
+        ...e,
+        photos: e.meal_photos || [],
+      })));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [athleteId, startISO, endISO, tick]);
+
+  return { entries, loading, refresh };
+}
+
 // Map a generic "Snack" press to the first unused snack slot for the
 // day. Returns null when all three slots are taken — callers should
 // reject the submit attempt in that case.
