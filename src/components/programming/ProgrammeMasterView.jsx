@@ -5,6 +5,7 @@ import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { useCalendarFilters, eventPassesFilters } from '../../hooks/useCalendarFilters';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
+import { movePlannedSession, copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
 import { computeBirthdayEvents, ageOnDate } from '../../utils/birthdayEvents';
 import AthleteSidebar from './AthleteSidebar';
 import CalendarFilterPanel from './CalendarFilterPanel';
@@ -18,7 +19,7 @@ import ProgrammeCalendar, {
 import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
 import ConfirmDialog    from './blocks/ConfirmDialog';
-import { colourForAthlete, tintForColour, initialsForName } from '../../utils/programmingColours';
+import { colourForAthlete, initialsForName } from '../../utils/programmingColours';
 import { buildBlockColourMap } from '../../utils/blockColours';
 
 function formatError(err, fallback) {
@@ -104,7 +105,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
     return m;
   }, [allAthletes]);
 
-  const { planned: plannedRows } = usePlannedSessions(allActiveIdArr);
+  const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(allActiveIdArr);
   const plannedEvents = useMemo(() => {
     if (!filters.planned) return [];
     return plannedSessionsAsEvents(plannedRows)
@@ -295,6 +296,19 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
     if (!canEdit) return;
     // Birthdays are synthetic — can't be rescheduled.
     if (event.is_birthday) return;
+    // Planned-session pills live in planned_sessions, not calendar_events —
+    // this is the "drag her session from today onto tomorrow" case, so it
+    // gets its own mutation + refresh instead of updateEventOptimistic.
+    if (event.is_planned) {
+      const res = await movePlannedSession(event._planned_id, newStartISO);
+      if (res.ok) {
+        refreshPlanned();
+        showToast(`Moved ${event._athleteName ? event._athleteName + "'s " : ''}'${event.event_name}' to ${formatToastDate(newStartISO)}`);
+      } else {
+        showToast(`Couldn't reschedule. ${res.error?.message || ''}`.trim(), 'error');
+      }
+      return;
+    }
     // Co_admin can move athlete events but not team events.
     if (event.is_team_event && !canEditTeamEvents) {
       showToast('Only admins can reschedule team events.', 'error');
@@ -314,6 +328,35 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
       showToast(`Event moved to ${formatToastDate(newStartISO)}`);
     } else {
       showToast("Couldn't move event — please try again", 'error');
+    }
+  };
+
+  // Hold-then-drag a planned-session pill — copies it onto the target day
+  // instead of moving it (mirrors the per-athlete week grid's long-press
+  // gesture, and ProgrammeCalendar's own hold-to-copy on this surface).
+  const handleCopyMove = async (event, newDateISO) => {
+    if (!canEdit) return;
+    const res = await copyPlannedSession(event._planned_id, newDateISO);
+    if (res.ok) {
+      refreshPlanned();
+      showToast(`Copied ${event._athleteName ? event._athleteName + "'s " : ''}'${event.event_name}' to ${formatToastDate(newDateISO)}`);
+    } else {
+      showToast(`Couldn't copy. ${res.error?.message || ''}`.trim(), 'error');
+    }
+  };
+
+  // Delete a single planned session directly from the Shared Calendar.
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState(null); // event | null
+  const handleConfirmDeleteSession = async () => {
+    const target = confirmDeleteSession;
+    setConfirmDeleteSession(null);
+    if (!target) return;
+    const res = await deletePlannedSession(target._planned_id);
+    if (res.ok) {
+      refreshPlanned();
+      showToast(`Deleted '${target.event_name}'`);
+    } else {
+      showToast(`Couldn't delete. ${res.error?.message || ''}`.trim(), 'error');
     }
   };
 
@@ -408,12 +451,14 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
                 onAddEvent={openAdd}
                 onAddEventOnDate={openAddOnDate}
                 onMoveEvent={handleMoveEvent}
+                onCopyMove={handleCopyMove}
                 events={events}
                 onClickEvent={openEdit}
                 pillColourMode="athlete"
                 highlightRange={highlightRange}
                 blocks={blocks}
                 blockColourMap={blockColourMap}
+                onDeletePlanned={canEdit ? (event) => setConfirmDeleteSession(event) : null}
               />
             )}
           </div>
@@ -464,6 +509,27 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
           danger
           onConfirm={handleConfirmRemoveWeek}
           onCancel={() => setRemoveWeekTarget(null)}
+        />
+      )}
+
+      {confirmDeleteSession && (
+        <ConfirmDialog
+          title="Delete this session?"
+          body={
+            <>
+              Removes <strong>{confirmDeleteSession.event_name}</strong> from{' '}
+              {confirmDeleteSession._athleteName || 'this athlete'}&rsquo;s plan on{' '}
+              <strong>
+                {parseDate(confirmDeleteSession.start_date).toLocaleDateString('en-GB', {
+                  weekday: 'short', day: 'numeric', month: 'short',
+                })}
+              </strong>. The session template stays available to re-add later.
+            </>
+          }
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleConfirmDeleteSession}
+          onCancel={() => setConfirmDeleteSession(null)}
         />
       )}
 

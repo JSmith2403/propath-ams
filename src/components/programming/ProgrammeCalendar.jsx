@@ -26,6 +26,11 @@ const DAY_NUMBER_RESERVE = 22;
 const MAX_LANES_MONTH    = 3;
 const DRAG_THRESHOLD_PX  = 5;
 
+// Long-press threshold (ms) before a held planned-session pill arms COPY
+// mode instead of MOVE — mirrors AthleteWeekViewV2's week-grid gesture so
+// the two surfaces feel the same: quick drag = move, hold-then-drag = copy.
+const COPY_HOLD_MS = 550;
+
 // Priority colours.
 //
 // On Surface 1 (per-athlete calendar) the WHOLE pill takes the priority
@@ -274,11 +279,11 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
   // on per-athlete calendars so they always render full height.
   const effectiveHeight = (isTeam && athleteContext) ? Math.round(height * 0.75) : height;
 
-  // Birthdays are read-only and team events on a per-athlete calendar
-  // are also read-only. Planned sessions get a click handler that
-  // opens the session builder for that block — so we route through
-  // the preview path too rather than the drag pipeline.
-  const dragDisabled = isBirthday || isPlanned || (isTeam && athleteContext);
+  // Birthdays are read-only, and team events on a per-athlete calendar
+  // are also read-only. Planned sessions ARE draggable — a quick drag
+  // moves the session, a held-then-dragged pill copies it (see
+  // startDrag/COPY_HOLD_MS below) — same gesture as the week grid.
+  const dragDisabled = isBirthday || (isTeam && athleteContext);
   const cursor = dragDisabled ? 'pointer' : 'grab';
 
   const interactionHandlers = dragDisabled
@@ -316,7 +321,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
       }}
       title={
         isPlanned
-          ? `${event._athleteName ? event._athleteName + ' — ' : ''}${event.event_name} (planned session)`
+          ? `${event._athleteName ? event._athleteName + ' — ' : ''}${event.event_name} (drag to move, hold then drag to copy)`
           : event.event_name + (isTeam ? ' (team event)' : '')
       }
     >
@@ -377,6 +382,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
       )}
       {isPlanned && onCopyPlanned && (
         <button
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onCopyPlanned(event); }}
           className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ color: '#437E8D', fontSize: 10, lineHeight: 1, padding: '1px 2px' }}
@@ -387,6 +393,7 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
       )}
       {isPlanned && onDeletePlanned && (
         <button
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onDeletePlanned(event); }}
           className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ color: '#dc2626', padding: '1px 2px' }}
@@ -544,9 +551,13 @@ function DayPopover({ dateISO, anchorRect, events, pillColourMode, athleteContex
   );
 }
 
-// Ghost preview rendered at the cursor while dragging.
-function DragGhost({ x, y, seg }) {
+// Ghost preview rendered at the cursor while dragging. For planned
+// sessions, a held-then-dragged pill (copyArmed) gets a gold ring and a
+// "Copy →" hint instead of "Move →" so the coach knows which gesture is
+// about to land before they release.
+function DragGhost({ x, y, seg, copyArmed }) {
   const { event, style } = seg;
+  const isPlanned = !!event.is_planned;
   return (
     <div
       style={{
@@ -555,25 +566,37 @@ function DragGhost({ x, y, seg }) {
         top: y + 8,
         height: PILL_HEIGHT,
         minWidth: 120,
-        maxWidth: 240,
+        maxWidth: 260,
         padding: '0 8px',
         display: 'flex',
         alignItems: 'center',
+        gap: 4,
         backgroundColor: style.bg,
         color: style.fg,
-        borderLeft: style.border ? `2px solid ${style.border}` : 'none',
+        border: copyArmed ? '2px solid #A58D69' : 'none',
+        borderLeft: !copyArmed && style.border ? `2px solid ${style.border}` : undefined,
         borderRadius: 4,
         fontSize: 10,
         fontWeight: 600,
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+        boxShadow: copyArmed
+          ? '0 0 0 3px rgba(165,141,105,0.18), 0 4px 14px rgba(0,0,0,0.18)'
+          : '0 4px 14px rgba(0,0,0,0.18)',
         pointerEvents: 'none',
         zIndex: 90,
       }}
     >
-      {event.event_name}
+      <span className="truncate">{event.event_name}</span>
+      {isPlanned && (
+        <span
+          className="shrink-0"
+          style={{ fontSize: 9, fontWeight: 700, color: copyArmed ? '#A58D69' : '#437E8D' }}
+        >
+          {copyArmed ? 'Copy →' : 'Move →'}
+        </span>
+      )}
     </div>
   );
 }
@@ -584,8 +607,11 @@ function DragGhost({ x, y, seg }) {
  * ProgrammeCalendar — month / week grid.
  *
  * Pills:
- *   • Single click   → onClickEvent(event)
- *   • Drag & drop    → onMoveEvent(event, newStartDateISO)
+ *   • Single click        → onClickEvent(event)
+ *   • Drag & drop         → onMoveEvent(event, newStartDateISO)
+ *   • Hold, then drag     → onCopyMove(event, newStartDateISO) — planned
+ *                           sessions only; falls back to onMoveEvent (a
+ *                           plain move) when the caller doesn't supply it.
  * Cells:
  *   • Hover affordance "+ Event" → onAddEventOnDate(dateISO) (canEdit only)
  *   • Add Event toolbar button   → onAddEvent()
@@ -623,6 +649,11 @@ export default function ProgrammeCalendar({
   onCopyPlanned = null,
   // Optional: (event) => void — adds a delete icon to is_planned pills.
   onDeletePlanned = null,
+  // Optional: (event, newDateISO) => void — a planned-session pill was
+  // held (COPY_HOLD_MS) and then dragged to a new day. Falls back to
+  // onMoveEvent (plain move) when omitted, so callers that don't care
+  // about the copy gesture don't have to wire anything extra.
+  onCopyMove = null,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -648,10 +679,19 @@ export default function ProgrammeCalendar({
   const maxLanes  = viewMode === 'week' ? 12  : MAX_LANES_MONTH;
 
   // ─── Drag state ───────────────────────────────────────────────────────
-  // null when idle. While drag-pending: { event, startX, startY, x, y, started, hoveredDate, seg }
+  // null when idle. While drag-pending: { event, startX, startY, x, y, started, hoveredDate, seg, copyArmed }
   const [drag, setDrag] = useState(null);
   const dragRef = useRef(drag);
   useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  // Long-press-to-copy timer for planned-session pills. Kept in a ref
+  // (not state) so it can be started/cancelled synchronously from
+  // pointer handlers without waiting on a render. armedCopyRef mirrors
+  // drag.copyArmed for the SAME reason handleUp reads dragRef instead of
+  // `drag` directly — the pointerup handler needs the latest value even
+  // if it fires in the same tick the timer resolved.
+  const holdTimerRef  = useRef(null);
+  const armedCopyRef  = useRef(false);
 
   // Pointer capture + global listeners while a drag is in progress
   useEffect(() => {
@@ -673,6 +713,13 @@ export default function ProgrammeCalendar({
       const dy = e.clientY - cur.startY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const started = cur.started || dist > DRAG_THRESHOLD_PX;
+      // A fast flick before the hold timer fires means the coach wants
+      // a plain move, not a copy — cancel the pending arm so releasing
+      // later doesn't retroactively copy instead of move.
+      if (started && !cur.started && holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
       const hoveredDate = started ? findCellDate(e.clientX, e.clientY) : null;
       setDrag({ ...cur, x: e.clientX, y: e.clientY, started, hoveredDate });
     };
@@ -680,11 +727,17 @@ export default function ProgrammeCalendar({
     const handleUp = () => {
       const cur = dragRef.current;
       if (!cur) return;
+      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
       if (cur.started && cur.hoveredDate && cur.hoveredDate !== cur.event.start_date) {
-        onMoveEvent && onMoveEvent(cur.event, cur.hoveredDate);
+        if (cur.event.is_planned && armedCopyRef.current && onCopyMove) {
+          onCopyMove(cur.event, cur.hoveredDate);
+        } else {
+          onMoveEvent && onMoveEvent(cur.event, cur.hoveredDate);
+        }
       } else if (!cur.started) {
         onClickEvent && onClickEvent(cur.event);
       }
+      armedCopyRef.current = false;
       setDrag(null);
     };
 
@@ -696,7 +749,7 @@ export default function ProgrammeCalendar({
       window.removeEventListener('pointerup',   handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, [drag, onMoveEvent, onClickEvent]);
+  }, [drag, onMoveEvent, onCopyMove, onClickEvent]);
 
   const startDrag = (e, seg) => {
     if (!canEdit) {
@@ -714,7 +767,20 @@ export default function ProgrammeCalendar({
       y: e.clientY,
       started: false,
       hoveredDate: null,
+      copyArmed: false,
     });
+
+    armedCopyRef.current = false;
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    // Only planned sessions support the hold-to-copy gesture — regular
+    // events, team events and birthdays don't have a "copy" concept.
+    if (seg.event.is_planned) {
+      holdTimerRef.current = setTimeout(() => {
+        armedCopyRef.current = true;
+        holdTimerRef.current = null;
+        setDrag(cur => (cur && cur.event === seg.event) ? { ...cur, copyArmed: true } : cur);
+      }, COPY_HOLD_MS);
+    }
   };
 
   // ─── Hover state for the day-cell affordance ─────────────────────────
@@ -856,7 +922,7 @@ export default function ProgrammeCalendar({
                   style={{
                     backgroundColor: cellBg,
                     outline: isToday      ? '2px solid #437E8D'
-                            : isDropTarget ? '2px solid #437E8D'
+                            : isDropTarget ? (drag?.copyArmed ? '2px solid #A58D69' : '2px solid #437E8D')
                             : 'none',
                     outlineOffset: '-2px',
                     transition: 'background-color 0.12s ease',
@@ -961,7 +1027,7 @@ export default function ProgrammeCalendar({
 
       {/* Drag ghost — outside grid so it isn't clipped */}
       {drag?.started && (
-        <DragGhost x={drag.x} y={drag.y} seg={drag.seg} />
+        <DragGhost x={drag.x} y={drag.y} seg={drag.seg} copyArmed={!!drag.copyArmed} />
       )}
 
       {/* Day popover (rendered via portal) */}

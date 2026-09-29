@@ -3,7 +3,7 @@ import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
-import { copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
+import { movePlannedSession, copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
@@ -14,6 +14,7 @@ import ProgrammeCalendar, {
   _dayDiff   as dayDiff,
   _parseDate as parseDate,
   _toISO     as toISO,
+  _formatToastDate as formatToastDate,
 } from './ProgrammeCalendar';
 import AthleteWeekViewV2 from './AthleteWeekViewV2';
 import DayQuickAddMenu from './DayQuickAddMenu';
@@ -166,7 +167,20 @@ export default function ProgrammeView({
   const close         = () => { setModal(null); setEventSaveError(null); };
 
   const handleMoveEvent = async (event, newStartISO) => {
-    if (!canEdit || event.is_planned || event.is_team_event) return;
+    if (!canEdit || event.is_team_event) return;
+    // Planned-session pills are dragged around the block-based
+    // planned_sessions table, not calendar_events — separate mutation,
+    // separate (re)fetch.
+    if (event.is_planned) {
+      const res = await movePlannedSession(event._planned_id, newStartISO);
+      if (res.ok) {
+        refreshPlanned();
+        showToast(`Moved '${event.event_name}' to ${formatToastDate(newStartISO)}`);
+      } else {
+        showToast(`Couldn't reschedule. ${res.error?.message || ''}`.trim(), 'error');
+      }
+      return;
+    }
     const oldStart  = parseDate(event.start_date);
     const oldEnd    = event.end_date ? parseDate(event.end_date) : null;
     const newStart  = parseDate(newStartISO);
@@ -174,6 +188,19 @@ export default function ProgrammeView({
     const newEndISO = oldEnd ? toISO(addDays(newStart, duration)) : null;
     const res = await updateEventOptimistic(event.id, { start_date: newStartISO, end_date: newEndISO });
     if (!res.ok) showToast(`Couldn't reschedule. ${res.error?.message || ''}`.trim(), 'error');
+  };
+
+  // Hold-then-drag a planned-session pill — copies it onto the target day
+  // instead of moving it (mirrors the week grid's long-press gesture).
+  const handleCopyMove = async (event, newDateISO) => {
+    if (!canEdit) return;
+    const res = await copyPlannedSession(event._planned_id, newDateISO);
+    if (res.ok) {
+      refreshPlanned();
+      showToast(`Copied '${event.event_name}' to ${formatToastDate(newDateISO)}`);
+    } else {
+      showToast(`Couldn't copy. ${res.error?.message || ''}`.trim(), 'error');
+    }
   };
 
   // ── Block modal state ────────────────────────────────────────────────────
@@ -473,6 +500,7 @@ export default function ProgrammeView({
           canEdit={canEdit}
           onAddEvent={openAdd}
           onMoveEvent={handleMoveEvent}
+          onCopyMove={handleCopyMove}
           events={[...events, ...plannedEvents]}
           onClickEvent={openEdit}
           pillColourMode="priority"
