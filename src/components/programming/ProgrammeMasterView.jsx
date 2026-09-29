@@ -18,7 +18,7 @@ import ProgrammeCalendar, {
 import EventModal from './EventModal';
 import BlockModal from './blocks/BlockModal';
 import ConfirmDialog    from './blocks/ConfirmDialog';
-import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
+import { colourForAthlete, tintForColour, initialsForName } from '../../utils/programmingColours';
 import { buildBlockColourMap } from '../../utils/blockColours';
 
 function formatError(err, fallback) {
@@ -98,12 +98,30 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
   // Brief 5d/5e — planned sessions across all selected athletes,
   // gated by the "Planned training sessions" toggle (default off on
   // Shared Calendar to keep the grid clean).
+  const athleteById = useMemo(() => {
+    const m = new Map();
+    allAthletes.forEach(a => m.set(a.id, a));
+    return m;
+  }, [allAthletes]);
+
   const { planned: plannedRows } = usePlannedSessions(allActiveIdArr);
   const plannedEvents = useMemo(() => {
     if (!filters.planned) return [];
     return plannedSessionsAsEvents(plannedRows)
-      .filter(p => selectedIds.has(p.athlete_id));
-  }, [plannedRows, filters.planned, selectedIds]);
+      .filter(p => selectedIds.has(p.athlete_id))
+      .map(p => {
+        const athlete = athleteById.get(p.athlete_id);
+        return {
+          ...p,
+          // Cross-athlete calendar only — lets the pill show whose
+          // session it is without opening it (per-athlete calendar
+          // already implies the athlete, so it ignores these fields).
+          _athleteName:     athlete?.name || '',
+          _athleteInitials: initialsForName(athlete?.name),
+          _athleteColour:   colourForAthlete(p.athlete_id),
+        };
+      });
+  }, [plannedRows, filters.planned, selectedIds, athleteById]);
 
   // Filter blocks to selected athletes (matches the events pattern)
   const blocks = useMemo(

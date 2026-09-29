@@ -59,3 +59,16 @@ export function tintForColour(hex, alpha = 0.14) {
   const b = parseInt(m[1].slice(4, 6), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+/**
+ * "Feliciano Urda" -> "FU", "Cher" -> "CH". Used on the Shared Calendar's
+ * planned-session pills so a coach can tell whose session a pill belongs
+ * to without opening it.
+ */
+export function initialsForName(name) {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}

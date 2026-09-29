@@ -314,10 +314,33 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
         transition: 'opacity 0.08s ease',
         cursor,
       }}
-      title={event.event_name + (isTeam ? ' (team event)' : isPlanned ? ' (planned session)' : '')}
+      title={
+        isPlanned
+          ? `${event._athleteName ? event._athleteName + ' — ' : ''}${event.event_name} (planned session)`
+          : event.event_name + (isTeam ? ' (team event)' : '')
+      }
     >
       {isPlanned && leftRounded && (
-        <Dumbbell size={10} className="shrink-0" style={{ color: '#437E8D' }} />
+        athleteContext || !event._athleteInitials ? (
+          <Dumbbell size={10} className="shrink-0" style={{ color: '#437E8D' }} />
+        ) : (
+          // Shared Calendar — swap the generic dumbbell icon for the
+          // scheduled athlete's initials so a coach can tell whose
+          // session a pill is without opening it.
+          <span
+            className="shrink-0 inline-flex items-center justify-center text-[7px] font-bold rounded-full"
+            style={{
+              backgroundColor: tintForColour(event._athleteColour, 0.28),
+              color: event._athleteColour,
+              width: 13,
+              height: 13,
+              lineHeight: 1,
+            }}
+            title={event._athleteName}
+          >
+            {event._athleteInitials}
+          </span>
+        )
       )}
       {isBirthday && leftRounded && (
         <Cake size={11} className="shrink-0" style={{ color: '#fff' }} />
@@ -481,6 +504,21 @@ function DayPopover({ dateISO, anchorRect, events, pillColourMode, athleteContex
                 }}
                 title={e.event_name}
               >
+                {e.is_planned && !athleteContext && e._athleteInitials && (
+                  <span
+                    className="shrink-0 inline-flex items-center justify-center text-[8px] font-bold rounded-full"
+                    style={{
+                      backgroundColor: tintForColour(e._athleteColour, 0.28),
+                      color: e._athleteColour,
+                      width: 14,
+                      height: 14,
+                      lineHeight: 1,
+                    }}
+                    title={e._athleteName}
+                  >
+                    {e._athleteInitials}
+                  </span>
+                )}
                 <span className="flex-1 truncate">{e.event_name}</span>
                 {renderBadge && (
                   <span
