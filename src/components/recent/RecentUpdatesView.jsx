@@ -1,9 +1,23 @@
 import { useMemo, useState } from 'react';
 import {
   Bell, CalendarDays, CheckSquare, Circle, Clock, Dumbbell, Flame,
-  Heart, Loader2, Trophy, TrendingUp, Users, UtensilsCrossed, Weight,
+  Heart, Loader2, Plus, StickyNote, Trophy, TrendingUp, Users,
+  UtensilsCrossed, Weight, X,
 } from 'lucide-react';
 import { useRecentUpdates } from '../../hooks/useRecentUpdates';
+
+// Quick note-type identifier for the "+ Note" quick-add on a completed
+// session — deliberately its own small taxonomy rather than reusing
+// GoalsTab's DOMAIN_META (Physical/Psych/Nutrition/Lifestyle): this one
+// needs "General" and "Physio", neither of which exist there, and has
+// no use for Psych/Lifestyle. Physical/Nutritional reuse those pillars'
+// existing colours for visual consistency where they do overlap.
+const NOTE_TYPE_META = {
+  general:     { label: 'General',     color: '#6b7280' },
+  physical:    { label: 'Physical',    color: '#437E8D' },
+  nutritional: { label: 'Nutritional', color: '#A58D69' },
+  physio:      { label: 'Physio',      color: '#085777' },
+};
 
 const VIEW_MODE_KEY = 'updates:view_mode';
 const readViewMode = () => {
@@ -110,7 +124,10 @@ function groupByDay(updates) {
  * athlete's profile — which auto-marks the row read. A "Mark all
  * read" button at the top clears every currently-visible row.
  */
-export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }) {
+export default function RecentUpdatesView({
+  athletes = [], onNavigateToAthlete,
+  onAddRagEntry, onAddPhysioEntry, onAddGeneralNote,
+}) {
   const {
     updates, loading, error, refresh,
     isRead, markRead, markAllRead, unreadCount, maxAgeDays,
@@ -122,6 +139,62 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
   // "New" filter — show only rows not yet acknowledged, so unseen
   // activity isn't buried among rows the coach has already read.
   const [unreadOnly, setUnreadOnly] = useState(false);
+
+  // "+ Note" quick-add — which completed-session row the popup is open
+  // for, { update, athlete } | null. A single modal instance at the top
+  // level rather than per-row state, same pattern as the day/block
+  // popovers elsewhere in the app.
+  const [noteTarget, setNoteTarget] = useState(null);
+  const openAddNote = (update, athlete) => setNoteTarget({ update, athlete });
+
+  // Routes a quick note to wherever that type already lives: Physical/
+  // Nutritional file into the same ragLog the Goals & Development notes
+  // log reads, Physio writes straight into the Physio Portal tab's
+  // own entry list (the explicit ask — so physio staff see it there
+  // without any new plumbing on their side), General has no home of its
+  // own yet so it's only visible back here on the session it came from.
+  // Every note carries `sourceSession` so wherever it lands can show
+  // which completed session it's about.
+  const saveNote = (type, { staff, note }) => {
+    if (!noteTarget) return;
+    const { update, athlete } = noteTarget;
+    if (!athlete) return;
+    const sourceSession = {
+      id: update.session_log_id,
+      name: update.session_name,
+      date: update.timestamp,
+    };
+    const dateOnly = (update.timestamp || new Date().toISOString()).slice(0, 10);
+
+    if (type === 'physio') {
+      onAddPhysioEntry?.(athlete.id, {
+        date: dateOnly,
+        assessor: staff,
+        noteType: 'Session note',
+        notes: note,
+        sourceSession,
+      });
+    } else if (type === 'physical' || type === 'nutritional') {
+      onAddRagEntry?.(athlete.id, type === 'physical' ? 'physical' : 'nutrition', {
+        id: crypto.randomUUID(),
+        timestamp: new Date(`${dateOnly}T12:00:00`).toISOString(),
+        staff,
+        status: 'grey',
+        note,
+        source: 'manual',
+        entryType: 'General note',
+        sourceSession,
+      });
+    } else {
+      onAddGeneralNote?.(athlete.id, {
+        timestamp: update.timestamp || new Date().toISOString(),
+        staff,
+        note,
+        sourceSession,
+      });
+    }
+    setNoteTarget(null);
+  };
 
   const athleteById = useMemo(() => {
     const m = new Map();
@@ -345,6 +418,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
                           onNavigateToAthlete(u.athlete_id);
                         }
                       }}
+                      onOpenAddNote={openAddNote}
                     />
                   ))}
                 </div>
@@ -381,6 +455,7 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
                         onNavigateToAthlete(u.athlete_id);
                       }
                     }}
+                    onOpenAddNote={openAddNote}
                   />
                 ))}
               </div>
@@ -391,15 +466,25 @@ export default function RecentUpdatesView({ athletes = [], onNavigateToAthlete }
           </div>
         </>
       )}
+
+      {noteTarget && (
+        <AddSessionNoteModal
+          athleteName={noteTarget.athlete?.name}
+          sessionName={noteTarget.update.session_name}
+          sessionDate={noteTarget.update.timestamp}
+          onSave={saveNote}
+          onClose={() => setNoteTarget(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ── UpdateRow ────────────────────────────────────────────────────────
-function UpdateRow({ update, athlete, read, onMarkRead, onOpen, hideAvatar = false }) {
+function UpdateRow({ update, athlete, read, onMarkRead, onOpen, onOpenAddNote, hideAvatar = false }) {
   const name = athlete?.name || 'Unknown athlete';
   const clickable = !!athlete;
-  const typeMeta = renderTypeMeta(update);
+  const typeMeta = renderTypeMeta(update, athlete, onOpenAddNote);
 
   return (
     <div
@@ -532,13 +617,43 @@ function fmtKg(n) {
 }
 
 /**
+ * Every note linked to this session, across every store it could have
+ * landed in — Physical/Nutritional file into the same ragLog Goals &
+ * Development reads, Physio into phase2.physio.entries, General has no
+ * other home. Matched on sourceSession.id === this session's log id.
+ * Cheap enough to just recompute per render — these lists are small.
+ */
+function findSessionNotes(athlete, sessionLogId) {
+  if (!athlete || !sessionLogId) return [];
+  const out = [];
+  (athlete.ragLog?.physical || []).forEach(n => {
+    if (n.sourceSession?.id === sessionLogId) out.push({ id: n.id, type: 'physical', staff: n.staff, note: n.note, timestamp: n.timestamp });
+  });
+  (athlete.ragLog?.nutrition || []).forEach(n => {
+    if (n.sourceSession?.id === sessionLogId) out.push({ id: n.id, type: 'nutritional', staff: n.staff, note: n.note, timestamp: n.timestamp });
+  });
+  (athlete.phase2?.physio?.entries || []).forEach(n => {
+    if (n.sourceSession?.id === sessionLogId) out.push({ id: n.id, type: 'physio', staff: n.assessor, note: n.notes, timestamp: n.date });
+  });
+  (athlete.phase2?.generalNotes || []).forEach(n => {
+    if (n.sourceSession?.id === sessionLogId) out.push({ id: n.id, type: 'general', staff: n.staff, note: n.note, timestamp: n.timestamp });
+  });
+  return out.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+}
+
+/**
  * SessionSummary — rich stats card that sits under the session
  * headline. Mirrors the post-session summary the athlete sees when
  * they finish a workout: duration, RPE, total load lifted, and any
  * PBs set during the session. Fields drop out when unavailable so
  * a lift-only session (no PBs) doesn't render an awkward zero chip.
+ *
+ * Also hosts the "+ Note" quick-add — any notes already linked to this
+ * session (tagged General/Physical/Nutritional/Physio) render inline,
+ * and Physio-tagged ones are simultaneously visible in that athlete's
+ * Physio Portal tab (see saveNote in the parent).
  */
-function SessionSummary({ update }) {
+function SessionSummary({ update, athlete, onOpenAddNote }) {
   const stats = [];
   if (update.duration_min != null) stats.push({ Icon: Clock, label: `${update.duration_min} min` });
   if (update.total_rpe != null)     stats.push({ Icon: Flame, label: `RPE ${update.total_rpe}` });
@@ -546,35 +661,77 @@ function SessionSummary({ update }) {
   if (loadLabel)                    stats.push({ Icon: Weight, label: loadLabel });
   if (update.pb_count > 0)          stats.push({ Icon: Trophy, label: `${update.pb_count} PB${update.pb_count === 1 ? '' : 's'}`, gold: true });
 
-  if (!stats.length && !update.pb_exercises?.length) return null;
+  const linkedNotes = findSessionNotes(athlete, update.session_log_id);
+
+  if (!stats.length && !update.pb_exercises?.length && !linkedNotes.length && !onOpenAddNote) return null;
 
   return (
     <div className="mt-2">
-      <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-md"
-        style={{ backgroundColor: '#fafafa', border: '1px solid #f3f4f6' }}
-      >
-        {stats.map((s, i) => (
-          <span
-            key={i}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold"
-            style={{ color: s.gold ? '#A58D69' : '#1C1C1C' }}
+      {(stats.length > 0 || update.pb_exercises?.length > 0) && (
+        <>
+          <div
+            className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 rounded-md"
+            style={{ backgroundColor: '#fafafa', border: '1px solid #f3f4f6' }}
           >
-            <s.Icon size={12} style={{ color: s.gold ? '#A58D69' : '#6b7280' }} />
-            {s.label}
-          </span>
-        ))}
-      </div>
-      {update.pb_exercises?.length > 0 && (
-        <div className="px-3 pt-1.5 text-[10px]" style={{ color: '#A58D69' }}>
-          🏆 New PB: <span className="font-semibold">{update.pb_exercises.join(' · ')}</span>
+            {stats.map((s, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold"
+                style={{ color: s.gold ? '#A58D69' : '#1C1C1C' }}
+              >
+                <s.Icon size={12} style={{ color: s.gold ? '#A58D69' : '#6b7280' }} />
+                {s.label}
+              </span>
+            ))}
+          </div>
+          {update.pb_exercises?.length > 0 && (
+            <div className="px-3 pt-1.5 text-[10px]" style={{ color: '#A58D69' }}>
+              🏆 New PB: <span className="font-semibold">{update.pb_exercises.join(' · ')}</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {linkedNotes.length > 0 && (
+        <div className="mt-1.5 space-y-1">
+          {linkedNotes.map(n => {
+            const meta = NOTE_TYPE_META[n.type] || NOTE_TYPE_META.general;
+            return (
+              <div
+                key={n.id}
+                className="flex items-start gap-2 px-3 py-1.5 rounded-md"
+                style={{ backgroundColor: `${meta.color}0d`, border: `1px solid ${meta.color}33` }}
+              >
+                <span
+                  className="shrink-0 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded mt-0.5"
+                  style={{ color: meta.color, backgroundColor: `${meta.color}1a` }}
+                >
+                  {meta.label}
+                </span>
+                <p className="text-[11px] text-gray-600 leading-snug flex-1 min-w-0">
+                  {n.note || <span className="italic text-gray-300">No note text.</span>}
+                  {n.staff && <span className="text-gray-400"> — {n.staff}</span>}
+                </p>
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {onOpenAddNote && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenAddNote(update, athlete); }}
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold"
+          style={{ color: '#A58D69' }}
+        >
+          <Plus size={11} /> Note
+        </button>
       )}
     </div>
   );
 }
 
-function renderTypeMeta(u) {
+function renderTypeMeta(u, athlete, onOpenAddNote) {
   switch (u.type) {
     case 'session':
       return {
@@ -587,7 +744,7 @@ function renderTypeMeta(u) {
           )}
         </>,
         chips: null,   // rendered below as a richer stats strip
-        summary: <SessionSummary update={u} />,
+        summary: <SessionSummary update={u} athlete={athlete} onOpenAddNote={onOpenAddNote} />,
       };
 
     case 'wellness':
@@ -645,4 +802,108 @@ function renderTypeMeta(u) {
     default:
       return { badge: null, headline: 'logged activity', chips: null };
   }
+}
+
+// ── Add-note modal — quick-add from a completed session ────────────────
+// Type picked here decides where the note actually gets stored (see
+// saveNote above): Physio lands directly in that athlete's Physio
+// Assessment entries, Physical/Nutritional in the shared notes log
+// Goals & Development reads, General only lives here on the session.
+function AddSessionNoteModal({ athleteName, sessionName, sessionDate, onSave, onClose }) {
+  const [type, setType]   = useState('general');
+  const [staff, setStaff] = useState('');
+  const [note, setNote]   = useState('');
+
+  const canSave = staff.trim() && note.trim();
+  const submit = () => {
+    if (!canSave) return;
+    onSave(type, { staff: staff.trim(), note: note.trim() });
+  };
+
+  const dateLabel = sessionDate
+    ? new Date(sessionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+      onClick={onClose}
+    >
+      <div className="bg-white rounded-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+              <StickyNote size={14} style={{ color: '#A58D69' }} /> Add note
+            </h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {athleteName}{sessionName ? ` · ${sessionName}` : ''}{dateLabel ? ` · ${dateLabel}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Type</label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {Object.entries(NOTE_TYPE_META).map(([key, meta]) => {
+                const active = type === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setType(key)}
+                    className="py-1.5 rounded text-[11px] font-semibold border transition-colors"
+                    style={{
+                      backgroundColor: active ? `${meta.color}1a` : 'transparent',
+                      borderColor: active ? meta.color : '#e5e7eb',
+                      color: active ? meta.color : '#6b7280',
+                    }}
+                  >
+                    {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+            {type === 'physio' && (
+              <p className="text-[10px] text-gray-400 mt-1.5">
+                Saved straight into this athlete's Physio Portal tab.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Your name *</label>
+            <input
+              type="text"
+              value={staff}
+              onChange={(e) => setStaff(e.target.value)}
+              placeholder="e.g. James Whitfield"
+              className="w-full text-sm border border-gray-200 rounded px-3 py-2 bg-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Note *</label>
+            <textarea
+              rows={4}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Record observations, interventions, or context..."
+              className="w-full text-sm border border-gray-200 rounded px-3 py-2 resize-none bg-white"
+            />
+          </div>
+
+          <button
+            onClick={submit}
+            disabled={!canSave}
+            className="w-full py-2.5 text-sm font-semibold text-white rounded-lg disabled:opacity-40"
+            style={{ backgroundColor: '#A58D69' }}
+          >
+            Save Note
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

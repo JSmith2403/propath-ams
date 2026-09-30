@@ -26,7 +26,7 @@ const TABS = [
   { id: 'wellness',       label: 'Wellness'             },
   { id: 'maturation',     label: 'Maturation'           },
   { id: 'mobility',       label: 'Mobility'             },
-  { id: 'physio',         label: 'Physio Assessment'    },
+  { id: 'physio',         label: 'Physio Portal'        },
   { id: 'report',         label: 'Report'               },
 ];
 
@@ -73,6 +73,7 @@ export default function AthleteProfile({
   // Phase 2
   onAddMaturationEntry, onAddMobilityEntry, onAddPerformanceEntry,
   onAddPhysioEntry, onAddNutritionEntry, onAddAcsi28Entry, onAddPsychNote,
+  onAddInjuryEntry, onUpdateInjuryEntry, onDeleteInjuryEntry,
   onSavePerformanceBrag, onSaveReportMetrics,
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
 }) {
@@ -153,10 +154,21 @@ export default function AthleteProfile({
       ...a,
       phase2: {
         ...a.phase2,
-        physio: { entries: (a.phase2?.physio?.entries || []).filter(e => e.id !== entryId) },
+        physio: { ...a.phase2?.physio, entries: (a.phase2?.physio?.entries || []).filter(e => e.id !== entryId) },
       },
     }));
     onDeletePhysioEntry(localAthlete.id, entryId);
+  };
+
+  const handleDeleteInjuryEntry = (entryId) => {
+    setLocalAthlete(a => ({
+      ...a,
+      phase2: {
+        ...a.phase2,
+        physio: { ...a.phase2?.physio, injuries: (a.phase2?.physio?.injuries || []).filter(e => e.id !== entryId) },
+      },
+    }));
+    onDeleteInjuryEntry?.(localAthlete.id, entryId);
   };
 
   const renderTab = () => {
@@ -249,6 +261,10 @@ export default function AthleteProfile({
             onAddEntry={entry => onAddPhysioEntry(localAthlete.id, entry)}
             onUpdateEntry={(entryId, updates) => onUpdatePhysioEntry(localAthlete.id, entryId, updates)}
             onDeleteEntry={handleDeletePhysioEntry}
+            injuries={p2.physio?.injuries || []}
+            onAddInjury={entry => onAddInjuryEntry(localAthlete.id, entry)}
+            onUpdateInjury={(entryId, updates) => onUpdateInjuryEntry(localAthlete.id, entryId, updates)}
+            onDeleteInjury={handleDeleteInjuryEntry}
           />
         );
       case 'wellness':

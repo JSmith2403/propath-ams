@@ -60,7 +60,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     addAthlete, updateAthlete, archiveAthlete, restoreAthlete, deleteAthlete, updateRag, addRagEntry,
     updatePhoto,
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
-    addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
+    addPhysioEntry, addGeneralNote, addNutritionEntry, addAcsi28Entry, addPsychNote,
+    addInjuryEntry, updateInjuryEntry, deleteInjuryEntry,
     savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     deleteRagEntry, updatePhysioEntry, deletePhysioEntry,
@@ -194,6 +195,9 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
               <RecentUpdatesView
                 athletes={visibleAthletes}
                 onNavigateToAthlete={handleSelectAthlete}
+                onAddRagEntry={addRagEntry}
+                onAddPhysioEntry={addPhysioEntry}
+                onAddGeneralNote={addGeneralNote}
               />
             </div>
             <div className="hidden xl:flex flex-1 min-w-0">
@@ -243,6 +247,9 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             onDeleteRagEntry={canDelete ? deleteRagEntry : undefined}
             onUpdatePhysioEntry={updatePhysioEntry}
             onDeletePhysioEntry={canDelete ? deletePhysioEntry : undefined}
+            onAddInjuryEntry={addInjuryEntry}
+            onUpdateInjuryEntry={updateInjuryEntry}
+            onDeleteInjuryEntry={canDelete ? deleteInjuryEntry : undefined}
           />
         )}
 

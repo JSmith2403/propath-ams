@@ -764,6 +764,11 @@ export default function GoalsTab({
                       )}
                       <span className="text-xs text-gray-400 ml-auto">{formatTimestamp(entry.timestamp)}</span>
                     </div>
+                    {entry.sourceSession && (
+                      <p className="text-xs text-gray-400 mb-1">
+                        Re: <span className="font-semibold text-gray-500">{entry.sourceSession.name}</span> — session completed
+                      </p>
+                    )}
                     {entry.note
                       ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note}</p>
                       : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}

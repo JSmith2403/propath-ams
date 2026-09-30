@@ -25,7 +25,8 @@ const DEFAULT_PHASE2 = () => ({
   maturation: { entries: [] },
   mobility: { entries: {} },
   performance: { entries: {} },
-  physio: { entries: [] },
+  physio: { entries: [], injuries: [] },
+  generalNotes: [],
   physical: {},
   lifestyle: {},
   performanceBrag: {},
@@ -59,6 +60,11 @@ function ensurePhase2(athlete) {
       physical:        p2.physical        || d.physical,
       lifestyle:       p2.lifestyle       || d.lifestyle,
       performanceBrag: p2.performanceBrag || {},
+      // physio itself needs a nested default too — an athlete saved
+      // before `injuries` existed has physio: { entries: [...] } with
+      // no injuries key at all, and the top-level `...p2` spread above
+      // would otherwise drop d.physio.injuries entirely.
+      physio: { ...d.physio, ...(p2.physio || {}) },
     },
   };
 }
@@ -392,7 +398,42 @@ export function useAthletes({ seedEnabled = true } = {}) {
   const addPhysioEntry = useCallback((id, entry) =>
     p2update(id, p2 => ({
       ...p2,
-      physio: { entries: [{ ...entry, id: uid() }, ...p2.physio.entries] },
+      physio: { ...p2.physio, entries: [{ ...entry, id: uid() }, ...p2.physio.entries] },
+    })), [p2update]);
+
+  // Injury History — separate from the assessment/session-note entries
+  // above: each row tracks one injury's lifecycle (status, expected
+  // return) rather than a single dated note.
+  const addInjuryEntry = useCallback((id, entry) =>
+    p2update(id, p2 => ({
+      ...p2,
+      physio: { ...p2.physio, injuries: [{ ...entry, id: uid() }, ...(p2.physio.injuries || [])] },
+    })), [p2update]);
+
+  const updateInjuryEntry = useCallback((id, entryId, updates) =>
+    p2update(id, p2 => ({
+      ...p2,
+      physio: {
+        ...p2.physio,
+        injuries: (p2.physio?.injuries || []).map(e => e.id === entryId ? { ...e, ...updates } : e),
+      },
+    })), [p2update]);
+
+  const deleteInjuryEntry = useCallback((id, entryId) =>
+    p2update(id, p2 => ({
+      ...p2,
+      physio: { ...p2.physio, injuries: (p2.physio?.injuries || []).filter(e => e.id !== entryId) },
+    })), [p2update]);
+
+  // General (uncategorised) quick notes — e.g. from the Recent Updates
+  // "+ Note" quick-add on a completed session, when the coach doesn't
+  // want to file it under Physical/Nutritional/Physio specifically.
+  // No dedicated tab reads this yet; it's surfaced inline wherever it
+  // was created (see RecentUpdatesView's per-session note list).
+  const addGeneralNote = useCallback((id, entry) =>
+    p2update(id, p2 => ({
+      ...p2,
+      generalNotes: [{ ...entry, id: uid() }, ...(p2.generalNotes || [])],
     })), [p2update]);
 
   const addNutritionEntry = useCallback((id, type, entry) =>
@@ -434,13 +475,16 @@ export function useAthletes({ seedEnabled = true } = {}) {
   const updatePhysioEntry = useCallback((id, entryId, updates) =>
     p2update(id, p2 => ({
       ...p2,
-      physio: { entries: (p2.physio?.entries || []).map(e => e.id === entryId ? { ...e, ...updates } : e) },
+      physio: {
+        ...p2.physio,
+        entries: (p2.physio?.entries || []).map(e => e.id === entryId ? { ...e, ...updates } : e),
+      },
     })), [p2update]);
 
   const deletePhysioEntry = useCallback((id, entryId) =>
     p2update(id, p2 => ({
       ...p2,
-      physio: { entries: (p2.physio?.entries || []).filter(e => e.id !== entryId) },
+      physio: { ...p2.physio, entries: (p2.physio?.entries || []).filter(e => e.id !== entryId) },
     })), [p2update]);
 
   const savePerformanceBrag = useCallback((id, metricKey, color) =>
@@ -626,7 +670,8 @@ export function useAthletes({ seedEnabled = true } = {}) {
     updatePhoto,
     // Phase 2 — individual
     addMaturationEntry, addMobilityEntry, addPerformanceEntry,
-    addPhysioEntry, addNutritionEntry, addAcsi28Entry, addPsychNote,
+    addPhysioEntry, addGeneralNote, addNutritionEntry, addAcsi28Entry, addPsychNote,
+    addInjuryEntry, updateInjuryEntry, deleteInjuryEntry,
     savePerformanceBrag, saveReportMetrics,
     updateLatestEntry, updateEntryById,
     // Delete operations
