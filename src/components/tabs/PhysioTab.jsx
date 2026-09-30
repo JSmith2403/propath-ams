@@ -124,22 +124,47 @@ function NoteTypeTag({ type }) {
 }
 
 // ─── Injury History ─────────────────────────────────────────────────
-const INJURY_STATUSES = ['Active', 'Recovering', 'Resolved'];
+const INJURY_STATUSES = ['Ongoing', 'Resolved'];
 const INJURY_STATUS_COLORS = {
-  Active:     { bg: 'rgba(239,68,68,0.12)',  text: '#dc2626' },
-  Recovering: { bg: 'rgba(245,158,11,0.12)', text: '#b45309' },
-  Resolved:   { bg: 'rgba(34,197,94,0.12)',  text: '#16a34a' },
+  Ongoing:  { bg: 'rgba(239,68,68,0.12)', text: '#dc2626' },
+  Resolved: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
 };
 
+// Anything that isn't literally 'Resolved' reads as Ongoing — covers
+// the old 3-way ('Active'/'Recovering') values on any injury saved
+// before this narrowed to two options, so a legacy row doesn't render
+// with no tag/colour at all.
+function normaliseInjuryStatus(status) {
+  return status === 'Resolved' ? 'Resolved' : 'Ongoing';
+}
+
 function InjuryStatusTag({ status }) {
-  const colors = INJURY_STATUS_COLORS[status] || INJURY_STATUS_COLORS.Active;
+  const normalised = normaliseInjuryStatus(status);
+  const colors = INJURY_STATUS_COLORS[normalised];
   return (
     <span
       className="text-xs font-semibold px-2 py-0.5 rounded"
       style={{ backgroundColor: colors.bg, color: colors.text }}
     >
-      {status}
+      {normalised}
     </span>
+  );
+}
+
+// Quick status change right from the injury card — no need to open
+// the full edit form just to flip Ongoing -> Resolved.
+function InjuryStatusSelect({ status, onChange }) {
+  const normalised = normaliseInjuryStatus(status);
+  const colors = INJURY_STATUS_COLORS[normalised];
+  return (
+    <select
+      value={normalised}
+      onChange={e => onChange(e.target.value)}
+      className="text-xs font-semibold rounded px-2 py-0.5 border-0 appearance-none cursor-pointer"
+      style={{ backgroundColor: colors.bg, color: colors.text }}
+    >
+      {INJURY_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+    </select>
   );
 }
 
@@ -147,7 +172,7 @@ function InjuryForm({ initial, onSave, onCancel, title, saveLabel }) {
   const [date, setDate]                 = useState(initial?.date || TODAY);
   const [injuryName, setInjuryName]     = useState(initial?.injuryName || '');
   const [bodyPart, setBodyPart]         = useState(initial?.bodyPart || '');
-  const [status, setStatus]             = useState(initial?.status || INJURY_STATUSES[0]);
+  const [status, setStatus]             = useState(initial ? normaliseInjuryStatus(initial.status) : INJURY_STATUSES[0]);
   const [expectedReturn, setExpectedReturn] = useState(initial?.expectedReturn || '');
   const [notes, setNotes]               = useState(initial?.notes || '');
 
@@ -319,7 +344,14 @@ function InjuryHistory({ injuries = [], onAddInjury, onUpdateInjury, onDeleteInj
                   {entry.bodyPart && (
                     <span className="text-xs text-gray-400">{entry.bodyPart}</span>
                   )}
-                  <InjuryStatusTag status={entry.status} />
+                  {onUpdateInjury ? (
+                    <InjuryStatusSelect
+                      status={entry.status}
+                      onChange={(newStatus) => onUpdateInjury(entry.id, { status: newStatus })}
+                    />
+                  ) : (
+                    <InjuryStatusTag status={entry.status} />
+                  )}
                   {entry.status !== 'Resolved' && entry.expectedReturn && (
                     <span className="text-xs text-gray-400">
                       Expected return {formatDate(entry.expectedReturn)}
