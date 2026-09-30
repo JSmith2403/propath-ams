@@ -6,6 +6,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useDevelopmentPlans } from '../../hooks/useDevelopmentPlans';
 import { useAthleteApp } from '../../hooks/useAthleteApp';
+import SessionDetailCard from '../SessionDetailCard';
 import {
   TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, QUARTER_META,
   currentYearQuarter, buildGoalTree,
@@ -772,6 +773,7 @@ export default function GoalsTab({
                     {entry.note
                       ? <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{entry.note}</p>
                       : <p className="text-sm text-gray-300 italic">No notes recorded.</p>}
+                    {entry.sourceSession && <SessionDetailCard sessionLogId={entry.sourceSession.id} />}
                   </div>
                   <button
                     onClick={() => { if (window.confirm('Delete this entry? This cannot be undone.')) onDeleteRagEntry?.(entry.domain, entry.id); }}
