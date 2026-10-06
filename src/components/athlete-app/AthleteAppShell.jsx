@@ -5,6 +5,7 @@ import TabBar from './TabBar';
 import TrainingTab from './TrainingTab';
 import InstallPrompt from '../InstallPrompt';
 import WellnessCheckInGate from './WellnessCheckInGate';
+import AttendanceGate from './AttendanceGate';
 import NotificationPrompt from './NotificationPrompt';
 import InboxSheet from './InboxSheet';
 import { Bell } from 'lucide-react';
@@ -62,8 +63,12 @@ export default function AthleteAppShell({ athlete }) {
     setActive(id);
   };
 
+  // Blocking pop-ups run one at a time, in priority order: the daily
+  // wellness check-in first, then (Sun 3pm – Tue, UAE) the weekly
+  // attendance. Each gate only renders its children once it's clear.
   return (
     <WellnessCheckInGate athleteId={athlete.id} wellnessToken={athlete.wellnessToken}>
+    <AttendanceGate athleteId={athlete.id}>
     <div className="min-h-screen w-full bg-ink-100">
       <div className="min-h-screen flex flex-col mx-auto relative bg-ink-50 shadow-card"
         style={{ maxWidth: 480 }}>
@@ -130,6 +135,7 @@ export default function AthleteAppShell({ athlete }) {
       <InstallPrompt />
       <NotificationPrompt athleteId={athlete.id} />
     </div>
+    </AttendanceGate>
     </WellnessCheckInGate>
   );
 }

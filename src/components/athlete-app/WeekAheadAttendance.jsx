@@ -40,11 +40,11 @@ export default function WeekAheadAttendance({ sessions, attendanceById, onRespon
           ? <CalendarCheck size={18} style={{ color: '#A58D69' }} />
           : <CheckCircle2 size={18} style={{ color: '#16a34a' }} />}
         <div className="flex-1 min-w-0">
-          <p className="text-body font-semibold text-ink-900">Week ahead</p>
+          <p className="text-body font-semibold text-ink-900">Which sessions are you attending?</p>
           <p className="text-micro text-ink-500">
             {unanswered
-              ? `Complete your attendance — ${unanswered} session${unanswered === 1 ? '' : 's'} to confirm`
-              : 'All sessions confirmed. Thanks!'}
+              ? `Next 7 days · ${unanswered} session${unanswered === 1 ? '' : 's'} still to confirm`
+              : 'Next 7 days · all confirmed, thanks!'}
           </p>
         </div>
         {open ? <ChevronUp size={16} className="text-ink-400" /> : <ChevronDown size={16} className="text-ink-400" />}

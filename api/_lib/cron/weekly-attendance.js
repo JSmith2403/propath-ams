@@ -1,26 +1,27 @@
-// Vercel Cron — Sunday 4pm UK time. Pushes every athlete who still has
+// Vercel Cron — Sunday afternoon, UAE time. Pushes every athlete who still has
 // unanswered sessions in the week ahead (Mon–Sun) a reminder to confirm
-// attendance. Tapping it opens the athlete app on the Train tab, where the
-// "Week ahead" card lists those sessions.
+// attendance. Tapping it opens the athlete app on the Train tab (and the
+// in-app attendance pop-up takes over from there).
 //
 //   GET /api/cron/weekly-attendance
 //   header: Authorization: Bearer <CRON_SECRET>   (sent automatically by
 //           Vercel once CRON_SECRET is set as a project env var)
 //
-// Scheduling: Vercel crons run in UTC, but 4pm UK moves with daylight saving
-// (15:00 UTC in summer, 16:00 UTC in winter). vercel.json therefore schedules
-// BOTH, and this handler only acts when it's actually 16:xx on a Sunday in
-// Europe/London — the other run is a harmless no-op. (Hobby-plan crons can fire
-// at any point within their hour, so "4pm" means 4:00–4:59pm there.)
+// Scheduling: Vercel crons run in UTC. UAE (Asia/Dubai) is UTC+4 all year with
+// no daylight saving, so one schedule — "0 11 * * 0" = Sunday 11:00 UTC = 3pm
+// UAE — is enough. Hobby-plan crons can fire at any point within their hour,
+// so in practice the reminder lands between 3:00pm and 3:59pm. The handler
+// still checks the Dubai clock so a stray or manual call outside that hour
+// does nothing.
 //
 //   ?force=1 (with the CRON_SECRET header) skips the time check, to test it.
 
 import { createClient } from '@supabase/supabase-js';
 import { configureWebPush, sendPushToAthlete } from '../push.js';
 
-const TZ = 'Europe/London';
+const TZ = 'Asia/Dubai';
 const REMINDER_DAY = 'Sun';
-const REMINDER_HOUR = 16;
+const REMINDER_HOUR = 15;
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -29,8 +30,8 @@ function getSupabaseAdmin() {
   return createClient(url, secretKey);
 }
 
-/** Current London weekday ('Sun'…), hour (0–23) and date (YYYY-MM-DD). */
-function londonNow(now = new Date()) {
+/** Current UAE weekday ('Sun'…), hour (0–23) and date (YYYY-MM-DD). */
+function uaeNow(now = new Date()) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-GB', {
       timeZone: TZ, weekday: 'short', hour: '2-digit', hourCycle: 'h23',
@@ -60,9 +61,9 @@ export default async function handler(req, res) {
 
   const q = req.query || {};
   const force = authed && (Array.isArray(q.force) ? q.force[0] : q.force) === '1';
-  const now = londonNow();
+  const now = uaeNow();
   if (!force && !(now.weekday === REMINDER_DAY && now.hour === REMINDER_HOUR)) {
-    res.status(200).json({ ok: true, skipped: 'not Sunday 4pm UK time', london: now });
+    res.status(200).json({ ok: true, skipped: 'not Sunday 3pm UAE time', uae: now });
     return;
   }
 

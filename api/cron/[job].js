@@ -1,7 +1,7 @@
 // Single serverless function for every /api/cron/<job> endpoint (Vercel Hobby
 // allows only 12 functions per deployment — see api/athlete-auth/[action].js).
 //   /api/cron/quarterly-nudges   daily 08:00 UTC
-//   /api/cron/weekly-attendance  Sundays 4pm UK (scheduled at 15:00 and 16:00 UTC)
+//   /api/cron/weekly-attendance  Sundays 11:00 UTC = 3pm UAE
 // Handlers live in api/_lib/cron/ (underscore folders aren't deployed).
 
 import quarterlyNudges from '../_lib/cron/quarterly-nudges.js';
