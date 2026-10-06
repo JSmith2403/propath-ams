@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 /**
- * useAthleteMessages — the athlete's inbox (coach messages sent via
- * /api/push/message). Newest first, with unread count and markRead.
- * Re-checks when the app returns to the foreground and every minute, so a
- * message that arrives while the app is open shows up without a reload.
+ * useAthleteMessages — the athlete's conversation with the coaching team.
+ * Coach messages arrive via /api/push/message; the athlete's own replies go
+ * out through /api/push/reply (server-side, so the sender can't be spoofed
+ * and every message lands in the permanent safeguarding record).
  *
- * Degrades quietly to an empty inbox if athlete_messages doesn't exist yet
- * (sql/messaging_and_attendance_2026-10-06.sql not run).
+ * Oldest first (chat order). `unreadCount` counts COACH messages the athlete
+ * hasn't opened. Re-checks when the app returns to the foreground and every
+ * minute; the open chat polls faster (see InboxSheet).
+ *
+ * Degrades quietly to an empty inbox if athlete_messages doesn't exist yet.
  */
 export function useAthleteMessages(athleteId) {
   const [messages, setMessages] = useState([]);
@@ -22,16 +25,17 @@ export function useAthleteMessages(athleteId) {
     (async () => {
       const { data, error } = await supabase
         .from('athlete_messages')
-        .select('id, title, body, sent_by, created_at, read_at')
+        .select('id, title, body, sent_by, created_at, read_at, sender_type')
         .eq('athlete_id', athleteId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       if (cancelled) return;
       if (error) {
         console.warn('[useAthleteMessages] fetch failed', error.message);
         setMessages([]);
       } else {
-        setMessages(data || []);
+        // sender_type may not exist if the v2 migration hasn't run — treat as coach.
+        setMessages((data || []).map(m => ({ ...m, sender_type: m.sender_type || 'coach' })).reverse());
       }
       setLoading(false);
     })();
@@ -48,10 +52,13 @@ export function useAthleteMessages(athleteId) {
     };
   }, [refresh]);
 
-  const unreadCount = useMemo(() => messages.filter(m => !m.read_at).length, [messages]);
+  const unreadCount = useMemo(
+    () => messages.filter(m => m.sender_type === 'coach' && !m.read_at).length,
+    [messages]
+  );
 
   const markRead = useCallback(async (ids) => {
-    const unread = (ids || []).filter(id => messages.find(m => m.id === id && !m.read_at));
+    const unread = (ids || []).filter(id => messages.find(m => m.id === id && m.sender_type === 'coach' && !m.read_at));
     if (!unread.length) return;
     const now = new Date().toISOString();
     setMessages(prev => prev.map(m => (unread.includes(m.id) ? { ...m, read_at: now } : m)));
@@ -62,5 +69,28 @@ export function useAthleteMessages(athleteId) {
     if (error) console.warn('[useAthleteMessages] markRead failed', error.message);
   }, [messages]);
 
-  return { messages, loading, unreadCount, markRead, refresh };
+  /** Sends a reply. Resolves { ok, error? }. */
+  const sendReply = useCallback(async (text) => {
+    const body = String(text || '').trim();
+    if (!body) return { ok: false, error: 'Write a message first.' };
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/push/reply', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ body }),
+      });
+      const json = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}).` }));
+      if (!json.ok) return { ok: false, error: json.error || 'Couldn\'t send — try again.' };
+      setMessages(prev => (prev.some(m => m.id === json.message.id) ? prev : [...prev, json.message]));
+      return { ok: true };
+    } catch (_) {
+      return { ok: false, error: 'Couldn\'t reach the server — check your connection.' };
+    }
+  }, []);
+
+  return { messages, loading, unreadCount, markRead, sendReply, refresh };
 }

@@ -5,7 +5,7 @@
 // earlier custom session/PIN table approach was replaced.
 
 import { createClient } from '@supabase/supabase-js';
-import { randomInt } from 'node:crypto';
+import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 
 export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -20,14 +20,40 @@ export function sanitizeUsername(raw) {
   return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
 }
 
-const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no look-alikes (0/o, 1/l/i)
+/** A long random password nobody ever sees. New athlete accounts start with
+ *  one of these so they can't be signed into until the athlete sets their own
+ *  password through the code-approval flow (see request-setup.js). */
+export function unknownPassword() {
+  return randomBytes(32).toString('base64url');
+}
 
-/** Random password like "k7mq-x4pw-9dre" (12 chars, ~59 bits). Readable when
- *  sent over WhatsApp, long enough for health data, and phone password
- *  managers store it so athletes don't have to memorise it. */
-export function generatePassword() {
-  const pick = () => PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
-  return [0, 1, 2].map(() => Array.from({ length: 4 }, pick).join('')).join('-');
+/** 6-digit code shown on the athlete's screen and read out to a coach. */
+export function generateSetupCode() {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+export function hashClaim(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+export function claimMatches(token, expectedHash) {
+  const a = Buffer.from(hashClaim(token), 'hex');
+  const b = Buffer.from(String(expectedHash || ''), 'hex');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Finds the auth user for an athlete username (the synthetic email), or
+ *  null. supabase-js has no get-by-email, so page through the user list. */
+export async function findAthleteAuthUser(admin, username) {
+  const email = `${sanitizeUsername(username)}@${ATHLETE_EMAIL_DOMAIN}`;
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return null;
+    const hit = (data?.users || []).find(u => (u.email || '').toLowerCase() === email);
+    if (hit) return hit;
+    if (!data?.users || data.users.length < 200) return null;
+  }
+  return null;
 }
 
 /** "Zach Pitman" → "zach.pitman" (falls back to "athlete"). */

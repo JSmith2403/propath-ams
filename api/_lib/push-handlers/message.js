@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   // Staff gate — requireUser only proves the JWT is valid.
   const { data: roleRow } = await admin
     .from('user_roles')
-    .select('role')
+    .select('role, full_name')
     .eq('user_id', user.id)
     .maybeSingle();
   if (!roleRow || !['admin', 'co_admin'].includes(roleRow.role)) {
@@ -62,11 +62,16 @@ export default async function handler(req, res) {
 
   const title = String(body?.title || '').trim().slice(0, 120);
   const messageBody = String(body?.body || '').trim().slice(0, 2000);
-  const sentBy = body?.sent_by ? String(body.sent_by).slice(0, 120) : (user.email || null);
+  // Sender comes from the verified login, never from the request body —
+  // this is a safeguarding record, so it must not be spoofable.
+  const sentBy = (roleRow.full_name || '').trim() || user.email || 'Coach';
   const athleteIds = [...new Set((Array.isArray(body?.athlete_ids) ? body.athlete_ids : [])
     .map(x => String(x || '').trim()).filter(Boolean))];
 
-  if (!title) { res.status(400).json({ ok: false, error: 'A title is required.' }); return; }
+  // Title is optional: a conversation reply is just a body. Announcements
+  // (several recipients) still need one so the notification reads sensibly.
+  if (!title && athleteIds.length > 1) { res.status(400).json({ ok: false, error: 'A title is required.' }); return; }
+  if (!title && !messageBody) { res.status(400).json({ ok: false, error: 'Write a message first.' }); return; }
   if (!athleteIds.length) { res.status(400).json({ ok: false, error: 'Pick at least one athlete.' }); return; }
   if (athleteIds.length > MAX_RECIPIENTS) {
     res.status(400).json({ ok: false, error: `Too many recipients (max ${MAX_RECIPIENTS}).` });
@@ -77,6 +82,7 @@ export default async function handler(req, res) {
   const batchId = randomUUID();
   const rows = athleteIds.map(athlete_id => ({
     batch_id: batchId, athlete_id, title, body: messageBody, sent_by: sentBy,
+    sender_type: 'coach', sender_user_id: user.id,
   }));
   const { error: insErr } = await admin.from('athlete_messages').insert(rows);
   if (insErr) {
@@ -110,7 +116,7 @@ export default async function handler(req, res) {
       : `/athlete/${t.token}?inbox=1`;
     try {
       const r = await sendPushToAthlete(admin, athleteId, {
-        title, body: messageBody.slice(0, 140), url,
+        title: title || `Message from ${sentBy}`, body: (messageBody || title).slice(0, 140), url,
       });
       pushed += r.sent;
     } catch (err) {

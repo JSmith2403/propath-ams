@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, Copy, Check, KeyRound, Loader2, RotateCcw } from 'lucide-react';
+import { X, Copy, Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const GOLD = '#A58D69';
+const POLL_MS = 8000;
 
 async function callAccounts(payload) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -19,36 +20,50 @@ async function callAccounts(payload) {
   return json;
 }
 
-function credentialText(r, appUrl) {
-  return `${r.name}\nApp: ${appUrl}\nUsername: ${r.username}\nPassword: ${r.password}`;
+function inviteText(name, username, appUrl) {
+  const first = (name || '').split(' ')[0] || 'there';
+  return [
+    `Hi ${first}, your ProPath app login is ready.`,
+    '',
+    `1. Open ${appUrl} on your phone`,
+    `2. Your username is: ${username}`,
+    `3. Tap "First time here, or forgot your password?", enter your username and send me the 6-digit code it shows. I'll approve it and you can choose your own password.`,
+    '4. Then add the app to your Home Screen.',
+  ].join('\n');
 }
 
 /**
- * Coach tool: give every athlete their own real login (username + generated
- * password) in one go, and reset a password when someone forgets it.
- * Passwords are shown once, here, straight after they're generated.
+ * Coach tool: give every athlete their own login and approve their
+ * set-password requests. Coaches only ever deal with USERNAMES — the athlete
+ * chooses their own password, after a coach confirms the 6-digit code shown on
+ * the athlete's screen. Passwords are never generated, shown or stored here.
  */
 export default function AthleteLoginsModal({ athletes, onClose }) {
   const appUrl = `${window.location.origin}/athlete`;
   const [accounts, setAccounts] = useState(null);   // { athleteId: { username } }
+  const [requests, setRequests] = useState([]);     // pending / approved set-password requests
   const [loadError, setLoadError] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [working, setWorking] = useState(false);
-  const [results, setResults] = useState([]);       // credentials just issued
+  const [created, setCreated] = useState([]);       // logins just created
   const [error, setError] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [codes, setCodes] = useState({});           // requestId → typed code
+  const [approving, setApproving] = useState(null);
+  const [requestError, setRequestError] = useState({}); // requestId → message
 
   const sorted = useMemo(
     () => [...athletes].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [athletes]
   );
+  const nameById = useMemo(() => new Map(athletes.map(a => [a.id, a.name])), [athletes]);
 
   const load = useCallback(async () => {
     const json = await callAccounts({ action: 'list' });
-    if (!json.ok) { setLoadError(json.error || 'Could not load accounts.'); return; }
+    if (!json.ok) { setLoadError(json.error || 'Could not load accounts.'); return null; }
     setLoadError(null);
     setAccounts(json.accounts || {});
+    setRequests(json.requests || []);
     return json.accounts || {};
   }, []);
 
@@ -57,6 +72,9 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
       if (!acc) return;
       setSelected(new Set(sorted.filter(a => !acc[a.id]).map(a => a.id)));
     });
+    // Keep the request list fresh while the panel is open.
+    const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, POLL_MS);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
@@ -66,17 +84,26 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
     return next;
   });
 
-  const provision = async (ids, reset = false) => {
+  const create = async (ids) => {
     setWorking(true);
     setError(null);
-    const json = await callAccounts({ action: 'provision', athlete_ids: ids, reset });
+    const json = await callAccounts({ action: 'provision', athlete_ids: ids });
     setWorking(false);
     if (!json.ok) { setError(json.error || 'Something went wrong.'); return; }
-    const issued = json.results.filter(r => r.password);
+    const made = json.results.filter(r => r.status === 'created');
     const failed = json.results.filter(r => r.status === 'error');
-    setResults(prev => [...issued, ...prev.filter(p => !issued.some(i => i.athlete_id === p.athlete_id))]);
+    setCreated(prev => [...made, ...prev.filter(p => !made.some(m => m.athlete_id === p.athlete_id))]);
     if (failed.length) setError(failed.map(f => `${f.name || f.athlete_id}: ${f.error}`).join(' · '));
-    setSelected(prev => { const next = new Set(prev); issued.forEach(i => next.delete(i.athlete_id)); return next; });
+    setSelected(prev => { const next = new Set(prev); made.forEach(m => next.delete(m.athlete_id)); return next; });
+    await load();
+  };
+
+  const decide = async (req, action) => {
+    setApproving(req.id);
+    setRequestError(prev => ({ ...prev, [req.id]: null }));
+    const json = await callAccounts({ action, request_id: req.id, code: codes[req.id] || '' });
+    setApproving(null);
+    if (!json.ok) { setRequestError(prev => ({ ...prev, [req.id]: json.error || 'Couldn\'t do that.' })); return; }
     await load();
   };
 
@@ -87,6 +114,8 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
   };
 
   const toCreate = [...selected].filter(id => accounts && !accounts[id]);
+  const waiting = requests.filter(r => r.status === 'pending');
+  const approved = requests.filter(r => r.status === 'approved');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
@@ -95,39 +124,96 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
           <div>
             <h2 className="text-lg font-bold text-gray-900">Athlete app logins</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Each athlete gets their own username and password for <span className="font-medium">{appUrl}</span>
+              Athletes sign in at <span className="font-medium">{appUrl}</span>. You give them a username —
+              they choose their own password.
             </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-gray-100"><X size={16} /></button>
         </div>
 
         <div className="px-5 pb-5 overflow-y-auto">
-          {results.length > 0 && (
+          {/* ── Waiting for a coach to approve a code ── */}
+          {(waiting.length > 0 || approved.length > 0) && (
             <div className="mb-4 rounded-xl border p-3" style={{ borderColor: GOLD, backgroundColor: 'rgba(165,141,105,0.08)' }}>
+              <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-1">
+                <ShieldCheck size={14} style={{ color: GOLD }} /> Password requests
+              </p>
+              <p className="text-[11px] text-gray-500 mb-2.5">
+                An athlete is setting up (or resetting) their password. Ask them for the 6-digit code on their screen
+                — only approve a code they've sent <em>you</em>.
+              </p>
+              <div className="space-y-2">
+                {waiting.map(r => (
+                  <div key={r.id} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">
+                      {nameById.get(r.athlete_id) || r.username}
+                      <span className="text-xs text-gray-400 font-normal"> · {r.username}</span>
+                    </p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <input
+                        inputMode="numeric" maxLength={6} placeholder="6-digit code"
+                        value={codes[r.id] || ''}
+                        onChange={(e) => setCodes(prev => ({ ...prev, [r.id]: e.target.value.replace(/\D/g, '') }))}
+                        className="w-32 text-center tracking-widest font-mono text-sm rounded-lg border border-gray-200 py-1.5 focus:outline-none focus:border-[#A58D69]"
+                      />
+                      <button
+                        disabled={approving === r.id || (codes[r.id] || '').length !== 6}
+                        onClick={() => decide(r, 'approve')}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-md text-white disabled:opacity-50"
+                        style={{ backgroundColor: GOLD }}
+                      >
+                        {approving === r.id ? 'Checking…' : 'Approve'}
+                      </button>
+                      <button
+                        disabled={approving === r.id}
+                        onClick={() => decide(r, 'deny')}
+                        className="text-xs text-gray-500 hover:text-red-600 px-2 py-1.5"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                    {requestError[r.id] && <p className="text-[11px] text-red-600 mt-1">{requestError[r.id]}</p>}
+                  </div>
+                ))}
+                {approved.map(r => (
+                  <p key={r.id} className="text-xs text-gray-600 px-1">
+                    <Check size={12} className="inline text-green-600 mr-1" />
+                    {nameById.get(r.athlete_id) || r.username} approved — waiting for them to choose a password.
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Just created ── */}
+          {created.length > 0 && (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-gray-900">New logins — copy these now</p>
+                <p className="text-sm font-semibold text-gray-900">New logins created</p>
                 <button
-                  onClick={() => copy('all', results.map(r => credentialText(r, appUrl)).join('\n\n'))}
+                  onClick={() => copy('all', created.map(c => `${c.name}\n${inviteText(c.name, c.username, appUrl)}`).join('\n\n---\n\n'))}
                   className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md text-white"
                   style={{ backgroundColor: GOLD }}
                 >
-                  {copied === 'all' ? <Check size={12} /> : <Copy size={12} />} Copy all
+                  {copied === 'all' ? <Check size={12} /> : <Copy size={12} />} Copy all invites
                 </button>
               </div>
-              <p className="text-[11px] text-gray-500 mb-2">Passwords are only shown once. Send each athlete their own details privately.</p>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Send each athlete their invite (it contains their username only). They set their own password.
+              </p>
               <div className="space-y-1.5">
-                {results.map(r => (
-                  <div key={r.athlete_id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                {created.map(c => (
+                  <div key={c.athlete_id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{r.name}</p>
-                      <p className="text-xs text-gray-500 font-mono">{r.username} · {r.password}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
+                      <p className="text-xs text-gray-500 font-mono">{c.username}</p>
                     </div>
                     <button
-                      onClick={() => copy(r.athlete_id, credentialText(r, appUrl))}
+                      onClick={() => copy(c.athlete_id, inviteText(c.name, c.username, appUrl))}
                       className="shrink-0 p-1.5 rounded hover:bg-gray-100 text-gray-500"
-                      aria-label={`Copy login for ${r.name}`}
+                      aria-label={`Copy invite for ${c.name}`}
                     >
-                      {copied === r.athlete_id ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === c.athlete_id ? <Check size={14} /> : <Copy size={14} />}
                     </button>
                   </div>
                 ))}
@@ -159,25 +245,16 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900 truncate">{a.name}</p>
-                      <p className="text-[11px] text-gray-400">{acc ? `Login: ${acc.username || 'set up'}` : 'No login yet'}</p>
+                      <p className="text-[11px] text-gray-400">{acc ? `Username: ${acc.username || 'set up'}` : 'No login yet'}</p>
                     </div>
-                    {acc && (confirmReset === a.id ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          disabled={working}
-                          onClick={() => { setConfirmReset(null); provision([a.id], true); }}
-                          className="text-xs font-semibold px-2 py-1 rounded text-white bg-red-500"
-                        >Yes, reset</button>
-                        <button onClick={() => setConfirmReset(null)} className="text-xs text-gray-500 px-1.5">Cancel</button>
-                      </div>
-                    ) : (
+                    {acc?.username && (
                       <button
-                        onClick={() => setConfirmReset(a.id)}
+                        onClick={() => copy(`row-${a.id}`, inviteText(a.name, acc.username, appUrl))}
                         className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
                       >
-                        <RotateCcw size={11} /> Reset password
+                        {copied === `row-${a.id}` ? <Check size={11} /> : <Copy size={11} />} Copy invite
                       </button>
-                    ))}
+                    )}
                   </div>
                 );
               })}
@@ -192,7 +269,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
             </p>
             <button
               disabled={working || toCreate.length === 0}
-              onClick={() => provision(toCreate)}
+              onClick={() => create(toCreate)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
               style={{ backgroundColor: GOLD }}
             >

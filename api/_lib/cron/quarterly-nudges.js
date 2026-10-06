@@ -15,7 +15,7 @@
 
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
-import { sendPushToAthlete } from '../_lib/push.js';
+import { sendPushToAthlete } from '../push.js';
 
 const REMINDER_WINDOW_DAYS = 10;
 

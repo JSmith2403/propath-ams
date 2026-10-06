@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import { supabase } from '../../lib/supabase';
+import AthleteAccountSetup from './AthleteAccountSetup';
 
 const GOLD = '#A58D69';
 const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
@@ -25,6 +26,11 @@ export default function AthletePinLogin() {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // A setup already in progress (page reloaded while waiting for the coach)
+  // resumes on the setup screen.
+  const [settingUp, setSettingUp] = useState(() => {
+    try { return !!sessionStorage.getItem('propath_setup_request'); } catch (_) { return false; }
+  });
 
   const canSubmit = username.trim() && password.trim().length >= 6;
 
@@ -43,6 +49,8 @@ export default function AthletePinLogin() {
     }
     // On success, onAuthStateChange in AthleteStableEntry takes it from here.
   };
+
+  if (settingUp) return <AthleteAccountSetup onBack={() => setSettingUp(false)} />;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-ink-50 text-center">
@@ -89,9 +97,18 @@ export default function AthletePinLogin() {
         </button>
       </form>
 
-      <p className="text-micro text-ink-400 mt-6 max-w-xs">
+      <button
+        type="button"
+        onClick={() => setSettingUp(true)}
+        className="mt-5 text-meta font-semibold"
+        style={{ color: GOLD }}
+      >
+        First time here, or forgot your password?
+      </button>
+
+      <p className="text-micro text-ink-400 mt-4 max-w-xs">
         When your phone offers to save your password, say yes — next time you
-        can sign in with Face ID. Forgotten it? Ask your coach for a reset.
+        can sign in with Face ID.
       </p>
     </div>
   );

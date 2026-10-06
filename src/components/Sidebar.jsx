@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, BookOpen, Bell } from 'lucide-react';
+import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, ShieldCheck, BookOpen, Bell, MessageCircle } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -10,7 +10,7 @@ const Logo = () => (
   </div>
 );
 
-const NavItem = ({ icon: Icon, label, active, disabled, onClick, children, expanded }) => {
+const NavItem = ({ icon: Icon, label, active, disabled, onClick, children, expanded, badge }) => {
   if (disabled) {
     return (
       <div className="px-3 py-1.5">
@@ -35,6 +35,14 @@ const NavItem = ({ icon: Icon, label, active, disabled, onClick, children, expan
       >
         <Icon size={16} className="shrink-0" style={active ? { color: '#A58D69' } : {}} />
         <span className="text-sm font-medium flex-1">{label}</span>
+        {badge > 0 && (
+          <span
+            className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
+            style={{ backgroundColor: '#dc2626' }}
+          >
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
         {children && (
           expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
         )}
@@ -74,6 +82,7 @@ export default function Sidebar({
   userName,
   onSignOut,
   isAdmin = false,
+  messagesUnread = 0,
 }) {
   const isRoster    = view === 'roster' || view === 'profile';
   const isDataEntry = view === 'dataentry';
@@ -98,6 +107,16 @@ export default function Sidebar({
             label="Recent Updates"
             active={view === 'updates'}
             onClick={() => onNavigate('updates')}
+          />
+        )}
+
+        {!isExternal && (
+          <NavItem
+            icon={MessageCircle}
+            label="Messages"
+            active={view === 'messages'}
+            badge={messagesUnread}
+            onClick={() => onNavigate('messages')}
           />
         )}
 
@@ -178,6 +197,13 @@ export default function Sidebar({
               label="User Management"
               active={view === 'users'}
               onClick={() => onNavigate('users')}
+            />
+
+            <NavItem
+              icon={ShieldCheck}
+              label="Safeguarding Log"
+              active={view === 'safeguarding'}
+              onClick={() => onNavigate('safeguarding')}
             />
           </>
         )}

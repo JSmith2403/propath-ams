@@ -1,4 +1,4 @@
-import { Activity, Bell, Database, Dumbbell, Users } from 'lucide-react';
+import { Activity, Bell, Database, Dumbbell, MessageCircle, Users } from 'lucide-react';
 
 /**
  * MobileBottomNav — fixed-position bottom nav for phones (md: breakpoint
@@ -19,9 +19,10 @@ import { Activity, Bell, Database, Dumbbell, Users } from 'lucide-react';
  * Renders only on mobile (`md:hidden`). Sidebar carries the same
  * navigation on desktop.
  */
-export default function MobileBottomNav({ view, onNavigate }) {
+export default function MobileBottomNav({ view, onNavigate, messagesUnread = 0 }) {
   const items = [
     { key: 'updates',    label: 'Updates',  icon: Bell     },
+    { key: 'messages',   label: 'Messages', icon: MessageCircle, badge: messagesUnread },
     { key: 'roster',     label: 'Athletes', icon: Users    },
     { key: 'dataentry',  label: 'Data',     icon: Database },
     { key: 'programme',  label: 'Programme', icon: Dumbbell },
@@ -39,7 +40,7 @@ export default function MobileBottomNav({ view, onNavigate }) {
       }}
       aria-label="Primary navigation"
     >
-      {items.map(({ key, label, icon: Icon }) => {
+      {items.map(({ key, label, icon: Icon, badge }) => {
         const active = view === key
           // Profile view is a child of the roster — highlight Athletes
           // when the coach is inside an athlete profile so the nav
@@ -57,7 +58,17 @@ export default function MobileBottomNav({ view, onNavigate }) {
             aria-current={active ? 'page' : undefined}
             aria-label={label}
           >
-            <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+            <span className="relative">
+              <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+              {badge > 0 && (
+                <span
+                  className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
+                  style={{ backgroundColor: '#dc2626' }}
+                >
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </span>
             <span className="text-[10px] font-semibold tracking-wide">{label}</span>
           </button>
         );

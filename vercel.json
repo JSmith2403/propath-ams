@@ -4,6 +4,8 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/cron/quarterly-nudges", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/quarterly-nudges", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/weekly-attendance?slot=bst", "schedule": "0 15 * * 0" },
+    { "path": "/api/cron/weekly-attendance?slot=gmt", "schedule": "0 16 * * 0" }
   ]
 }

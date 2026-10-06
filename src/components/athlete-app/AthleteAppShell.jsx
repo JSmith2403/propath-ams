@@ -49,7 +49,7 @@ export default function AthleteAppShell({ athlete }) {
     return VALID_TABS.has(requested) ? requested : 'train';
   });
   const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
-  const { messages, loading: messagesLoading, unreadCount, markRead } = useAthleteMessages(athlete.id);
+  const { messages, loading: messagesLoading, unreadCount, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
   // ?inbox=1 is what a message push notification opens.
   const [inboxOpen, setInboxOpen] = useState(() => searchParams.get('inbox') === '1');
 
@@ -122,6 +122,8 @@ export default function AthleteAppShell({ athlete }) {
           messages={messages}
           loading={messagesLoading}
           markRead={markRead}
+          sendReply={sendReply}
+          refresh={refreshMessages}
           onClose={() => setInboxOpen(false)}
         />
       )}

@@ -24,6 +24,9 @@ import WellnessOverview from './components/WellnessOverview';
 import ProgrammeMasterView from './components/programming/ProgrammeMasterView';
 import ProgrammeModule    from './components/programming/ProgrammeModule';
 import ResourcesAdminView from './components/resources/ResourcesAdminView';
+import MessagesView from './components/messages/MessagesView';
+import SafeguardingView from './components/messages/SafeguardingView';
+import { useStaffUnread } from './hooks/useStaffUnread';
 
 // ── Navigation persistence ──────────────────────────────────────────────────
 // Remembers the coach's last top-level view, selected athlete, and (if
@@ -74,10 +77,18 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   // permitted for the current role. A reload restores whatever was last
   // open instead (see NAV_STORAGE_KEY) — the role-restriction effect
   // further down still catches a restored view the current role can't see.
+  // A push notification for an athlete reply opens "/?messages=<athleteId>".
+  const [messagesAthleteId] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('messages') || null; } catch { return null; }
+  });
   const [view, setView] = useState(() => {
     if (role === 'external') return 'roster';
+    if (messagesAthleteId) return 'messages';
     return loadLastNav()?.view || 'updates';
   });
+  useEffect(() => {
+    if (messagesAthleteId) window.history.replaceState({}, '', window.location.pathname);
+  }, [messagesAthleteId]);
   const [selectedId, setSelectedId] = useState(() => loadLastNav()?.selectedId || null);
   const [profileNav, setProfileNav] = useState(() => {
     const saved = loadLastNav();
@@ -135,10 +146,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   // Redirect non-admin/external users away from restricted views.
   useEffect(() => {
-    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users' || view === 'resources')) {
+    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users' || view === 'resources' || view === 'messages' || view === 'safeguarding')) {
       setView('roster');
     }
-    if (!isAdmin && view === 'users') {
+    if (!isAdmin && (view === 'users' || view === 'safeguarding')) {
       setView('roster');
     }
   }, [isExternal, isAdmin, view]);
@@ -162,6 +173,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     ? athletes.filter(a => allocations.includes(a.id))
     : athletes);
   const { wellnessMap } = useWellnessRoster(visibleAthletes.map(a => a.id));
+  // Unread athlete replies — badge on the Messages nav item.
+  const { count: messagesUnread, refresh: refreshMessagesUnread } = useStaffUnread(!isExternal);
 
   if (loading) return <LoadingSpinner message="Loading ProPath…" />;
 
@@ -176,8 +189,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     && userEmail === (import.meta.env.VITE_MAIN_ADMIN_EMAIL || 'jonahsmithhintsa@gmail.com');
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources')) return;
-    if (!isAdmin && v === 'users') return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources' || v === 'messages' || v === 'safeguarding')) return;
+    if (!isAdmin && (v === 'users' || v === 'safeguarding')) return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
   };
@@ -239,6 +252,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
           userName={userName}
           onSignOut={signOut}
           isAdmin={isAdmin}
+          messagesUnread={messagesUnread}
         />
       </div>
 
@@ -358,13 +372,26 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
           <UserManagementView athletes={athletes} />
         )}
 
+        {view === 'messages' && !isExternal && (
+          <MessagesView
+            athletes={visibleAthletes}
+            senderName={userName || userEmail}
+            initialAthleteId={messagesAthleteId}
+            onUnreadChange={refreshMessagesUnread}
+          />
+        )}
+
+        {view === 'safeguarding' && isAdmin && (
+          <SafeguardingView athletes={[...athletes, ...archivedAthletes]} />
+        )}
+
       </main>
 
       {/* Mobile-only bottom nav — 5 icons: Updates / Athletes / Data /
           Programme / Wellness. Hidden on md+ where the sidebar shows
           the full navigation. */}
       {!isExternal && (
-        <MobileBottomNav view={view} onNavigate={handleNavigate} />
+        <MobileBottomNav view={view} onNavigate={handleNavigate} messagesUnread={messagesUnread} />
       )}
     </div>
   );

@@ -39,13 +39,15 @@ export default function MessageComposerModal({ athletes = [], senderName, onClos
     (async () => {
       const { data, error } = await supabase
         .from('athlete_messages')
-        .select('batch_id, title, created_at, read_at')
+        .select('batch_id, title, created_at, read_at, sender_type')
         .order('created_at', { ascending: false })
         .limit(400);
       if (cancelled) return;
       if (error) { setHistory([]); return; }
       const byBatch = new Map();
       for (const r of data || []) {
+        // Announcements only — chat replies (athlete messages, untitled coach replies) live in Messages.
+        if (r.sender_type === 'athlete' || !r.title) continue;
         const b = byBatch.get(r.batch_id) || { batch_id: r.batch_id, title: r.title, created_at: r.created_at, total: 0, read: 0 };
         b.total += 1;
         if (r.read_at) b.read += 1;
