@@ -1,7 +1,7 @@
 // Vercel Cron — Sunday afternoon, UAE time. Pushes every athlete who still has
-// unanswered sessions in the week ahead (Mon–Sun) a reminder to confirm
-// attendance. Tapping it opens the athlete app on the Train tab (and the
-// in-app attendance pop-up takes over from there).
+// unanswered slots in the published academy timetable for the week ahead
+// (Mon–Sun) a reminder to confirm attendance. Tapping it opens the athlete app
+// on the Train tab (the in-app timetable pop-up takes over from there).
 //
 //   GET /api/cron/weekly-attendance
 //   header: Authorization: Bearer <CRON_SECRET>   (sent automatically by
@@ -18,6 +18,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { configureWebPush, sendPushToAthlete } from '../push.js';
+import { eligibilityForSubscribers } from '../timetable.js';
 
 const TZ = 'Asia/Dubai';
 const REMINDER_DAY = 'Sun';
@@ -78,42 +79,36 @@ export default async function handler(req, res) {
   }
 
   // The week ahead = the coming Monday to Sunday. On a Sunday that's tomorrow
-  // through six days later; `force` on another day still uses "from tomorrow".
+  // through seven days later; `force` on another day still uses "from tomorrow".
   const from = addDaysISO(now.date, 1);
   const to = addDaysISO(now.date, 7);
 
-  const { data: sessions, error } = await admin
-    .from('planned_sessions')
-    .select('id, athlete_id, attendance')
-    .gte('planned_date', from)
-    .lte('planned_date', to);
+  // The academy timetable the coaches published for that week.
+  const { data: slots, error } = await admin
+    .from('timetable_slots')
+    .select('id, cohorts')
+    .not('published_at', 'is', null)
+    .gte('slot_date', from)
+    .lte('slot_date', to);
   if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
-
-  const unanswered = new Map();           // athlete_id → count
-  for (const s of sessions || []) {
-    if (!s.attendance) unanswered.set(s.athlete_id, (unanswered.get(s.athlete_id) || 0) + 1);
-  }
-  if (unanswered.size === 0) {
-    res.status(200).json({ ok: true, window: { from, to }, reminded: 0 });
+  if (!slots?.length) {
+    res.status(200).json({ ok: true, window: { from, to }, slots: 0, reminded: 0 });
     return;
   }
 
-  const ids = [...unanswered.keys()];
-  const { data: tokens } = await admin
-    .from('athlete_app_tokens').select('athlete_id, token, pin_login_enabled').in('athlete_id', ids);
-  const tokenByAthlete = new Map((tokens || []).map(t => [t.athlete_id, t]));
+  const eligibility = await eligibilityForSubscribers(admin, slots);
 
   let reminded = 0;
+  let pending = 0;
   const failures = [];
-  for (const athleteId of ids) {
-    const n = unanswered.get(athleteId);
-    const t = tokenByAthlete.get(athleteId);
-    const url = t?.pin_login_enabled || !t?.token ? '/athlete?tab=train' : `/athlete/${t.token}?tab=train`;
+  for (const [athleteId, info] of eligibility) {
+    if (info.unanswered === 0) continue;
+    pending++;
     try {
       const r = await sendPushToAthlete(admin, athleteId, {
-        title: 'Complete your attendance for the week ahead',
-        body: `${n} session${n === 1 ? '' : 's'} to confirm — it only takes a moment.`,
-        url,
+        title: 'Which sessions are you attending next week?',
+        body: `${info.unanswered} to confirm — it only takes a moment.`,
+        url: '/athlete?tab=train',
       });
       if (r.sent > 0) reminded++;
     } catch (err) {
@@ -121,5 +116,5 @@ export default async function handler(req, res) {
     }
   }
 
-  res.status(200).json({ ok: true, window: { from, to }, athletesWithUnanswered: ids.length, reminded, failures });
+  res.status(200).json({ ok: true, window: { from, to }, slots: slots.length, athletesWithUnanswered: pending, reminded, failures });
 }

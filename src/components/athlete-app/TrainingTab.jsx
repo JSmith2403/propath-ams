@@ -4,9 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import { getDailyQuote } from '../../utils/dailyQuote';
 import SessionCard from './SessionCard';
-import AttendanceToggle from './AttendanceToggle';
-import WeekAheadAttendance from './WeekAheadAttendance';
-import { useMyAttendance } from '../../hooks/useSessionAttendance';
+import TimetableCard from './TimetableCard';
 import WellnessInline from './WellnessInline';
 import NutritionSummaryCard from './NutritionSummaryCard';
 
@@ -61,34 +59,6 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
 
   const { planned, loading } = usePlannedWeekDetail(athleteId, fromISO, toISOEnd);
 
-  // "Week ahead" — the next 7 days regardless of which week is on screen, so
-  // the attendance card (and the Sunday reminder that opens it) always shows
-  // what's coming. Light query: names/dates only, no exercise detail.
-  const aheadFrom = toISO(today);
-  const aheadTo = toISO(addDays(today, 6));
-  const [upcoming, setUpcoming] = useState([]);
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .from('planned_sessions')
-      .select('id, planned_date, session_name, session_order')
-      .eq('athlete_id', athleteId)
-      .gte('planned_date', aheadFrom)
-      .lte('planned_date', aheadTo)
-      .order('planned_date', { ascending: true })
-      .order('session_order', { ascending: true })
-      .then(({ data }) => { if (!cancelled) setUpcoming(data || []); });
-    return () => { cancelled = true; };
-  }, [athleteId, aheadFrom, aheadTo]);
-
-  // One attendance state shared by the week-ahead card and the per-day
-  // toggles, so answering in one place updates the other.
-  const attendanceIds = useMemo(
-    () => [...new Set([...planned.map(p => p.id), ...upcoming.map(u => u.id)])],
-    [planned, upcoming]
-  );
-  const { byId: attendanceById, respond: respondAttendance } = useMyAttendance(athleteId, attendanceIds);
-
   // Active session-logger overlay (one at a time)
   const [activeLogger, setActiveLogger]   = useState(null);
   // Move-to-today confirmation. Set to the session pending the move.
@@ -141,8 +111,8 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
   const [logTick, setLogTick] = useState(0);
 
   useEffect(() => {
-    if (!attendanceIds.length) { setCompletedIds(new Set()); return; }
-    const ids = attendanceIds;
+    if (!planned.length) { setCompletedIds(new Set()); return; }
+    const ids = planned.map(p => p.id);
     let cancelled = false;
     (async () => {
       const { data } = await supabase
@@ -154,7 +124,7 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
       setCompletedIds(new Set((data || []).map(d => d.planned_session_id)));
     })();
     return () => { cancelled = true; };
-  }, [attendanceIds, logTick]);
+  }, [planned, logTick]);
 
   const sessionsByDate = useMemo(() => {
     const map = {};
@@ -253,12 +223,9 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
         </div>
       </div>
 
-      {/* ── Week ahead attendance (what the Sunday 4pm reminder opens) ─────── */}
-      <WeekAheadAttendance
-        sessions={upcoming.filter(u => !completedIds.has(u.id))}
-        attendanceById={attendanceById}
-        onRespond={respondAttendance}
-      />
+      {/* ── Academy timetable: Attending / Can't make it (what the Sunday
+            pop-up and reminder ask). Hidden until a timetable is published. */}
+      <TimetableCard athleteId={athleteId} />
 
       {/* ── 3. Wellness CTA ─────────────────────────────────────────────────── */}
       <WellnessInline athleteId={athleteId} dateISO={selectedISO} />
@@ -291,13 +258,6 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
                 isCompleted={completedIds.has(s.id)}
                 onStart={handleStart}
               />
-              {!completedIds.has(s.id) && (
-                <AttendanceToggle
-                  value={attendanceById[s.id]?.attendance}
-                  note={attendanceById[s.id]?.note}
-                  onRespond={(status, note) => respondAttendance(s.id, status, note)}
-                />
-              )}
             </div>
           ))}
         </div>

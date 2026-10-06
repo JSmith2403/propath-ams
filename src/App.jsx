@@ -26,6 +26,7 @@ import ProgrammeModule    from './components/programming/ProgrammeModule';
 import ResourcesAdminView from './components/resources/ResourcesAdminView';
 import MessagesView from './components/messages/MessagesView';
 import SafeguardingView from './components/messages/SafeguardingView';
+import TimetableView from './components/timetable/TimetableView';
 import { useStaffUnread } from './hooks/useStaffUnread';
 
 // ── Navigation persistence ──────────────────────────────────────────────────
@@ -146,7 +147,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
   // Redirect non-admin/external users away from restricted views.
   useEffect(() => {
-    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users' || view === 'resources' || view === 'messages' || view === 'safeguarding')) {
+    if (isExternal && (view === 'dataentry' || view === 'sessions' || view === 'users' || view === 'resources' || view === 'messages' || view === 'safeguarding' || view === 'timetable')) {
       setView('roster');
     }
     if (!isAdmin && (view === 'users' || view === 'safeguarding')) {
@@ -189,7 +190,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     && userEmail === (import.meta.env.VITE_MAIN_ADMIN_EMAIL || 'jonahsmithhintsa@gmail.com');
 
   const handleNavigate = (v) => {
-    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources' || v === 'messages' || v === 'safeguarding')) return;
+    if (isExternal && (v === 'dataentry' || v === 'sessions' || v === 'users' || v === 'programme' || v === 'shared-calendar' || v === 'resources' || v === 'messages' || v === 'safeguarding' || v === 'timetable')) return;
     if (!isAdmin && (v === 'users' || v === 'safeguarding')) return;
     setView(v);
     if (v === 'roster') setSelectedId(null);
@@ -370,6 +371,10 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
 
         {view === 'users' && isAdmin && (
           <UserManagementView athletes={athletes} />
+        )}
+
+        {view === 'timetable' && !isExternal && (
+          <TimetableView athletes={visibleAthletes} />
         )}
 
         {view === 'messages' && !isExternal && (

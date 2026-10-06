@@ -1,4 +1,4 @@
-import { Users, Heart, Calendar, CalendarDays, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, ShieldCheck, BookOpen, Bell, MessageCircle } from 'lucide-react';
+import { Users, Heart, Calendar, CalendarDays, CalendarClock, ClipboardList, ChevronDown, ChevronRight, Database, LogOut, Shield, ShieldCheck, BookOpen, Bell, MessageCircle } from 'lucide-react';
 
 import logo from '../assets/Propath_Primary Logo_White.png';
 
@@ -161,6 +161,13 @@ export default function Sidebar({
               label="Shared Calendar"
               active={view === 'shared-calendar'}
               onClick={() => onNavigate('shared-calendar')}
+            />
+
+            <NavItem
+              icon={CalendarClock}
+              label="Timetable"
+              active={view === 'timetable'}
+              onClick={() => onNavigate('timetable')}
             />
 
             <NavItem
