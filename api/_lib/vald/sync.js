@@ -24,7 +24,7 @@
 // host is for Hub user logins, NOT the External API — using it returns
 // invalid_client. The Swagger UI for ForceDecks confirms this URL plus the
 // `audience=vald-api-external` body param requirement.
-import { requireUser } from '../_lib/verifyUser.js';
+import { requireUser } from '../verifyUser.js';
 
 const VALD_AUTH_URL =
   process.env.VALD_AUTH_URL || 'https://auth.prd.vald.com/oauth/token';

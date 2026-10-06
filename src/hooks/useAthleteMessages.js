@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 
 /**
  * useAthleteMessages — the athlete's inbox (coach messages sent via
- * /api/messages/send). Newest first, with unread count and markRead.
+ * /api/push/message). Newest first, with unread count and markRead.
  * Re-checks when the app returns to the foreground and every minute, so a
  * message that arrives while the app is open shows up without a reload.
  *

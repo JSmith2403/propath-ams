@@ -1,6 +1,6 @@
 // Vercel serverless — coach sends a message to one or more athletes.
 //
-//   POST /api/messages/send
+//   POST /api/push/message
 //   headers: Authorization: Bearer <coach Supabase session token>
 //   body: { athlete_ids: ['em4', ...], title: '...', body: '...', sent_by?: 'Name' }
 //
@@ -18,8 +18,8 @@
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import { requireUser } from '../_lib/verifyUser.js';
-import { sendPushToAthlete } from '../_lib/push.js';
+import { requireUser } from '../verifyUser.js';
+import { sendPushToAthlete } from '../push.js';
 
 const MAX_RECIPIENTS = 200;
 

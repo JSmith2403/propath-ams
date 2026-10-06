@@ -8,7 +8,7 @@ const COHORTS = ['Elite', 'Gold', 'Mini'];
 /**
  * MessageComposerModal — coach writes a message to everyone, a cohort, or
  * hand-picked athletes. Stored in each athlete's in-app inbox AND pushed as
- * a notification (see api/messages/send.js). The lower half shows recent
+ * a notification (see api/_lib/push-handlers/message.js). The lower half shows recent
  * sends with how many recipients have opened them.
  */
 export default function MessageComposerModal({ athletes = [], senderName, onClose }) {
@@ -64,7 +64,7 @@ export default function MessageComposerModal({ athletes = [], senderName, onClos
     setResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/messages/send', {
+      const res = await fetch('/api/push/message', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

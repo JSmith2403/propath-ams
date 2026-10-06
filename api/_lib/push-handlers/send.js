@@ -23,8 +23,8 @@
 
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
-import { requireUser } from '../_lib/verifyUser.js';
-import { sendPushToAthlete } from '../_lib/push.js';
+import { requireUser } from '../verifyUser.js';
+import { sendPushToAthlete } from '../push.js';
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
