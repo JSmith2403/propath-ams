@@ -20,11 +20,11 @@
 // (same thing the coach's "Activate app" button does).
 
 import { randomUUID } from 'node:crypto';
-import { requireUser } from '../_lib/verifyUser.js';
+import { requireUser } from '../verifyUser.js';
 import {
   getSupabaseAdmin, isStaffUser, loadAthleteDisplay,
   generatePassword, usernameFromName, ATHLETE_EMAIL_DOMAIN,
-} from '../_lib/athleteAuth.js';
+} from '../athleteAuth.js';
 
 const MAX_PER_CALL = 100;
 

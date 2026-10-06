@@ -8,8 +8,8 @@
 // "forgot PIN" — resets are deliberately admin-only (no email
 // infrastructure exists, and several athletes are minors).
 
-import { requireUser } from '../_lib/verifyUser.js';
-import { getSupabaseAdmin, isStaffUser } from '../_lib/athleteAuth.js';
+import { requireUser } from '../verifyUser.js';
+import { getSupabaseAdmin, isStaffUser } from '../athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

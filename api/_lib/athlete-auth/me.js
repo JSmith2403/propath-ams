@@ -7,8 +7,8 @@
 // read them directly even though they're now a real authenticated
 // user — this endpoint does it server-side with the service-role key.
 
-import { requireUser } from '../_lib/verifyUser.js';
-import { getSupabaseAdmin, loadAthleteDisplay } from '../_lib/athleteAuth.js';
+import { requireUser } from '../verifyUser.js';
+import { getSupabaseAdmin, loadAthleteDisplay } from '../athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

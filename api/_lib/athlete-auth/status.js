@@ -8,7 +8,7 @@
 // they already have an account — if the flag is off, the caller falls
 // straight back to today's token-only behaviour untouched.
 
-import { getSupabaseAdmin, suggestUsername } from '../_lib/athleteAuth.js';
+import { getSupabaseAdmin, suggestUsername } from '../athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

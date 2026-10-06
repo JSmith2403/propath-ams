@@ -8,7 +8,7 @@
 // than a custom credential — the client signs in with it immediately
 // after this returns.
 
-import { getSupabaseAdmin, loadAthleteDisplay, sanitizeUsername, ATHLETE_EMAIL_DOMAIN } from '../_lib/athleteAuth.js';
+import { getSupabaseAdmin, loadAthleteDisplay, sanitizeUsername, ATHLETE_EMAIL_DOMAIN } from '../athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
