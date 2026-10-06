@@ -72,14 +72,14 @@ export default function InstallPrompt() {
     if (Date.now() < dismissedUntil()) return;
 
     // ── Android: capture and show after delay ───────────────────────────
+    let androidTimer;
     const onBeforeInstall = (e) => {
       e.preventDefault();
       setDeferredEvent(e);
-      const t = setTimeout(() => {
+      androidTimer = setTimeout(() => {
         setVariant('android');
         setVisible(true);
       }, SHOW_DELAY_MS);
-      return () => clearTimeout(t);
     };
 
     // ── Hide forever once installed ─────────────────────────────────────
@@ -105,6 +105,7 @@ export default function InstallPrompt() {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled',         onAppInstalled);
       if (iosTimer) clearTimeout(iosTimer);
+      if (androidTimer) clearTimeout(androidTimer);
     };
   }, []);
 

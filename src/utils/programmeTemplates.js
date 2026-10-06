@@ -610,27 +610,23 @@ export async function saveAthleteBlock(blockId, draft) {
   //    We map the old block_session_id → its session_order, then snapshot
   //    each planned_session along with that order. After the rebuild, the
   //    new block_session at the same session_order takes over.
-  const { data: tbRow, error: tbReadErr } = await supabase
-    .from('training_blocks')
-    .select('athlete_id, start_date')
-    .eq('id', blockId)
-    .single();
-  if (tbReadErr) return { ok: false, error: tbReadErr };
+  // These three reads are all keyed only on the already-known blockId —
+  // none depends on another's result — so they go out together instead
+  // of stacking three round trips before any writing even starts.
+  const [tbRes, oldBSRes, oldPlannedRes] = await Promise.all([
+    supabase.from('training_blocks').select('athlete_id, start_date').eq('id', blockId).single(),
+    supabase.from('block_sessions').select('id, session_order').eq('block_id', blockId),
+    supabase.from('planned_sessions').select('id, block_session_id, week_number, planned_date, status').eq('block_id', blockId),
+  ]);
+  if (tbRes.error) return { ok: false, error: tbRes.error };
+  const tbRow     = tbRes.data;
   const athleteId = tbRow?.athlete_id;
 
-  const { data: oldBlockSessions } = await supabase
-    .from('block_sessions')
-    .select('id, session_order')
-    .eq('block_id', blockId);
   const oldOrderById = new Map(
-    (oldBlockSessions || []).map(b => [b.id, b.session_order]),
+    (oldBSRes.data || []).map(b => [b.id, b.session_order]),
   );
 
-  const { data: oldPlanned } = await supabase
-    .from('planned_sessions')
-    .select('id, block_session_id, week_number, planned_date, status')
-    .eq('block_id', blockId);
-  const plannedSnapshot = (oldPlanned || [])
+  const plannedSnapshot = (oldPlannedRes.data || [])
     .map(p => ({
       id:           p.id,
       week_number:  p.week_number,
@@ -654,110 +650,115 @@ export async function saveAthleteBlock(blockId, draft) {
     .eq('block_id', blockId);
   if (delErr) return { ok: false, error: delErr };
 
-  // 3. Re-insert from draft
-  // newBlockSessionByOrder[N] = new block_session id at session_order N.
-  // Filled inside the loop so we can re-link planned_sessions once the
-  // rebuild is done.
+  // 3. Re-insert from draft.
+  // newBlockSessionByOrder[N] = new block_session id at session_order N,
+  // filled in by each session's own chain below so step 4 can re-link
+  // planned_sessions once every session has landed.
+  //
+  // Each session is its own independent subtree (own block_session row,
+  // own sections/exercises/notes/prescriptions) — nothing here reads
+  // another session's rows — so all sessions' chains run concurrently
+  // via Promise.all instead of stacking one session's round trips behind
+  // the previous session's. Within one session, exercises and notes are
+  // likewise independent of each other (both only need the just-inserted
+  // sections) and go out together; prescriptions still wait on the
+  // exercise insert since they reference its new id.
   const newBlockSessionByOrder = [];
-  try {
-    for (let si = 0; si < draft.sessions.length; si++) {
-      const sess = draft.sessions[si];
 
-      const { data: bs, error: bsErr } = await supabase
-        .from('block_sessions')
-        .insert({
-          block_id: blockId,
-          session_name: (sess.name || `Session ${si + 1}`).trim(),
-          session_order: si,
-          coach_notes: sess.notes?.trim() || null,
-        })
-        .select()
-        .single();
-      if (bsErr) throw bsErr;
-      newBlockSessionByOrder[si] = bs.id;
+  async function saveOneSession(sess, si) {
+    const { data: bs, error: bsErr } = await supabase
+      .from('block_sessions')
+      .insert({
+        block_id: blockId,
+        session_name: (sess.name || `Session ${si + 1}`).trim(),
+        session_order: si,
+        coach_notes: sess.notes?.trim() || null,
+      })
+      .select()
+      .single();
+    if (bsErr) throw bsErr;
+    newBlockSessionByOrder[si] = bs.id;
 
-      const sections = sess.sections || [];
-      if (!sections.length) continue;
+    const sections = sess.sections || [];
+    if (!sections.length) return;
 
-      const sectionRows = sections.map((sec, i) => ({
-        block_session_id: bs.id,
-        name: (sec.name || `Section ${i + 1}`).trim(),
-        display_order: i,
-        is_warm_up: !!sec.is_warm_up,
-      }));
-      const { data: insertedSecs, error: secErr } = await supabase
-        .from('session_sections')
-        .insert(sectionRows)
-        .select();
-      if (secErr) throw secErr;
+    const sectionRows = sections.map((sec, i) => ({
+      block_session_id: bs.id,
+      name: (sec.name || `Section ${i + 1}`).trim(),
+      display_order: i,
+      is_warm_up: !!sec.is_warm_up,
+    }));
+    const { data: insertedSecs, error: secErr } = await supabase
+      .from('session_sections')
+      .insert(sectionRows)
+      .select();
+    if (secErr) throw secErr;
 
-      const sectionIdByTempId = {};
-      sections.forEach((sec, i) => { sectionIdByTempId[sec.tempId] = insertedSecs[i].id; });
+    const sectionIdByTempId = {};
+    sections.forEach((sec, i) => { sectionIdByTempId[sec.tempId] = insertedSecs[i].id; });
 
-      const exerciseRows = [];
-      const noteRows     = [];
-      let order = 0;
-      for (const sec of sections) {
-        for (const step of (sec.exercises || [])) {
-          if (step.kind === 'note') {
-            noteRows.push({
-              block_session_id: bs.id,
-              section_id:       sectionIdByTempId[sec.tempId],
-              display_order:    order++,
-              content:          step.content || null,
-            });
-            continue;
-          }
-          if (!step.exercise_id) continue;
-          exerciseRows.push({
-            block_session_id:  bs.id,
-            section_id:        sectionIdByTempId[sec.tempId],
-            exercise_id:       step.exercise_id,
-            display_order:     order++,
-            prescription_type: step.prescription_type || 'kg',
-            notes:             step.notes || null,
-            is_warm_up:        !!sec.is_warm_up,
-            superset_group_id: step.superset_group_id || null,
+    const exerciseRows = [];
+    const noteRows     = [];
+    let order = 0;
+    for (const sec of sections) {
+      for (const step of (sec.exercises || [])) {
+        if (step.kind === 'note') {
+          noteRows.push({
+            block_session_id: bs.id,
+            section_id:       sectionIdByTempId[sec.tempId],
+            display_order:    order++,
+            content:          step.content || null,
           });
+          continue;
         }
-      }
-
-      let insertedExs = [];
-      if (exerciseRows.length) {
-        const { data, error: exErr } = await supabase
-          .from('session_exercises')
-          .insert(exerciseRows)
-          .select();
-        if (exErr) throw exErr;
-        insertedExs = data;
-      }
-
-      if (noteRows.length) {
-        const { error: noteErr } = await supabase
-          .from('session_step_notes')
-          .insert(noteRows);
-        if (noteErr) throw noteErr;
-      }
-
-      if (insertedExs.length) {
-        const wpRows = [];
-        let cursor = 0;
-        for (const sec of sections) {
-          for (const step of (sec.exercises || [])) {
-            if (step.kind === 'note') continue;
-            if (!step.exercise_id) continue;
-            const inserted = insertedExs[cursor++];
-            wpRows.push(...safeWeekRows(step.week_prescriptions, 'session_exercise_id', inserted.id, true));
-          }
-        }
-        if (wpRows.length) {
-          const { error: wpErr } = await supabase
-            .from('exercise_week_prescriptions')
-            .insert(wpRows);
-          if (wpErr) throw wpErr;
-        }
+        if (!step.exercise_id) continue;
+        exerciseRows.push({
+          block_session_id:  bs.id,
+          section_id:        sectionIdByTempId[sec.tempId],
+          exercise_id:       step.exercise_id,
+          display_order:     order++,
+          prescription_type: step.prescription_type || 'kg',
+          notes:             step.notes || null,
+          is_warm_up:        !!sec.is_warm_up,
+          superset_group_id: step.superset_group_id || null,
+        });
       }
     }
+
+    const [exRes, noteRes] = await Promise.all([
+      exerciseRows.length
+        ? supabase.from('session_exercises').insert(exerciseRows).select()
+        : Promise.resolve({ data: [], error: null }),
+      noteRows.length
+        ? supabase.from('session_step_notes').insert(noteRows)
+        : Promise.resolve({ error: null }),
+    ]);
+    if (exRes.error) throw exRes.error;
+    if (noteRes.error) throw noteRes.error;
+    const insertedExs = exRes.data || [];
+
+    if (insertedExs.length) {
+      const wpRows = [];
+      let cursor = 0;
+      for (const sec of sections) {
+        for (const step of (sec.exercises || [])) {
+          if (step.kind === 'note') continue;
+          if (!step.exercise_id) continue;
+          const inserted = insertedExs[cursor++];
+          wpRows.push(...safeWeekRows(step.week_prescriptions, 'session_exercise_id', inserted.id, true));
+        }
+      }
+      if (wpRows.length) {
+        const { error: wpErr } = await supabase
+          .from('exercise_week_prescriptions')
+          .insert(wpRows);
+        if (wpErr) throw wpErr;
+      }
+    }
+  }
+
+  try {
+    await Promise.all(draft.sessions.map((sess, si) => saveOneSession(sess, si)));
   } catch (e) {
     console.error('[Block] saveAthleteBlock failed mid-write', e);
     return { ok: false, error: e };
@@ -781,10 +782,12 @@ export async function saveAthleteBlock(blockId, draft) {
       .limit(1);
 
     if (stillThere?.length) {
-      // Update path — planned_sessions survived the wipe.
-      for (const snap of plannedSnapshot) {
+      // Update path — planned_sessions survived the wipe. Each row is
+      // independent (different id, no shared state), so relink them all
+      // concurrently instead of one network round trip at a time.
+      await Promise.all(plannedSnapshot.map(async (snap) => {
         const newId = newBlockSessionByOrder[snap.session_order];
-        if (!newId) continue;
+        if (!newId) return;
         const { error: upErr } = await supabase
           .from('planned_sessions')
           .update({ block_session_id: newId })
@@ -793,7 +796,7 @@ export async function saveAthleteBlock(blockId, draft) {
           console.error('[Block] planned_session update failed', { id: snap.id, upErr });
           // Don't fail the save — partial relink is still better than none.
         }
-      }
+      }));
     } else if (athleteId) {
       // Recreate path — FK cascaded planned_sessions away.
       const recreate = plannedSnapshot

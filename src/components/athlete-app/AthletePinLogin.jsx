@@ -12,24 +12,33 @@ const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
  * the coach login already uses — with a synthetic email built from
  * the entered username, so the athlete never sees "email" at all.
  *
+ * It's a real <form> with username / current-password autocomplete hints
+ * so iOS Keychain and Android/Chrome offer to save the details on first
+ * sign-in and fill them with Face ID / fingerprint afterwards.
+ *
  * A successful sign-in fires Supabase's own onAuthStateChange, which
  * AthleteStableEntry is already listening for — this component doesn't
  * need to do anything else once the call succeeds.
  */
 export default function AthletePinLogin() {
   const [username, setUsername] = useState('');
-  const [pin, setPin]             = useState('');
-  const [error, setError]         = useState(null);
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = async () => {
-    if (!username.trim() || pin.length < 6) return;
+  const canSubmit = username.trim() && password.trim().length >= 6;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
     const email = `${username.trim().toLowerCase()}@${ATHLETE_EMAIL_DOMAIN}`;
-    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password: pin });
+    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password: password.trim() });
     if (signInErr) {
-      setError('Incorrect username or PIN.');
+      setError(/network|fetch/i.test(signInErr.message || '')
+        ? 'Couldn\'t reach the server — check your connection and try again.'
+        : 'Incorrect username or password.');
       setSubmitting(false);
     }
     // On success, onAuthStateChange in AthleteStableEntry takes it from here.
@@ -40,39 +49,49 @@ export default function AthletePinLogin() {
       <img src={logo} alt="ProPath" style={{ width: '120px' }} className="mb-8" />
       <h1 className="text-h2 font-bold text-ink-900 mb-6">Sign in</h1>
 
-      <div className="w-full max-w-xs space-y-3 mb-4">
-        <input
-          type="text"
-          autoFocus
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Username"
-          className="w-full text-center text-lg rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
-        />
-        <input
-          type="password"
-          inputMode="numeric"
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-          placeholder="PIN"
-          className="w-full text-center text-2xl tracking-[0.4em] rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
-        />
-      </div>
+      <form onSubmit={submit} className="w-full max-w-xs">
+        <div className="space-y-3 mb-4">
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            className="w-full text-center text-lg rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            autoCapitalize="none"
+            autoCorrect="off"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full text-center text-lg rounded-xl border border-ink-200 py-3 focus:outline-none focus:border-gold-500"
+          />
+        </div>
 
-      {error && <p className="text-meta text-red-600 mb-3">{error}</p>}
+        {error && <p className="text-meta text-red-600 mb-3" role="alert">{error}</p>}
 
-      <button
-        onClick={submit}
-        disabled={submitting || !username.trim() || pin.length < 6}
-        className="w-full max-w-xs rounded-md py-3 text-body font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        style={{ backgroundColor: GOLD }}
-      >
-        {submitting ? 'Signing in…' : 'Sign in'}
-      </button>
+        <button
+          type="submit"
+          disabled={submitting || !canSubmit}
+          className="w-full rounded-md py-3 text-body font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{ backgroundColor: GOLD }}
+        >
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
 
       <p className="text-micro text-ink-400 mt-6 max-w-xs">
-        Forgotten your PIN? Ask your coach to reset it.
+        When your phone offers to save your password, say yes — next time you
+        can sign in with Face ID. Forgotten it? Ask your coach for a reset.
       </p>
     </div>
   );

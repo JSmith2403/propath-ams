@@ -5,6 +5,7 @@ import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { useCalendarFilters, eventPassesFilters } from '../../hooks/useCalendarFilters';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
+import { useAttendanceForRange } from '../../hooks/useSessionAttendance';
 import { movePlannedSession, copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
 import { computeBirthdayEvents, ageOnDate } from '../../utils/birthdayEvents';
 import AthleteSidebar from './AthleteSidebar';
@@ -106,14 +107,18 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
   }, [allAthletes]);
 
   const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(allActiveIdArr);
+  const attendanceById = useAttendanceForRange(allActiveIdArr);
   const plannedEvents = useMemo(() => {
     if (!filters.planned) return [];
     return plannedSessionsAsEvents(plannedRows)
       .filter(p => selectedIds.has(p.athlete_id))
       .map(p => {
         const athlete = athleteById.get(p.athlete_id);
+        const att = attendanceById[p._planned_id];
         return {
           ...p,
+          _attendance:      att?.attendance,
+          _attendanceNote:  att?.note,
           // Cross-athlete calendar only — lets the pill show whose
           // session it is without opening it (per-athlete calendar
           // already implies the athlete, so it ignores these fields).
@@ -122,7 +127,7 @@ export default function ProgrammeMasterView({ allAthletes = [], role = 'admin', 
           _athleteColour:   colourForAthlete(p.athlete_id),
         };
       });
-  }, [plannedRows, filters.planned, selectedIds, athleteById]);
+  }, [plannedRows, filters.planned, selectedIds, athleteById, attendanceById]);
 
   // Filter blocks to selected athletes (matches the events pattern)
   const blocks = useMemo(

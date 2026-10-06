@@ -5,6 +5,7 @@
 // earlier custom session/PIN table approach was replaced.
 
 import { createClient } from '@supabase/supabase-js';
+import { randomInt } from 'node:crypto';
 
 export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -17,6 +18,29 @@ export const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
 
 export function sanitizeUsername(raw) {
   return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
+}
+
+const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no look-alikes (0/o, 1/l/i)
+
+/** Random password like "k7mq-x4pw-9dre" (12 chars, ~59 bits). Readable when
+ *  sent over WhatsApp, long enough for health data, and phone password
+ *  managers store it so athletes don't have to memorise it. */
+export function generatePassword() {
+  const pick = () => PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  return [0, 1, 2].map(() => Array.from({ length: 4 }, pick).join('')).join('-');
+}
+
+/** "Zach Pitman" → "zach.pitman" (falls back to "athlete"). */
+export function usernameFromName(name) {
+  const parts = String(name || '').toLowerCase().split(/\s+/).map(p => p.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+  return sanitizeUsername(parts.join('.')) || 'athlete';
+}
+
+/** Verifies the caller is a coach (admin / co_admin) — a valid JWT alone
+ *  isn't enough because athletes are real Supabase Auth users too. */
+export async function isStaffUser(admin, userId) {
+  const { data } = await admin.from('user_roles').select('role').eq('user_id', userId).maybeSingle();
+  return !!data && (data.role === 'admin' || data.role === 'co_admin');
 }
 
 /** Name + DOB (DDMM) — e.g. "Pro Pathius" born 24 March → "ProPathius2403".

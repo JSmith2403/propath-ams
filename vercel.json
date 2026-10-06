@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/athlete", "destination": "/athlete.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [

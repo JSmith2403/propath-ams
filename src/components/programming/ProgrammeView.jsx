@@ -3,6 +3,7 @@ import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
+import { useAttendanceForRange } from '../../hooks/useSessionAttendance';
 import { movePlannedSession, copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
@@ -97,7 +98,11 @@ export default function ProgrammeView({
   // mutation that resizes/relocates/adds sessions so the calendar
   // pills don't lag behind the schema.
   const { planned: plannedRows, refresh: refreshPlanned } = usePlannedSessions(athleteIds);
-  const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows), [plannedRows]);
+  const attendanceById = useAttendanceForRange(athleteIds);
+  const plannedEvents = useMemo(() => plannedSessionsAsEvents(plannedRows).map(p => {
+    const a = attendanceById[p._planned_id];
+    return a ? { ...p, _attendance: a.attendance, _attendanceNote: a.note } : p;
+  }), [plannedRows, attendanceById]);
 
   // ── Calendar view state ──────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState(initialFocus?.viewMode || 'month');
@@ -113,6 +118,10 @@ export default function ProgrammeView({
 
   // ── Copy/paste clipboard for planned sessions ────────────────────────────
   const [clipboard, setClipboard] = useState(null); // { plannedId, name } | null
+
+  // Bumped after anything that rewrites the programme (builder save) so
+  // the Week view — which owns its own fetch — reloads too.
+  const [programmeVersion, setProgrammeVersion] = useState(0);
 
   // ── Delete a single planned session from month view ──────────────────────
   const [confirmDeleteSession, setConfirmDeleteSession] = useState(null); // event | null
@@ -272,7 +281,14 @@ export default function ProgrammeView({
   const handleBuilderSave = async (draft) => {
     if (!builderState?.blockId) return { ok: false, error: new Error('Missing block id') };
     const res = await saveAthleteBlock(builderState.blockId, draft);
-    if (res.ok) showToast('Block saved');
+    if (res.ok) {
+      // saveAthleteBlock rewrites block_sessions/planned_sessions, so both
+      // the month pills and the week grid must refetch — otherwise an
+      // imported/edited session only appears after a full page reload.
+      refreshPlanned();
+      setProgrammeVersion(v => v + 1);
+      showToast('Block saved');
+    }
     return res;
   };
 
@@ -490,6 +506,7 @@ export default function ProgrammeView({
           onChangeView={setViewMode}
           onClickPlanned={handleClickPlannedFromWeekView}
           onChanged={refreshPlanned}
+          externalRefreshKey={programmeVersion}
         />
       ) : (
         <ProgrammeCalendar

@@ -6,6 +6,9 @@ import TrainingTab from './TrainingTab';
 import InstallPrompt from '../InstallPrompt';
 import WellnessCheckInGate from './WellnessCheckInGate';
 import NotificationPrompt from './NotificationPrompt';
+import InboxSheet from './InboxSheet';
+import { Bell } from 'lucide-react';
+import { useAthleteMessages } from '../../hooks/useAthleteMessages';
 
 const ProgressTab  = lazy(() => import('./ProgressTab'));
 const NutritionTab = lazy(() => import('./NutritionTab'));
@@ -46,6 +49,9 @@ export default function AthleteAppShell({ athlete }) {
     return VALID_TABS.has(requested) ? requested : 'train';
   });
   const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
+  const { messages, loading: messagesLoading, unreadCount, markRead } = useAthleteMessages(athlete.id);
+  // ?inbox=1 is what a message push notification opens.
+  const [inboxOpen, setInboxOpen] = useState(() => searchParams.get('inbox') === '1');
 
   const handleTabChange = (id) => {
     if (id === 'resources') {
@@ -74,6 +80,21 @@ export default function AthleteAppShell({ athlete }) {
               )}
           </div>
           <p className="flex-1 text-meta text-ink-500">{greeting()}</p>
+          <button
+            onClick={() => setInboxOpen(true)}
+            className="relative p-1.5 rounded-full hover:bg-ink-50"
+            aria-label={unreadCount ? `Messages, ${unreadCount} unread` : 'Messages'}
+          >
+            <Bell size={18} className="text-ink-600" />
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
           <img src={logo} alt="ProPath" style={{ height: '20px' }} />
         </header>
 
@@ -96,6 +117,14 @@ export default function AthleteAppShell({ athlete }) {
 
         <TabBar active={activeTab} onChange={handleTabChange} />
       </div>
+      {inboxOpen && (
+        <InboxSheet
+          messages={messages}
+          loading={messagesLoading}
+          markRead={markRead}
+          onClose={() => setInboxOpen(false)}
+        />
+      )}
       <InstallPrompt />
       <NotificationPrompt athleteId={athlete.id} />
     </div>

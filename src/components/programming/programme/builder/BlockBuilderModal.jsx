@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, MoreVertical, Pencil, Plus, Sparkles } from 'lucide-react';
+import { Loader2, X, Minus, MoreVertical, Pencil, Plus, Sparkles } from 'lucide-react';
 import SessionBlock from './SessionBlock';
 import { ROW_STICKY_WIDTH, WEEK_COL_WIDTH } from './SessionExerciseRow';
 import ConfirmDialog from '../../blocks/ConfirmDialog';
@@ -694,9 +694,10 @@ export default function BlockBuilderModal({
             <button
               onClick={handleDone}
               disabled={saving}
-              className="px-4 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white rounded transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#A58D69' }}
             >
+              {saving && <Loader2 size={12} className="animate-spin" />}
               {saving ? 'Saving…' : (athleteMode ? 'Save changes' : 'Save template')}
             </button>
           </div>

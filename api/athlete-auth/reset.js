@@ -9,7 +9,7 @@
 // infrastructure exists, and several athletes are minors).
 
 import { requireUser } from '../_lib/verifyUser.js';
-import { getSupabaseAdmin } from '../_lib/athleteAuth.js';
+import { getSupabaseAdmin, isStaffUser } from '../_lib/athleteAuth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -23,6 +23,11 @@ export default async function handler(req, res) {
   const admin = getSupabaseAdmin();
   if (!admin) {
     res.status(503).json({ ok: false, error: 'Server not configured (SUPABASE_SECRET_KEY missing).' });
+    return;
+  }
+
+  if (!(await isStaffUser(admin, user.id))) {
+    res.status(403).json({ ok: false, error: 'Coaches only.' });
     return;
   }
 

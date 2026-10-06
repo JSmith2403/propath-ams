@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
 import { getDailyQuote } from '../../utils/dailyQuote';
 import SessionCard from './SessionCard';
+import AttendanceToggle from './AttendanceToggle';
+import { useMyAttendance } from '../../hooks/useSessionAttendance';
 import WellnessInline from './WellnessInline';
 import NutritionSummaryCard from './NutritionSummaryCard';
 
@@ -57,6 +59,7 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
   const toISOEnd = toISO(addDays(weekStart, 6));
 
   const { planned, loading } = usePlannedWeekDetail(athleteId, fromISO, toISOEnd);
+  const { byId: attendanceById, respond: respondAttendance } = useMyAttendance(athleteId, planned.map(p => p.id));
 
   // Active session-logger overlay (one at a time)
   const [activeLogger, setActiveLogger]   = useState(null);
@@ -245,14 +248,22 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
       ) : (
         <div className="space-y-3">
           {selectedSessions.map((s, i) => (
-            <SessionCard
-              key={s.id}
-              session={s}
-              index={i}
-              defaultOpen={selectedSessions.length === 1}
-              isCompleted={completedIds.has(s.id)}
-              onStart={handleStart}
-            />
+            <div key={s.id}>
+              <SessionCard
+                session={s}
+                index={i}
+                defaultOpen={selectedSessions.length === 1}
+                isCompleted={completedIds.has(s.id)}
+                onStart={handleStart}
+              />
+              {!completedIds.has(s.id) && (
+                <AttendanceToggle
+                  value={attendanceById[s.id]?.attendance}
+                  note={attendanceById[s.id]?.note}
+                  onRespond={(status, note) => respondAttendance(s.id, status, note)}
+                />
+              )}
+            </div>
           ))}
         </div>
       )}

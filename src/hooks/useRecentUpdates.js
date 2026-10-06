@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 // Feed shape — deliberately narrow to keep it fast:
@@ -80,6 +80,7 @@ function wellnessRag(row) {
 export function useRecentUpdates() {
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const loadedOnceRef = useRef(false);
   const [error,   setError]   = useState(null);
   const [tick,    setTick]    = useState(0);
   const [readThroughTs, setReadThroughTs] = useState(() => loadReadThrough());
@@ -100,12 +101,27 @@ export function useRecentUpdates() {
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
+  // The feed has no realtime subscription, so a session an athlete just
+  // finished only showed up after a manual Refresh. Re-pull when the
+  // coach returns to the tab, and quietly once a minute while it's open.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 60_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(timer);
+    };
+  }, [refresh]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      if (!loadedOnceRef.current) setLoading(true);
       const sinceISO = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString();
-      const [sessRes, wellRes, pbRes, mealRes] = await Promise.all([
+      const [sessRes, wellRes, pbRes, mealRes, attRes] = await Promise.all([
         supabase
           .from('session_logs')
           // Direct FK to block_sessions gets the template name when the
@@ -141,6 +157,17 @@ export function useRecentUpdates() {
           .not('submitted_at', 'is', null)
           .gte('submitted_at', sinceISO)
           .order('submitted_at', { ascending: false })
+          .limit(MAX_ITEMS),
+        // Attending / not-attending responses. Kept out of the "every
+        // source failed" error count below — if the attendance columns
+        // haven't been migrated yet this query just errors and the rest of
+        // the feed is unaffected.
+        supabase
+          .from('planned_sessions')
+          .select('id, athlete_id, planned_date, attendance, attendance_note, attendance_at, block_sessions ( session_name )')
+          .not('attendance', 'is', null)
+          .gte('attendance_at', sinceISO)
+          .order('attendance_at', { ascending: false })
           .limit(MAX_ITEMS),
       ]);
       if (cancelled) return;
@@ -282,9 +309,23 @@ export function useRecentUpdates() {
       }
       if (mealRes.error) console.error('[useRecentUpdates] meal_entries error', mealRes.error);
 
+      for (const r of attRes.data || []) {
+        rows.push({
+          id: `attendance:${r.id}:${r.attendance_at}`,
+          type: 'attendance',
+          athlete_id: r.athlete_id,
+          timestamp: r.attendance_at,
+          attendance: r.attendance,
+          note: r.attendance_note || null,
+          session_name: r.block_sessions?.session_name || 'Session',
+          planned_date: r.planned_date,
+        });
+      }
+
       rows.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       setError(null);
       setUpdates(rows.slice(0, MAX_ITEMS));
+      loadedOnceRef.current = true;
       setLoading(false);
     })();
     return () => { cancelled = true; };

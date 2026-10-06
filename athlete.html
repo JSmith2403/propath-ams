@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!--
+      Dedicated shell for the stable /athlete address (Vercel rewrites
+      /athlete → /athlete.html, see vercel.json). It exists because iOS reads
+      <meta apple-mobile-web-app-capable> from the raw HTML before any script
+      runs, so it can't be switched per-route from index.html. The coach app
+      and the legacy /athlete/<token> links keep using index.html unchanged.
+
+      Same React bundle as index.html — only the install metadata differs:
+        • athlete manifest (start_url=/athlete, scope=/athlete, standalone)
+        • apple-mobile-web-app-capable=yes → iPhone installs a real full-screen
+          app (needed for Face ID autofill in-app and for push notifications)
+    -->
+    <link rel="manifest" href="/manifest-athlete.json" />
+    <meta name="theme-color" content="#1C1C1C" />
+
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ProPath" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+
+    <style>
+      html, body, #root { background-color: #1C1C1C; }
+      body {
+        margin: 0;
+        padding-top:    env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left:   env(safe-area-inset-left);
+        padding-right:  env(safe-area-inset-right);
+      }
+    </style>
+
+    <title>ProPath</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

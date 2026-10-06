@@ -25,6 +25,27 @@ import ProgrammeMasterView from './components/programming/ProgrammeMasterView';
 import ProgrammeModule    from './components/programming/ProgrammeModule';
 import ResourcesAdminView from './components/resources/ResourcesAdminView';
 
+// ── Navigation persistence ──────────────────────────────────────────────────
+// Remembers the coach's last top-level view, selected athlete, and (if
+// viewing a profile) which profile tab was open, so a page reload lands
+// back where they left off instead of always resetting to the Updates
+// feed. Per-browser (localStorage), not per-account — fine for a tool
+// used from the same handful of devices.
+const NAV_STORAGE_KEY = 'propath:last_nav';
+
+function loadLastNav() {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(NAV_STORAGE_KEY) : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveLastNav(nav) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(nav));
+  } catch { /* quota / private mode — silently ignore */ }
+}
+
 // ── Loading spinner shared by both auth and data loading states ───────────────
 function LoadingSpinner({ message }) {
   return (
@@ -50,10 +71,27 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   // Default landing view — Updates for coaches (they open the app to
   // check what happened overnight), Roster for external providers who
   // don't see Updates. Redirected below if the chosen view isn't
-  // permitted for the current role.
-  const [view,       setView]       = useState(role === 'external' ? 'roster' : 'updates');
-  const [selectedId, setSelectedId] = useState(null);
-  const [profileNav, setProfileNav] = useState(null);
+  // permitted for the current role. A reload restores whatever was last
+  // open instead (see NAV_STORAGE_KEY) — the role-restriction effect
+  // further down still catches a restored view the current role can't see.
+  const [view, setView] = useState(() => {
+    if (role === 'external') return 'roster';
+    return loadLastNav()?.view || 'updates';
+  });
+  const [selectedId, setSelectedId] = useState(() => loadLastNav()?.selectedId || null);
+  const [profileNav, setProfileNav] = useState(() => {
+    const saved = loadLastNav();
+    return saved?.view === 'profile' && saved?.selectedId && saved?.athleteTab
+      ? { tab: saved.athleteTab, navId: 'restore' }
+      : null;
+  });
+  // Mirrors AthleteProfile's own activeTab (see onActiveTabChange below)
+  // purely so it can be written back to storage alongside view/selectedId.
+  const [lastAthleteTab, setLastAthleteTab] = useState(() => loadLastNav()?.athleteTab || null);
+
+  useEffect(() => {
+    saveLastNav({ view, selectedId, athleteTab: lastAthleteTab });
+  }, [view, selectedId, lastAthleteTab]);
 
   const {
     athletes, archivedAthletes, loading, error: athletesError, getAthlete,
@@ -68,16 +106,30 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
     syncSessionData,
   } = useAthletes({ seedEnabled: !isExternal });
 
-  // Re-sync all saved sessions once after athletes load (admin/co_admin only).
+  // Catch-up sync for saved data-entry sessions (admin/co_admin only).
+  // PhysicalMobilitySheet already syncs a session the moment it's saved,
+  // so this is only a safety net for anything that missed it. It used to
+  // replay EVERY historical session on EVERY page load — N sessions x M
+  // athletes of full-row athlete upserts plus performance_test_results
+  // churn each time — so each session id is now remembered per-browser
+  // once synced and skipped from then on.
   const initialSyncDone = useRef(false);
   useEffect(() => {
     if (loading || initialSyncDone.current || isExternal) return;
     initialSyncDone.current = true;
     supabase.from('sessions').select('data').then(({ data }) => {
       if (!data) return;
-      data.map(row => row.data)
-        .filter(s => s?.savedAt)
-        .forEach(s => syncSessionData({ ...s, customMetrics: s.customMetrics || {} }));
+      let synced;
+      try { synced = new Set(JSON.parse(window.localStorage.getItem('propath:synced_session_ids') || '[]')); }
+      catch { synced = new Set(); }
+      const pending = data.map(row => row.data).filter(s => s?.savedAt && s.id && !synced.has(s.id));
+      if (!pending.length) return;
+      pending.forEach(s => {
+        syncSessionData({ ...s, customMetrics: s.customMetrics || {} });
+        synced.add(s.id);
+      });
+      try { window.localStorage.setItem('propath:synced_session_ids', JSON.stringify([...synced])); }
+      catch { /* quota / private mode — worst case it re-syncs next load */ }
     });
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -90,6 +142,20 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
       setView('roster');
     }
   }, [isExternal, isAdmin, view]);
+
+  // A restored profile view (see NAV_STORAGE_KEY) can point at an athlete
+  // who's since been archived/deleted, or — for an external provider —
+  // one they're no longer allocated to. Rather than render a blank
+  // content area, fall back to the roster once athletes have loaded.
+  useEffect(() => {
+    if (loading || view !== 'profile' || !selectedId) return;
+    const stillAccessible = getAthlete(selectedId)
+      && (!isExternal || allocations.includes(selectedId));
+    if (!stillAccessible) {
+      setView(isExternal ? 'roster' : 'updates');
+      setSelectedId(null);
+    }
+  }, [loading, view, selectedId, isExternal, allocations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wellness status for roster cards (must be above early returns — hooks cannot be conditional)
   const visibleAthletes = loading ? [] : (isExternal
@@ -198,6 +264,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
                 onAddRagEntry={addRagEntry}
                 onAddPhysioEntry={addPhysioEntry}
                 onAddGeneralNote={addGeneralNote}
+                senderName={userName || userEmail}
               />
             </div>
             <div className="hidden xl:flex flex-1 min-w-0">
@@ -231,6 +298,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             allAthletes={visibleAthletes}
             role={role}
             onBack={handleBack}
+            onActiveTabChange={setLastAthleteTab}
             onUpdate={updateAthlete}
             onUpdateRag={updateRag}
             onAddRagEntry={addRagEntry}

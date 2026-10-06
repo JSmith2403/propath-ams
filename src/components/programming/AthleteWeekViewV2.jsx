@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
 import { usePlannedWeekDetail } from '../../hooks/usePlannedWeekDetail';
+import { useAttendanceForRange } from '../../hooks/useSessionAttendance';
 import {
   replaceExerciseFromWeek,
   clearExerciseOverrideFromWeek,
@@ -98,6 +99,9 @@ export default function AthleteWeekViewV2({
   // parent showing a *different* view of the same planned_sessions
   // (e.g. the month calendar) can refetch and stay in sync.
   onChanged = null,
+  // Bumped by a parent that rewrote this athlete's programme elsewhere
+  // (e.g. the block builder) so this view refetches without a reload.
+  externalRefreshKey = 0,
 }) {
   const weekStart = useMemo(() => startOfWeekMon(viewDate), [viewDate]);
   const days = useMemo(() => {
@@ -110,7 +114,8 @@ export default function AthleteWeekViewV2({
 
   const [refreshTick, setRefreshTick] = useState(0);
   const refresh = useCallback(() => setRefreshTick(n => n + 1), []);
-  const { planned, loading } = usePlannedWeekDetail(athlete.id, fromISO, toISO_, refreshTick);
+  const attendanceById = useAttendanceForRange([athlete.id], fromISO, toISO_, refreshTick + externalRefreshKey);
+  const { planned, loading } = usePlannedWeekDetail(athlete.id, fromISO, toISO_, refreshTick + externalRefreshKey);
 
   // ── Replace-from-week state (unchanged) ─────────────────────────
   const [replaceTarget, setReplaceTarget] = useState(null);
@@ -696,6 +701,7 @@ export default function AthleteWeekViewV2({
                           onRequestReplace={(item) => setReplaceTarget({ exercise: item, sessionName: s.session_name })}
                           onClearOverride={(item) => handleClearOverride(item)}
                           onRequestDelete={() => setConfirmDelete(s)}
+                          attendance={attendanceById[s.id]}
                         />
                       );
                     })}
@@ -994,6 +1000,7 @@ function SelectableSessionCard({ session, dim, checked, onToggle, registerRef })
 function DraggableSessionCard({
   session, dim, armed, isDraggingThis,
   onArmCopy, onClick, onRequestReplace, onClearOverride, onRequestDelete,
+  attendance = null,
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `planned-${session.id}`,
@@ -1084,6 +1091,7 @@ function DraggableSessionCard({
           session={session}
           dim={dim}
           armed={armed}
+          attendance={attendance}
           onClick={onClick}
           onRequestReplace={onRequestReplace}
           onClearOverride={onClearOverride}
@@ -1097,7 +1105,7 @@ function DraggableSessionCard({
 // ─── SessionCard ────────────────────────────────────────────────────
 function SessionCard({
   session, onClick, onRequestReplace, onClearOverride, onRequestDelete,
-  dim = false, armed = false,
+  dim = false, armed = false, attendance = null,
 }) {
   return (
     <div
@@ -1118,6 +1126,19 @@ function SessionCard({
         <div className="flex-1 text-[11px] font-bold truncate" style={{ color: '#1C1C1C' }}>
           {session.session_name}
         </div>
+        {attendance?.attendance && !dim && (
+          <span
+            className="shrink-0 inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+            style={attendance.attendance === 'attending'
+              ? { color: '#16a34a', backgroundColor: 'rgba(22,163,74,0.1)' }
+              : { color: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)' }}
+            title={attendance.attendance === 'attending'
+              ? 'Athlete confirmed attending'
+              : `Athlete can't make it${attendance.note ? `: ${attendance.note}` : ''}`}
+          >
+            {attendance.attendance === 'attending' ? 'Attending' : 'Can’t attend'}
+          </span>
+        )}
         {dim && (
           <span
             className="shrink-0 inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"

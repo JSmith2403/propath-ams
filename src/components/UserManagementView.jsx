@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { UserPlus, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { UserPlus, ChevronDown, ChevronUp, X, KeyRound } from 'lucide-react';
+import AthleteLoginsModal from './AthleteLoginsModal';
 import { useUserManagement } from '../hooks/useUserManagement';
 
 const ROLE_LABELS = { admin: 'Admin', co_admin: 'Co-Admin', external: 'External Provider' };
@@ -282,6 +283,7 @@ export default function UserManagementView({ athletes = [] }) {
   } = useUserManagement();
 
   const [showInvite,  setShowInvite]  = useState(false);
+  const [showAthleteLogins, setShowAthleteLogins] = useState(false);
   // Only one card open at a time — tracks user.id of the expanded card
   const [expandedId,  setExpandedId]  = useState(null);
 
@@ -299,14 +301,24 @@ export default function UserManagementView({ athletes = [] }) {
             <h1 className="text-xl font-bold text-gray-900">User Management</h1>
             <p className="text-xs text-gray-400 mt-0.5">Manage staff access and athlete allocations</p>
           </div>
-          <button
-            onClick={() => setShowInvite(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: '#A58D69' }}
-          >
-            <UserPlus size={15} />
-            Invite User
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAthleteLogins(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-white"
+              style={{ borderColor: '#A58D69', color: '#7a6748' }}
+            >
+              <KeyRound size={15} />
+              Athlete logins
+            </button>
+            <button
+              onClick={() => setShowInvite(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#A58D69' }}
+            >
+              <UserPlus size={15} />
+              Invite User
+            </button>
+          </div>
         </div>
 
         {/* Error */}
@@ -360,6 +372,13 @@ export default function UserManagementView({ athletes = [] }) {
         <InviteModal
           onClose={() => setShowInvite(false)}
           onInvite={inviteUser}
+        />
+      )}
+
+      {showAthleteLogins && (
+        <AthleteLoginsModal
+          athletes={athletes}
+          onClose={() => setShowAthleteLogins(false)}
         />
       )}
     </div>

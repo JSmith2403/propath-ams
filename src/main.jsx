@@ -37,6 +37,14 @@ const App = lazy(() => import('./App.jsx'))
       return;
     }
 
+    // This device was installed from /athlete (AthleteStableEntry sets the
+    // flag when it runs standalone) — covers an athlete who's been signed
+    // out, so they land on the athlete login rather than the coach login.
+    if (localStorage.getItem('propath_athlete_device') === '1') {
+      window.location.replace('/athlete');
+      return;
+    }
+
     // Real-auth athletes: a Supabase session under the reserved athlete
     // email domain means this device belongs to an athlete, full stop —
     // send it to /athlete rather than ever rendering the coach shell.

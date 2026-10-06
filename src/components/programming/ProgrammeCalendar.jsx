@@ -366,6 +366,20 @@ function EventPill({ seg, height = PILL_HEIGHT, hidden, onPointerDown, onPreview
         </span>
       )}
       <span className="flex-1 truncate">{event.event_name}</span>
+      {isPlanned && event._attendance && (
+        <span
+          className="shrink-0 inline-flex items-center justify-center rounded-full text-[8px] font-bold text-white"
+          style={{
+            width: 12, height: 12, lineHeight: 1,
+            backgroundColor: event._attendance === 'attending' ? '#16a34a' : '#dc2626',
+          }}
+          title={event._attendance === 'attending'
+            ? 'Athlete confirmed attending'
+            : `Athlete can't make it${event._attendanceNote ? `: ${event._attendanceNote}` : ''}`}
+        >
+          {event._attendance === 'attending' ? '✓' : '✕'}
+        </span>
+      )}
       {renderBadge && (
         <span
           className="shrink-0 inline-flex items-center justify-center text-[9px] font-bold rounded-sm"

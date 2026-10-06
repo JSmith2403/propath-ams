@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import AthleteAppShell, { Loading } from './AthleteAppShell';
 import AthletePinLogin from './AthletePinLogin';
+import InstallPrompt from '../InstallPrompt';
 
 /**
  * The stable /athlete route — same URL for every PIN-login athlete,
@@ -46,6 +47,18 @@ export default function AthleteStableEntry() {
     }
   }, []);
 
+  // Remember that this home-screen install belongs to an athlete, so a
+  // launch that lands on "/" (see main.jsx) is sent back here even when
+  // they've been signed out. Only set when actually running as an installed
+  // app — a coach previewing /athlete in a normal tab must not be redirected.
+  useEffect(() => {
+    try {
+      const standalone = window.matchMedia?.('(display-mode: standalone)').matches
+        || window.navigator?.standalone === true;
+      if (standalone) localStorage.setItem('propath_athlete_device', '1');
+    } catch (_) { /* private mode — best effort */ }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -83,7 +96,10 @@ export default function AthleteStableEntry() {
   }
 
   if (status === 'needs-login') {
-    return <AthletePinLogin />;
+    // InstallPrompt here (not just inside the logged-in shell) so a new
+    // athlete can add the app to their home screen before they've even
+    // signed in — it hides itself when already installed.
+    return (<><AthletePinLogin /><InstallPrompt /></>);
   }
 
   return <AthleteAppShell athlete={athlete} />;

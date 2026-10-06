@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   Bell, CalendarDays, CheckSquare, Circle, Clock, Dumbbell, Flame,
-  Heart, Loader2, Plus, StickyNote, Trophy, TrendingUp, Users,
+  Heart, Loader2, Plus, Send, StickyNote, Trophy, TrendingUp, Users,
   UtensilsCrossed, Weight, X,
 } from 'lucide-react';
 import { useRecentUpdates } from '../../hooks/useRecentUpdates';
+import MessageComposerModal from './MessageComposerModal';
 
 // Quick note-type identifier for the "+ Note" quick-add on a completed
 // session — deliberately its own small taxonomy rather than reusing
@@ -127,7 +128,9 @@ function groupByDay(updates) {
 export default function RecentUpdatesView({
   athletes = [], onNavigateToAthlete,
   onAddRagEntry, onAddPhysioEntry, onAddGeneralNote,
+  senderName,
 }) {
+  const [composerOpen, setComposerOpen] = useState(false);
   const {
     updates, loading, error, refresh,
     isRead, markRead, markAllRead, unreadCount, maxAgeDays,
@@ -301,6 +304,15 @@ export default function RecentUpdatesView({
           </button>
         )}
         <button
+          onClick={() => setComposerOpen(true)}
+          className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded text-white shrink-0"
+          style={{ backgroundColor: '#A58D69' }}
+          title="Send a message or notification to athletes"
+        >
+          <Send size={12} />
+          <span>Message</span>
+        </button>
+        <button
           onClick={refresh}
           className="hidden md:inline-flex text-xs font-semibold px-3 py-1.5 rounded transition-colors shrink-0"
           style={{ color: '#6b7280', border: '1px solid #e5e7eb', backgroundColor: '#fff' }}
@@ -467,6 +479,14 @@ export default function RecentUpdatesView({
         </>
       )}
 
+      {composerOpen && (
+        <MessageComposerModal
+          athletes={athletes}
+          senderName={senderName}
+          onClose={() => setComposerOpen(false)}
+        />
+      )}
+
       {noteTarget && (
         <AddSessionNoteModal
           athleteName={noteTarget.athlete?.name}
@@ -584,6 +604,7 @@ const TYPE_STYLES = {
   wellness: { icon: Heart,            fg: '#fff', bg: '#dc2626' }, // red (overridden by RAG)
   pb:       { icon: TrendingUp,       fg: '#fff', bg: '#A58D69' }, // gold
   meal:     { icon: UtensilsCrossed,  fg: '#fff', bg: '#f97316' }, // orange
+  attendance: { icon: CalendarDays,   fg: '#fff', bg: '#6366f1' }, // indigo (overridden by response)
 };
 
 function TypeBadge({ update, size = 20 }) {
@@ -593,7 +614,9 @@ function TypeBadge({ update, size = 20 }) {
   // check-in visually screams before the coach reads the row text.
   const bg = update.type === 'wellness'
     ? (RAG_COLOR[update.rag] || RAG_COLOR.grey)
-    : style.bg;
+    : update.type === 'attendance'
+      ? (update.attendance === 'attending' ? '#16a34a' : '#dc2626')
+      : style.bg;
   return (
     <span
       className="inline-flex items-center justify-center rounded-full"
@@ -772,6 +795,24 @@ function renderTypeMeta(u, athlete, onOpenAddNote) {
           )}
         </>,
       };
+
+    case 'attendance': {
+      const going = u.attendance === 'attending';
+      const day = u.planned_date
+        ? new Date(u.planned_date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+        : null;
+      return {
+        badge: <TypeBadge update={u} size={20} />,
+        headline: <>
+          <span className="font-semibold" style={{ color: going ? '#16a34a' : '#dc2626' }}>
+            {going ? 'is attending' : 'can’t make'}
+          </span>{' '}
+          <span className="font-semibold" style={{ color: '#1C1C1C' }}>{u.session_name}</span>
+          {day && <span style={{ color: '#6b7280' }}> on {day}</span>}
+        </>,
+        chips: u.note ? <span className="italic truncate max-w-[260px]" title={u.note}>&ldquo;{u.note}&rdquo;</span> : null,
+      };
+    }
 
     case 'pb':
       return {

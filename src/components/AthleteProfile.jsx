@@ -76,8 +76,14 @@ export default function AthleteProfile({
   onAddInjuryEntry, onUpdateInjuryEntry, onDeleteInjuryEntry,
   onSavePerformanceBrag, onSaveReportMetrics,
   onDeleteRagEntry, onUpdatePhysioEntry, onDeletePhysioEntry,
+  // Optional: (tabId) => void — fired on mount and every tab switch so
+  // the parent can remember which tab was open and restore straight to
+  // it after a page reload (see App.jsx's nav persistence).
+  onActiveTabChange,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+
+  useEffect(() => { onActiveTabChange?.(activeTab); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Physical Development sub-tab state — persisted across top-level tab
   // switches for the lifetime of the open profile. Defaults to
   // 'programme' now that Overview (RAG/notes) has moved to Goals &

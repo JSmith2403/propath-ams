@@ -1,9 +1,34 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { resolve } from 'node:path';
+
+// In production Vercel rewrites /athlete → /athlete.html (vercel.json). The
+// dev server has no such rewrite, so mirror it here — otherwise /athlete in
+// dev would serve index.html and the athlete install metadata would differ
+// from what ships.
+const athleteHtmlDevRewrite = () => ({
+  name: 'athlete-html-dev-rewrite',
+  configureServer(server) {
+    server.middlewares.use((req, _res, next) => {
+      const path = (req.url || '').split('?')[0];
+      if (path === '/athlete') req.url = '/athlete.html' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
+      next();
+    });
+  },
+});
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        athlete: resolve(__dirname, 'athlete.html'),
+      },
+    },
+  },
   plugins: [
+    athleteHtmlDevRewrite(),
     react(),
     // PWA / service worker.
     //   • manifest: false  → we ship our own /manifest.json (referenced by
