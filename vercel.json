@@ -5,8 +5,20 @@
       "destination": "/athlete.html"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/athlete/:path*",
       "destination": "/index.html"
+    },
+    {
+      "source": "/wellness/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/family/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/coach.html"
     }
   ],
   "crons": [

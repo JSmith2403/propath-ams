@@ -28,6 +28,7 @@ import MessagesView from './components/messages/MessagesView';
 import SafeguardingView from './components/messages/SafeguardingView';
 import TimetableView from './components/timetable/TimetableView';
 import { useStaffUnread } from './hooks/useStaffUnread';
+import { setAppBadgeCount } from './utils/appBadge';
 
 // ── Navigation persistence ──────────────────────────────────────────────────
 // Remembers the coach's last top-level view, selected athlete, and (if
@@ -180,6 +181,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const { wellnessMap } = useWellnessRoster(visibleAthletes.map(a => a.id));
   // Unread athlete replies — badge on the Messages nav item.
   const { count: messagesUnread, refresh: refreshMessagesUnread } = useStaffUnread(!isExternal);
+  useEffect(() => { setAppBadgeCount(messagesUnread); }, [messagesUnread]);
 
   if (loading) return <LoadingSpinner message="Loading ProPath…" />;
 

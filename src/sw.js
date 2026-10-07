@@ -19,7 +19,8 @@ registerRoute(
   new NetworkOnly()
 );
 
-// SPA fallback for navigations — same denylist as the previous config.
+// SPA fallback for navigations (coach app → coach.html, the shell that installs
+// as a full-screen app on iPhone; athlete / wellness / family routes are denied below) — same denylist as the previous config.
 // Athlete-app + wellness routes hit Supabase/session checks immediately
 // on load; let them go to the network rather than serving a (possibly
 // stale) cached SPA shell.
@@ -31,7 +32,7 @@ registerRoute(
 // coach app's own login screen instead. Same class of bug as the two
 // earlier per-athlete-URL fixes — caught because it did exactly that.
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL('/index.html'), {
+  new NavigationRoute(createHandlerBoundToURL('/coach.html'), {
     denylist: [/^\/api\//, /^\/athlete(\/|$)/, /^\/wellness\//, /^\/family\//],
   })
 );

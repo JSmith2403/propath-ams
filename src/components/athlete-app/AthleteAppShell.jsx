@@ -1,4 +1,4 @@
-import { useState, useMemo, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import TabBar from './TabBar';
@@ -8,7 +8,8 @@ import WellnessCheckInGate from './WellnessCheckInGate';
 import TimetableGate from './TimetableGate';
 import NotificationPrompt from './NotificationPrompt';
 import InboxSheet from './InboxSheet';
-import { Bell } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
+import { setAppBadgeCount } from '../../utils/appBadge';
 import { useAthleteMessages } from '../../hooks/useAthleteMessages';
 import { useChatRooms } from '../../hooks/useChatRooms';
 
@@ -60,7 +61,11 @@ export default function AthleteAppShell({ athlete }) {
   const [inboxOpen, setInboxOpen] = useState(() => searchParams.get('inbox') === '1');
   const initialRoomId = searchParams.get('room');
 
+  // Unread count on the app icon itself, not just inside the app.
+  useEffect(() => { setAppBadgeCount(unreadCount); }, [unreadCount]);
+
   const handleTabChange = (id) => {
+    if (id === 'messages') { setInboxOpen(true); return; }
     if (id === 'resources') {
       if (activeTab !== 'train') setActive('train');
       setScrollToResourcesNonce(n => n + 1);
@@ -96,7 +101,7 @@ export default function AthleteAppShell({ athlete }) {
             className="relative p-1.5 rounded-full hover:bg-ink-50"
             aria-label={unreadCount ? `Messages, ${unreadCount} unread` : 'Messages'}
           >
-            <Bell size={18} className="text-ink-600" />
+            <MessageCircle size={18} className="text-ink-600" />
             {unreadCount > 0 && (
               <span
                 className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
@@ -108,6 +113,23 @@ export default function AthleteAppShell({ athlete }) {
           </button>
           <img src={logo} alt="ProPath" style={{ height: '20px' }} />
         </header>
+
+        {/* Unmissable "you have messages" strip — tap to open the inbox. */}
+        {unreadCount > 0 && !inboxOpen && (
+          <button
+            onClick={() => setInboxOpen(true)}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-meta font-semibold text-white"
+            style={{ backgroundColor: '#dc2626' }}
+          >
+            <MessageCircle size={16} className="shrink-0" />
+            <span className="flex-1">
+              {unreadCount === 1 ? '1 new message' : `${unreadCount} new messages`} — tap to read
+            </span>
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-white text-[11px] font-bold flex items-center justify-center" style={{ color: '#dc2626' }}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          </button>
+        )}
 
         <main className="flex-1 overflow-y-auto pb-24">
           {activeTab === 'train' && (
@@ -126,7 +148,7 @@ export default function AthleteAppShell({ athlete }) {
           </Suspense>
         </main>
 
-        <TabBar active={activeTab} onChange={handleTabChange} />
+        <TabBar active={activeTab} onChange={handleTabChange} badges={{ messages: unreadCount }} />
       </div>
       {inboxOpen && (
         <InboxSheet

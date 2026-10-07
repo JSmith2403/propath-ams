@@ -24,6 +24,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         athlete: resolve(__dirname, 'athlete.html'),
+        coach: resolve(__dirname, 'coach.html'),
       },
     },
   },
