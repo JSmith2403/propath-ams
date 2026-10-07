@@ -6,6 +6,7 @@
 // functions) and this file dispatches to them. The public URLs are:
 //   /api/athlete-auth/setup | me | status | reset | accounts
 //   /api/athlete-auth/request-setup | setup-status | complete-setup
+//   /api/athlete-auth/family-view   (public, parent read-only link)
 //
 // Add a new action by dropping a handler in api/_lib/athlete-auth/ and
 // registering it below — it won't cost another function.
@@ -16,12 +17,14 @@ import status from '../_lib/athlete-auth/status.js';
 import reset from '../_lib/athlete-auth/reset.js';
 import accounts from '../_lib/athlete-auth/accounts.js';
 import { requestSetup, setupStatus, completeSetup } from '../_lib/athlete-auth/athlete-setup.js';
+import familyView from '../_lib/athlete-auth/family.js';
 
 const HANDLERS = {
   setup, me, status, reset, accounts,
   'request-setup': requestSetup,
   'setup-status': setupStatus,
   'complete-setup': completeSetup,
+  'family-view': familyView,
 };
 
 export default async function handler(req, res) {

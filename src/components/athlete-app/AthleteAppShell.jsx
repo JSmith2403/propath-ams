@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import TabBar from './TabBar';
@@ -10,6 +10,7 @@ import NotificationPrompt from './NotificationPrompt';
 import InboxSheet from './InboxSheet';
 import { Bell } from 'lucide-react';
 import { useAthleteMessages } from '../../hooks/useAthleteMessages';
+import { useChatRooms } from '../../hooks/useChatRooms';
 
 const ProgressTab  = lazy(() => import('./ProgressTab'));
 const NutritionTab = lazy(() => import('./NutritionTab'));
@@ -50,9 +51,14 @@ export default function AthleteAppShell({ athlete }) {
     return VALID_TABS.has(requested) ? requested : 'train';
   });
   const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
-  const { messages, loading: messagesLoading, unreadCount, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
+  const { messages, loading: messagesLoading, unreadCount: teamUnread, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
+  // Group & private chats the athlete has been added to.
+  const chatMe = useMemo(() => ({ type: 'athlete', athleteId: athlete.id }), [athlete.id]);
+  const chat = useChatRooms(chatMe);
+  const unreadCount = teamUnread + chat.totalUnread;
   // ?inbox=1 is what a message push notification opens.
   const [inboxOpen, setInboxOpen] = useState(() => searchParams.get('inbox') === '1');
+  const initialRoomId = searchParams.get('room');
 
   const handleTabChange = (id) => {
     if (id === 'resources') {
@@ -129,6 +135,9 @@ export default function AthleteAppShell({ athlete }) {
           markRead={markRead}
           sendReply={sendReply}
           refresh={refreshMessages}
+          chat={chat}
+          athleteId={athlete.id}
+          initialRoomId={initialRoomId}
           onClose={() => setInboxOpen(false)}
         />
       )}

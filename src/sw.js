@@ -32,7 +32,7 @@ registerRoute(
 // earlier per-athlete-URL fixes — caught because it did exactly that.
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/index.html'), {
-    denylist: [/^\/api\//, /^\/athlete(\/|$)/, /^\/wellness\//],
+    denylist: [/^\/api\//, /^\/athlete(\/|$)/, /^\/wellness\//, /^\/family\//],
   })
 );
 

@@ -79,17 +79,21 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   // open instead (see NAV_STORAGE_KEY) — the role-restriction effect
   // further down still catches a restored view the current role can't see.
   // A push notification for an athlete reply opens "/?messages=<athleteId>".
+  // A group/private chat notification opens "/?chat=<roomId>".
   const [messagesAthleteId] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('messages') || null; } catch { return null; }
   });
+  const [messagesRoomId] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('chat') || null; } catch { return null; }
+  });
   const [view, setView] = useState(() => {
     if (role === 'external') return 'roster';
-    if (messagesAthleteId) return 'messages';
+    if (messagesAthleteId || messagesRoomId) return 'messages';
     return loadLastNav()?.view || 'updates';
   });
   useEffect(() => {
-    if (messagesAthleteId) window.history.replaceState({}, '', window.location.pathname);
-  }, [messagesAthleteId]);
+    if (messagesAthleteId || messagesRoomId) window.history.replaceState({}, '', window.location.pathname);
+  }, [messagesAthleteId, messagesRoomId]);
   const [selectedId, setSelectedId] = useState(() => loadLastNav()?.selectedId || null);
   const [profileNav, setProfileNav] = useState(() => {
     const saved = loadLastNav();
@@ -382,6 +386,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             athletes={visibleAthletes}
             senderName={userName || userEmail}
             initialAthleteId={messagesAthleteId}
+            initialRoomId={messagesRoomId}
             onUnreadChange={refreshMessagesUnread}
           />
         )}

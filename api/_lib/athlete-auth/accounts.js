@@ -28,11 +28,11 @@
 // row, because the athlete app's wellness check-in and legacy link depend on it
 // (same thing the coach's "Activate app" button does).
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { requireUser } from '../verifyUser.js';
 import {
   getSupabaseAdmin, isStaffUser, loadAthleteDisplay,
-  unknownPassword, usernameFromName, ATHLETE_EMAIL_DOMAIN,
+  unknownPassword, usernameFromName, hashClaim, ATHLETE_EMAIL_DOMAIN,
 } from '../athleteAuth.js';
 
 const MAX_PER_CALL = 100;
@@ -208,6 +208,50 @@ export default async function handler(req, res) {
       approved_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + APPROVED_WINDOW_MS).toISOString(),
     }).eq('id', row.id);
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  // ── Parent links (read-only view of a child's chats, no parent account) ────
+  if (body?.action === 'family-list') {
+    const athleteId = String(body.athlete_id || '');
+    if (!athleteId) { res.status(400).json({ ok: false, error: 'athlete_id is required' }); return; }
+    const { data, error } = await admin
+      .from('guardian_links')
+      .select('id, label, created_at, last_viewed_at, view_count, revoked_at')
+      .eq('athlete_id', athleteId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      const hint = /guardian_links/.test(error.message || '') ? ' (has sql/group_chats_parent_links_2026-10-09.sql been run?)' : '';
+      res.status(500).json({ ok: false, error: error.message + hint }); return;
+    }
+    res.status(200).json({ ok: true, links: data || [] });
+    return;
+  }
+
+  if (body?.action === 'family-create') {
+    const athleteId = String(body.athlete_id || '');
+    if (!athleteId) { res.status(400).json({ ok: false, error: 'athlete_id is required' }); return; }
+    const token = randomBytes(24).toString('base64url');   // 192 bits — unguessable
+    const { data, error } = await admin.from('guardian_links').insert({
+      athlete_id: athleteId,
+      label: String(body.label || '').trim().slice(0, 40) || null,
+      token_hash: hashClaim(token),
+      created_by: user.id,
+    }).select('id').single();
+    if (error) {
+      const hint = /guardian_links/.test(error.message || '') ? ' (has sql/group_chats_parent_links_2026-10-09.sql been run?)' : '';
+      res.status(500).json({ ok: false, error: error.message + hint }); return;
+    }
+    // The link is only ever shown now — just a hash is stored.
+    res.status(200).json({ ok: true, link_id: data.id, token });
+    return;
+  }
+
+  if (body?.action === 'family-revoke') {
+    const { error } = await admin.from('guardian_links')
+      .update({ revoked_at: new Date().toISOString() }).eq('id', String(body.link_id || '')).is('revoked_at', null);
+    if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
     res.status(200).json({ ok: true });
     return;
   }

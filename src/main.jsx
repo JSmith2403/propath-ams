@@ -65,6 +65,8 @@ const App = lazy(() => import('./App.jsx'))
 
 const WellnessFormPage  = lazy(() => import('./components/wellness/WellnessFormPage.jsx'))
 const AthleteAppPage    = lazy(() => import('./components/athlete-app/AthleteAppPage.jsx'))
+// Parent/guardian read-only link — no login (see api/_lib/athlete-auth/family.js).
+const FamilyView        = lazy(() => import('./components/family/FamilyView.jsx'))
 // Stable, token-free entry point for PIN-login athletes (see
 // AthleteStableEntry's own doc comment) — this is what Add to Home
 // Screen should point at once an athlete has a PIN set up.
@@ -80,6 +82,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           element={
             <Suspense fallback={null}>
               <WellnessFormPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/family/:token"
+          element={
+            <Suspense fallback={null}>
+              <FamilyView />
             </Suspense>
           }
         />

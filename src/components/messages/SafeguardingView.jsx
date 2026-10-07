@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, Download, Search, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import SafeguardingChats from './SafeguardingChats';
 
 const GOLD = '#A58D69';
 const PAGE = 200;
@@ -24,7 +25,7 @@ function csvCell(v) {
  * between coaches and athletes. The underlying table can't be edited or
  * deleted (database trigger), so this is a reliable record for any review.
  */
-export default function SafeguardingView({ athletes = [] }) {
+function AthleteThreadsLog({ athletes = [] }) {
   const [athleteId, setAthleteId] = useState('');
   const [direction, setDirection] = useState('');
   const [from, setFrom] = useState('');
@@ -208,6 +209,32 @@ export default function SafeguardingView({ athletes = [] }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Safeguarding — two read-only logs behind one tab bar: each athlete's shared
+ * coaching-team thread, and every group / private chat.
+ */
+export default function SafeguardingView({ athletes = [] }) {
+  const [tab, setTab] = useState('threads');
+  const tabs = [['threads', 'Athlete threads'], ['chats', 'Group & private chats']];
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex gap-1 px-6 pt-3 border-b border-gray-200 bg-white shrink-0">
+        {tabs.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className="text-sm font-semibold px-4 py-2 -mb-px border-b-2 transition-colors"
+            style={tab === key ? { borderColor: GOLD, color: '#7a6748' } : { borderColor: 'transparent', color: '#6b7280' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'threads' ? <AthleteThreadsLog athletes={athletes} /> : <SafeguardingChats athletes={athletes} />}
     </div>
   );
 }

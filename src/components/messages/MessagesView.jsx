@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Send, Loader2, ArrowLeft, Bell, BellOff, MessageCircle, Megaphone, Check } from 'lucide-react';
+import { Search, Send, Loader2, ArrowLeft, Bell, BellOff, MessageCircle, Megaphone, Check, Plus, Users, UserRound, Settings2, Link2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { pushSupported, subscribeStaffToPush } from '../../utils/pushSubscribe';
 import MessageComposerModal from '../recent/MessageComposerModal';
+import RoomThread from './RoomThread';
+import ChatSetupModal from './ChatSetupModal';
+import ParentLinksModal from './ParentLinksModal';
+import { useChatRooms, roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
 
 const GOLD = '#A58D69';
 const COLS = 'id, athlete_id, title, body, sent_by, created_at, read_at, sender_type';
@@ -27,10 +31,10 @@ const initials = (name = '') => name.split(' ').map(s => s[0]).slice(0, 2).join(
  * the whole coaching team: any coach can read and reply, and the athlete sees
  * one thread. Everything is stored permanently (see the safeguarding log).
  */
-export default function MessagesView({ athletes = [], senderName, initialAthleteId, onUnreadChange }) {
+export default function MessagesView({ athletes = [], senderName, initialAthleteId, initialRoomId, onUnreadChange }) {
   const [recent, setRecent] = useState([]);              // latest messages across all athletes
   const [loadError, setLoadError] = useState(null);
-  const [selectedId, setSelectedId] = useState(initialAthleteId || null);
+  const [selectedId, setSelectedId] = useState(initialRoomId ? null : (initialAthleteId || null));
   const [thread, setThread] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -40,6 +44,22 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [notif, setNotif] = useState(() => (pushSupported() ? Notification.permission : 'unsupported'));
   const endRef = useRef(null);
+
+  // Group & direct chats this coach is in (the athlete threads below are the
+  // shared coach-team inbox).
+  const [myUserId, setMyUserId] = useState(null);
+  const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId || null);
+  const [setupMode, setSetupMode] = useState(null);       // null | 'create' | 'manage'
+  const [parentFor, setParentFor] = useState(null);        // athlete whose parent links are open
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setMyUserId(session?.user?.id || null));
+  }, []);
+  const chat = useChatRooms(myUserId ? { type: 'staff', userId: myUserId } : null);
+  const staffMe = useMemo(() => ({ type: 'staff', userId: myUserId }), [myUserId]);
+  const selectedRoom = chat.rooms.find(r => r.id === selectedRoomId) || null;
+  const hasSelection = !!(selectedId || selectedRoomId);
+  const pickAthlete = (id) => { setSelectedRoomId(null); setSelectedId(id); };
+  const pickRoom = (id) => { setSelectedId(null); setSelectedRoomId(id); };
 
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
 
@@ -160,17 +180,26 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
   return (
     <div className="flex-1 flex overflow-hidden p-0 md:p-4 gap-4">
       {/* ── Conversation list ── */}
-      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 shrink-0 bg-white md:rounded-xl border border-ink-100 overflow-hidden`}>
+      <div className={`${hasSelection ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 shrink-0 bg-white md:rounded-xl border border-ink-100 overflow-hidden`}>
         <div className="px-4 pt-4 pb-3 border-b border-ink-100">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-base font-bold text-ink-900">Messages</h1>
-            <button
-              onClick={() => setAnnounceOpen(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md text-white"
-              style={{ backgroundColor: GOLD }}
-            >
-              <Megaphone size={12} /> Announcement
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setSetupMode('create')}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md text-white"
+                style={{ backgroundColor: GOLD }}
+              >
+                <Plus size={12} /> New chat
+              </button>
+              <button
+                onClick={() => setAnnounceOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md border border-ink-200 text-ink-700 hover:bg-ink-50"
+                title="Send one message to many athletes' team threads"
+              >
+                <Megaphone size={12} /> Announce
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
@@ -199,7 +228,43 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
           </p>
         )}
 
-        <ul className="flex-1 overflow-y-auto divide-y divide-ink-100">
+        <div className="flex-1 overflow-y-auto">
+        {chat.rooms.length > 0 && (
+          <>
+            <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-400">Group &amp; private chats</p>
+            <ul className="divide-y divide-ink-100 border-b border-ink-100">
+              {chat.rooms.map(r => (
+                <li key={r.id}>
+                  <button
+                    onClick={() => pickRoom(r.id)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-ink-50"
+                    style={r.id === selectedRoomId ? { backgroundColor: 'rgba(165,141,105,0.12)' } : {}}
+                  >
+                    <div className="w-9 h-9 rounded-full bg-ink-100 flex items-center justify-center shrink-0 text-ink-600">
+                      {r.kind === 'group' ? <Users size={15} /> : <UserRound size={15} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className={`text-sm truncate ${r.unread ? 'font-bold text-ink-900' : 'font-medium text-ink-800'}`}>{roomTitle(r, staffMe)}</p>
+                        {r.last && <span className="text-[10px] text-ink-400 shrink-0">{short(r.last.created_at)}</span>}
+                      </div>
+                      <p className={`text-xs truncate ${r.unread ? 'text-ink-700' : 'text-ink-400'}`}>
+                        {r.last ? `${chat.isMine(r.last) ? 'You' : r.last.sender_name}: ${r.last.body}` : roomSubtitle(r)}
+                      </p>
+                    </div>
+                    {r.unread > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: '#dc2626' }}>
+                        {r.unread}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-400">Athletes · coaching team thread</p>
+          </>
+        )}
+        <ul className="divide-y divide-ink-100">
           {summaries.map(s => {
             const a = athleteById.get(s.athleteId);
             if (!a) return null;
@@ -207,7 +272,7 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
             return (
               <li key={s.athleteId}>
                 <button
-                  onClick={() => setSelectedId(s.athleteId)}
+                  onClick={() => pickAthlete(s.athleteId)}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-ink-50"
                   style={active ? { backgroundColor: 'rgba(165,141,105,0.12)' } : {}}
                 >
@@ -236,11 +301,47 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
           })}
           {summaries.length === 0 && <li className="px-4 py-8 text-center text-xs text-ink-400">No athletes match.</li>}
         </ul>
+        </div>
       </div>
 
       {/* ── Thread ── */}
-      <div className={`${selectedId ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col bg-white md:rounded-xl border border-ink-100 overflow-hidden`}>
-        {!selected ? (
+      <div className={`${hasSelection ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col bg-white md:rounded-xl border border-ink-100 overflow-hidden`}>
+        {selectedRoom ? (
+          <>
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-ink-100 shrink-0">
+              <button onClick={() => setSelectedRoomId(null)} className="md:hidden p-1 -ml-1 rounded hover:bg-ink-50" aria-label="Back">
+                <ArrowLeft size={18} />
+              </button>
+              <div className="w-8 h-8 rounded-full bg-ink-100 flex items-center justify-center text-ink-600">
+                {selectedRoom.kind === 'group' ? <Users size={14} /> : <UserRound size={14} />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-ink-900 truncate">{roomTitle(selectedRoom, staffMe)}</p>
+                <p className="text-[11px] text-ink-400 truncate">
+                  {roomSubtitle(selectedRoom)}
+                  {selectedRoom.kind === 'group' && selectedRoom.athletesCanPost === false ? ' · announcements only' : ''}
+                </p>
+              </div>
+              {selectedRoom.kind === 'group' && (
+                <button
+                  onClick={() => setSetupMode('manage')}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border border-ink-200 hover:bg-ink-50"
+                >
+                  <Settings2 size={12} /> Members
+                </button>
+              )}
+            </div>
+            <RoomThread
+              key={selectedRoom.id}
+              room={selectedRoom}
+              me={staffMe}
+              isMine={chat.isMine}
+              onRead={(id) => { chat.markRead(id); onUnreadChange?.(); }}
+              onSent={chat.refresh}
+              placeholder={`Message ${roomTitle(selectedRoom, staffMe).replace('Private · ', '')} as ${senderName || 'coach'}…`}
+            />
+          </>
+        ) : !selected ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
             <MessageCircle size={28} className="text-ink-300 mb-2" />
             <p className="text-sm text-ink-500">Pick an athlete to read or start a conversation.</p>
@@ -257,10 +358,17 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
               <div className="w-8 h-8 rounded-full bg-ink-100 flex items-center justify-center overflow-hidden text-[10px] font-bold text-ink-600">
                 {selected.photo ? <img src={selected.photo} alt="" className="w-full h-full object-cover" /> : initials(selected.name)}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-ink-900 truncate">{selected.name}</p>
                 <p className="text-[11px] text-ink-400">Visible to all coaches · saved for safeguarding</p>
               </div>
+              <button
+                onClick={() => setParentFor(selected)}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border border-ink-200 hover:bg-ink-50"
+                title="Read-only link so a parent can see this athlete's chats"
+              >
+                <Link2 size={12} /> Parent links
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5" style={{ backgroundColor: '#fafafa' }}>
@@ -317,6 +425,18 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
           </>
         )}
       </div>
+
+      {setupMode && (
+        <ChatSetupModal
+          mode={setupMode}
+          athletes={athletes}
+          room={setupMode === 'manage' ? selectedRoom : null}
+          myUserId={myUserId}
+          onClose={() => setSetupMode(null)}
+          onDone={(roomId) => { setSetupMode(null); chat.refresh(); if (roomId) pickRoom(roomId); }}
+        />
+      )}
+      {parentFor && <ParentLinksModal athlete={parentFor} onClose={() => setParentFor(null)} />}
 
       {announceOpen && (
         <MessageComposerModal
