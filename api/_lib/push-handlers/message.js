@@ -19,7 +19,7 @@ import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { requireUser } from '../verifyUser.js';
-import { sendPushToAthlete } from '../push.js';
+import { sendPushToAthlete, MESSAGE_PUSH } from '../push.js';
 
 const MAX_RECIPIENTS = 200;
 
@@ -117,7 +117,8 @@ export default async function handler(req, res) {
     try {
       const r = await sendPushToAthlete(admin, athleteId, {
         title: title || `Message from ${sentBy}`, body: (messageBody || title).slice(0, 140), url,
-      });
+        tag: `team-${athleteId}`,
+      }, MESSAGE_PUSH);
       pushed += r.sent;
     } catch (err) {
       console.error('[messages] push failed for', athleteId, err.message);

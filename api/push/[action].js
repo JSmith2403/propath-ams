@@ -7,6 +7,8 @@
 //   /api/push/timetable-publish — publish a week's timetable + notify athletes
 //   /api/push/chat-staff | chat-create | chat-members | chat-send
 //                               — group & direct chats (see push-handlers/chat.js)
+//   /api/push/subscribe-athlete | push-status | push-test
+//                               — athlete device registration, who-has-notifications, test push
 // Handlers live in api/_lib/push-handlers/ (underscore folders aren't deployed).
 
 import send from '../_lib/push-handlers/send.js';
@@ -15,6 +17,7 @@ import reply from '../_lib/push-handlers/reply.js';
 import subscribeStaff from '../_lib/push-handlers/subscribe-staff.js';
 import timetablePublish from '../_lib/push-handlers/timetable-publish.js';
 import { chatStaff, chatCreate, chatMembers, chatSend } from '../_lib/push-handlers/chat.js';
+import { subscribeAthlete, pushStatus, testPush } from '../_lib/push-handlers/diagnostics.js';
 
 const HANDLERS = {
   send, message, reply,
@@ -24,6 +27,9 @@ const HANDLERS = {
   'chat-create': chatCreate,
   'chat-members': chatMembers,
   'chat-send': chatSend,
+  'subscribe-athlete': subscribeAthlete,
+  'push-status': pushStatus,
+  'push-test': testPush,
 };
 
 export default async function handler(req, res) {

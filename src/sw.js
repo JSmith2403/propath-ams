@@ -38,6 +38,9 @@ registerRoute(
 );
 
 // ── Push notifications ──────────────────────────────────────────────────
+// Every push MUST show a notification (iOS revokes permission otherwise).
+// `tag` groups a chat's messages into one entry that updates in place; renotify
+// still buzzes the phone for each new message.
 self.addEventListener('push', (event) => {
   let payload = {};
   try {
@@ -53,24 +56,30 @@ self.addEventListener('push', (event) => {
     badge: '/icons/icon-192.png',
     data: { url: payload.url || '/' },
   };
+  if (payload.tag) { options.tag = payload.tag; options.renotify = true; }
 
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Focus an already-open tab on the target URL if one exists, otherwise
-// open a new one. Covers both the coach app and the athlete PWA.
+// Tapping a notification brings the app to the front AND opens the right place
+// (the chat that sent it). An already-open window is navigated to the target
+// URL instead of being left on whatever screen it was showing.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(targetUrl) && 'focus' in client) return client.focus();
+  event.waitUntil((async () => {
+    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = clientList.find(c => 'focus' in c);
+    if (existing) {
+      try { await existing.focus(); } catch (_) { /* fall through */ }
+      if ('navigate' in existing && existing.url !== targetUrl) {
+        try { await existing.navigate(targetUrl); } catch (_) { /* some browsers refuse — the app is still in front */ }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
-    })
-  );
+      return;
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
+  })());
 });
 
 // registerType: 'autoUpdate' — activate a new SW version immediately

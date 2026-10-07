@@ -7,6 +7,7 @@ import RoomThread from './RoomThread';
 import ChatSetupModal from './ChatSetupModal';
 import ParentLinksModal from './ParentLinksModal';
 import { useChatRooms, roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
+import { usePushStatus } from '../../hooks/usePushStatus';
 
 const GOLD = '#A58D69';
 const COLS = 'id, athlete_id, title, body, sent_by, created_at, read_at, sender_type';
@@ -55,6 +56,7 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
     supabase.auth.getSession().then(({ data: { session } }) => setMyUserId(session?.user?.id || null));
   }, []);
   const chat = useChatRooms(myUserId ? { type: 'staff', userId: myUserId } : null);
+  const push = usePushStatus(true);
   const staffMe = useMemo(() => ({ type: 'staff', userId: myUserId }), [myUserId]);
   const selectedRoom = chat.rooms.find(r => r.id === selectedRoomId) || null;
   const hasSelection = !!(selectedId || selectedRoomId);
@@ -361,6 +363,13 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-ink-900 truncate">{selected.name}</p>
                 <p className="text-[11px] text-ink-400">Visible to all coaches · saved for safeguarding</p>
+                {push.loaded && (
+                  <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: push.devices[selected.id] ? '#15803d' : '#b45309' }}>
+                    {push.devices[selected.id]
+                      ? <><Bell size={10} /> Will get a lock-screen alert</>
+                      : <><BellOff size={10} /> Hasn&rsquo;t turned notifications on — they won&rsquo;t see this until they open the app</>}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setParentFor(selected)}

@@ -11,6 +11,7 @@ import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import InstallPrompt from './components/InstallPrompt';
+import NotificationPrompt from './components/athlete-app/NotificationPrompt';
 // Lazy so a coach's page load never pays for the athlete-app bundle —
 // this only mounts for the rare case of a role='athlete' session
 // somehow landing on the coach app's own root (e.g. old install icon,
@@ -473,6 +474,7 @@ export default function App() {
         signOut={signOut}
       />
       <InstallPrompt />
+      {role !== 'external' && <NotificationPrompt staff />}
     </>
   );
 }

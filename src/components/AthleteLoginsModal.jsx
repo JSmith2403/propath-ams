@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, Copy, Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { X, Copy, Check, KeyRound, Loader2, ShieldCheck, Bell, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { usePushStatus, sendTestPush } from '../hooks/usePushStatus';
 
 const GOLD = '#A58D69';
 const POLL_MS = 8000;
@@ -51,6 +52,19 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
   const [codes, setCodes] = useState({});           // requestId → typed code
   const [approving, setApproving] = useState(null);
   const [requestError, setRequestError] = useState({}); // requestId → message
+  const push = usePushStatus(true);                    // who can receive notifications
+  const [testState, setTestState] = useState({});       // athleteId → message
+
+  const runTest = async (athleteId) => {
+    setTestState(prev => ({ ...prev, [athleteId]: 'Sending…' }));
+    const r = await sendTestPush(athleteId);
+    const msg = !r.ok ? (r.error || 'Couldn’t send.')
+      : r.total === 0 ? 'No device registered — they need to turn notifications on.'
+        : r.sent > 0 ? `Sent to ${r.sent} device${r.sent === 1 ? '' : 's'} — check their phone.`
+          : 'Device found but the push failed — ask them to reopen the app.';
+    setTestState(prev => ({ ...prev, [athleteId]: msg }));
+    push.refresh();
+  };
 
   const sorted = useMemo(
     () => [...athletes].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
@@ -247,6 +261,22 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                       <p className="text-sm text-gray-900 truncate">{a.name}</p>
                       <p className="text-[11px] text-gray-400">{acc ? `Username: ${acc.username || 'set up'}` : 'No login yet'}</p>
                     </div>
+                    {acc && (
+                      <div className="flex flex-col items-end gap-0.5 shrink-0">
+                        <span
+                          className="flex items-center gap-1 text-[11px]"
+                          style={{ color: push.devices[a.id] ? '#15803d' : '#9ca3af' }}
+                          title={push.devices[a.id] ? 'Can receive lock-screen notifications' : 'Has not turned notifications on'}
+                        >
+                          {push.devices[a.id] ? <Bell size={11} /> : <BellOff size={11} />}
+                          {push.devices[a.id] ? 'Alerts on' : 'No alerts'}
+                        </span>
+                        <button onClick={() => runTest(a.id)} className="text-[11px] text-gray-500 hover:text-gray-900 underline underline-offset-2">
+                          Send test
+                        </button>
+                        {testState[a.id] && <span className="text-[10px] text-gray-500 max-w-[170px] text-right leading-tight">{testState[a.id]}</span>}
+                      </div>
+                    )}
                     {acc?.username && (
                       <button
                         onClick={() => copy(`row-${a.id}`, inviteText(a.name, acc.username, appUrl))}

@@ -15,10 +15,15 @@ export function configureWebPush() {
   return true;
 }
 
-async function sendToSubscriptions(supabaseAdmin, subs, { title, body, url = '/' }) {
+// Messages should reach a locked phone promptly: urgency 'high' asks the push
+// service (Apple / Google) to deliver immediately, TTL keeps it for a day if the
+// phone is offline.
+export const MESSAGE_PUSH = { TTL: 24 * 60 * 60, urgency: 'high' };
+
+async function sendToSubscriptions(supabaseAdmin, subs, { title, body, url = '/', tag }, options = {}) {
   if (!subs || subs.length === 0) return { sent: 0, removed: 0, total: 0 };
 
-  const payload = JSON.stringify({ title, body, url });
+  const payload = JSON.stringify({ title, body, url, tag });
   const deadIds = [];
   let sent = 0;
 
@@ -28,7 +33,7 @@ async function sendToSubscriptions(supabaseAdmin, subs, { title, body, url = '/'
       keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth },
     };
     try {
-      await webpush.sendNotification(pushSubscription, payload);
+      await webpush.sendNotification(pushSubscription, payload, options);
       sent++;
     } catch (err) {
       if (err.statusCode === 404 || err.statusCode === 410) {
@@ -51,22 +56,22 @@ async function sendToSubscriptions(supabaseAdmin, subs, { title, body, url = '/'
  * Dead subscriptions (404/410) are cleaned up automatically.
  * Returns { sent, removed, total }.
  */
-export async function sendPushToAthlete(supabaseAdmin, athleteId, payload) {
+export async function sendPushToAthlete(supabaseAdmin, athleteId, payload, options) {
   const { data: subs, error } = await supabaseAdmin
     .from('push_subscriptions')
     .select('id, endpoint, keys_p256dh, keys_auth')
     .eq('athlete_id', athleteId);
   if (error) throw error;
-  return sendToSubscriptions(supabaseAdmin, subs, payload);
+  return sendToSubscriptions(supabaseAdmin, subs, payload, options);
 }
 
 /** Same, for coach devices (subscriptions stored against a user_id). */
-export async function sendPushToUsers(supabaseAdmin, userIds, payload) {
+export async function sendPushToUsers(supabaseAdmin, userIds, payload, options) {
   if (!userIds?.length) return { sent: 0, removed: 0, total: 0 };
   const { data: subs, error } = await supabaseAdmin
     .from('push_subscriptions')
     .select('id, endpoint, keys_p256dh, keys_auth')
     .in('user_id', userIds);
   if (error) throw error;
-  return sendToSubscriptions(supabaseAdmin, subs, payload);
+  return sendToSubscriptions(supabaseAdmin, subs, payload, options);
 }

@@ -14,7 +14,7 @@
 
 import { requireUser } from '../verifyUser.js';
 import { getSupabaseAdmin, isStaffUser } from '../athleteAuth.js';
-import { configureWebPush, sendPushToAthlete, sendPushToUsers } from '../push.js';
+import { configureWebPush, sendPushToAthlete, sendPushToUsers, MESSAGE_PUSH } from '../push.js';
 
 const MAX_BODY = 2000;
 const MAX_NAME = 80;
@@ -217,15 +217,15 @@ export async function chatSend(req, res) {
       const { data: members } = await admin.from('chat_members').select('user_id, athlete_id').eq('room_id', roomId).is('removed_at', null);
       const title = room.kind === 'group' ? (room.name || 'Group chat') : senderName;
       const preview = room.kind === 'group' ? `${senderName}: ${text}` : text;
-      const payload = { title, body: preview.slice(0, 140) };
+      const payload = { title, body: preview.slice(0, 140), tag: `room-${roomId}` };
 
       const staffTargets = (members || []).filter(m => m.user_id && m.user_id !== user.id).map(m => m.user_id);
       if (staffTargets.length) {
-        const r = await sendPushToUsers(admin, staffTargets, { ...payload, url: `/?chat=${roomId}` });
+        const r = await sendPushToUsers(admin, staffTargets, { ...payload, url: `/?chat=${roomId}` }, MESSAGE_PUSH);
         pushed += r.sent;
       }
       for (const m of (members || []).filter(x => x.athlete_id && x.athlete_id !== role.athlete_id)) {
-        const r = await sendPushToAthlete(admin, m.athlete_id, { ...payload, url: `/athlete?inbox=1&room=${roomId}` });
+        const r = await sendPushToAthlete(admin, m.athlete_id, { ...payload, url: `/athlete?inbox=1&room=${roomId}` }, MESSAGE_PUSH);
         pushed += r.sent;
       }
     }

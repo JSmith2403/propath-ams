@@ -161,7 +161,7 @@ export default function InstallPrompt() {
           </p>
           <p className="text-[12px] mt-1" style={{ color: '#cbd5e1' }}>
             {variant === 'ios'
-              ? 'Tap the share icon in Safari, then "Add to Home Screen".'
+              ? 'Tap the share icon in Safari, then "Add to Home Screen" — this is also what lets your phone show message notifications.'
               : 'One-tap install. Always-on link from your home screen.'}
           </p>
 

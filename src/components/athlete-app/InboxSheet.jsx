@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, MessageCircle, Send, Loader2, ArrowLeft, Users, UserRound, ChevronRight } from 'lucide-react';
 import RoomThread from '../messages/RoomThread';
 import { roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
+import { NotificationStatusStrip } from './NotificationPrompt';
 
 const GOLD = '#A58D69';
 
@@ -85,6 +86,9 @@ export default function InboxSheet({ messages, loading, markRead, sendReply, ref
             <X size={16} className="text-ink-500" />
           </button>
         </div>
+
+        {/* Why alerts might not be arriving, and the one-tap fix. */}
+        <NotificationStatusStrip athleteId={athleteId} />
 
         {/* ── List of conversations ── */}
         {current === 'list' && (

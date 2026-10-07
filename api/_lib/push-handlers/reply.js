@@ -10,7 +10,7 @@
 
 import { requireUser } from '../verifyUser.js';
 import { getSupabaseAdmin } from '../athleteAuth.js';
-import { configureWebPush, sendPushToUsers } from '../push.js';
+import { configureWebPush, sendPushToUsers, MESSAGE_PUSH } from '../push.js';
 
 const MAX_LENGTH = 2000;
 const MAX_PER_HOUR = 30;
@@ -75,7 +75,8 @@ export default async function handler(req, res) {
         title: name,
         body: text.slice(0, 140),
         url: `/?messages=${encodeURIComponent(roleRow.athlete_id)}`,
-      });
+        tag: `team-${roleRow.athlete_id}`,
+      }, MESSAGE_PUSH);
       pushed = r.sent;
     }
   } catch (err) {
