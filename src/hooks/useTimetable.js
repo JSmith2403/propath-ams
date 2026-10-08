@@ -17,6 +17,7 @@ import { AUTO_NOTE } from '../utils/timetable';
 export function useTimetable(athleteId, fromISO, toISO) {
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
@@ -29,8 +30,10 @@ export function useTimetable(athleteId, fromISO, toISO) {
       if (error) {
         console.warn('[useTimetable] load failed', error.message);
         setSlots([]);
+        setError(error.message || 'Could not load');
       } else {
         // 1:1 now works through tokens (see useOneToOne), not timetable slots.
+        setError(null);
         setSlots((data || []).filter(s => s.kind === 'session'));
       }
       setLoading(false);
@@ -75,5 +78,5 @@ export function useTimetable(athleteId, fromISO, toISO) {
   }, [slots, respondDay]);
 
   const unanswered = slots.filter(s => !s.status).length;
-  return { slots, loading, unanswered, respondDay, confirmRemaining, refresh };
+  return { slots, loading, error, unanswered, respondDay, confirmRemaining, refresh };
 }

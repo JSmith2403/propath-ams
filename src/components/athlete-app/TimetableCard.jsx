@@ -15,7 +15,7 @@ import { groupByDay, ONE_TO_ONE_OPEN } from '../../utils/timetable';
  * the chat with their coach where the request message has been posted.
  */
 export default function TimetableCard({ athleteId, timetable, focusNonce = 0, onOpenMessages }) {
-  const { slots, loading, unanswered, respondDay, confirmRemaining } = timetable;
+  const { slots, loading, error, unanswered, respondDay, confirmRemaining } = timetable;
   const rootRef = useRef(null);
   const [confirming, setConfirming] = useState(false);
   const { balance, requests, request } = useOneToOne(athleteId);
@@ -29,7 +29,23 @@ export default function TimetableCard({ athleteId, timetable, focusNonce = 0, on
   }, [focusNonce]);
   const days = useMemo(() => groupByDay(slots), [slots]);
 
-  if (loading || !slots.length) return null;
+  if (loading) return null;
+  // Never vanish silently — say why there's nothing to pick from.
+  if (!slots.length) {
+    return (
+      <div className="rounded-xl bg-white border border-ink-100 shadow-card px-4 py-3 flex items-center gap-3">
+        <CalendarClock size={18} className="text-ink-400 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-body font-semibold text-ink-900">Academy timetable</p>
+          <p className="text-micro text-ink-500">
+            {error
+              ? 'Couldn’t load the timetable — close and reopen the app, or tell your coach if it keeps happening.'
+              : 'Nothing published yet. Your coach posts next week’s sessions on Fridays — they’ll appear here.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
   const open = manualOpen ?? unanswered > 0;
 
   return (
