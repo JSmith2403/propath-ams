@@ -51,6 +51,10 @@ const App = lazy(() => import('./App.jsx'))
     // send it to /athlete rather than ever rendering the coach shell.
     // Reading the persisted session directly (not calling supabase.auth)
     // keeps this synchronous, so it runs before any component mounts.
+    if ((localStorage.getItem('propath-athlete-auth') || '').includes('@athletes.propath.internal')) {
+      window.location.replace('/athlete');
+      return;
+    }
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
