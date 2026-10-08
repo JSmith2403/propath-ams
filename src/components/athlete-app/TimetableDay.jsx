@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Ticket, Loader2 } from 'lucide-react';
-import { fmtRange, fmtTime, dayLabel, AUTO_NOTE, ONE_TO_ONE_OPEN } from '../../utils/timetable';
+import { fmtRange, fmtTime, dayLabel, ONE_TO_ONE_OPEN } from '../../utils/timetable';
 
 const GOLD = '#A58D69';
 
@@ -75,8 +75,7 @@ function RequestSheet({ date, balance, onSend, onClose }) {
 /**
  * TimetableDay — one day of the academy timetable as pills. The athlete taps the
  * ONE group session they're coming to (tapping another switches; tapping the
- * selected one again deselects). No selection = not attending that day. A note
- * box covers the odd late arrival / early leave.
+ * selected one again deselects). No selection = not attending that day.
  *
  * 1:1 is a locked placeholder ("coming soon") until the token system is final;
  * flip ONE_TO_ONE_OPEN in utils/timetable.js to enable the request flow.
@@ -85,10 +84,6 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
   const chosen = slots.find(s => s.status === 'attending') || null;
   const answered = slots.every(s => s.status);
   const noneSelected = answered && !chosen;
-  const savedNote = chosen ? (chosen.note && chosen.note !== AUTO_NOTE ? chosen.note : '') : '';
-
-  const [draft, setDraft] = useState(savedNote);
-  useEffect(() => { setDraft(savedNote); }, [savedNote, chosen?.id]);
   const [error, setError] = useState(null);
   const [sheet, setSheet] = useState(false);
   const [sentNotice, setSentNotice] = useState(false);
@@ -101,7 +96,6 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
 
   // Tap a session: switch to it, or — if it's already selected — deselect (not attending).
   const tapSession = (s) => run(() => onChoose(date, chosen?.id === s.id ? null : s.id, ''));
-  const saveNote = () => run(() => onChoose(date, chosen.id, draft.trim()));
 
   const sendRequest = async (d, t) => {
     const r = await onRequest(d, t);
@@ -142,26 +136,6 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
           {[...new Set(slots.map(s => s.location).filter(Boolean))].join(' · ')}
           {slots.find(s => s.notes)?.notes ? ` — ${slots.find(s => s.notes).notes}` : ''}
         </p>
-      )}
-
-      {chosen && (
-        <div className="mt-3">
-          <label className="block text-micro text-ink-500 mb-1" htmlFor={`note-${date}`}>
-            Sessions start together with a team talk. If you&rsquo;ll be late or leaving early, let your coach know:
-          </label>
-          <div className="flex gap-2">
-            <input
-              id={`note-${date}`} type="text" value={draft} maxLength={150}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (draft.trim() !== savedNote) saveNote(); } }}
-              placeholder="Optional, e.g. arriving 4:15"
-              className="flex-1 min-w-0 text-body border border-ink-200 rounded-lg px-3 py-2"
-            />
-            {draft.trim() !== savedNote && (
-              <button onClick={saveNote} className="px-3.5 rounded-lg text-meta font-bold text-white" style={{ backgroundColor: GOLD }}>Save</button>
-            )}
-          </div>
-        </div>
       )}
 
       {noTokens && (
