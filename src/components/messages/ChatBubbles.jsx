@@ -16,9 +16,9 @@ const initials = (name = '') => name.split(' ').map(s => s[0]).slice(0, 2).join(
  * ChatBubbles — a compact chat transcript shared by the coach Messages view,
  * the athlete app and the parent page.
  *   • a bubble holds only the message text (no name / time stacked inside it)
- *   • the sender's name sits above their first bubble, the time under their last
- *   • consecutive messages from the same person (within 10 min) stack tightly,
- *     with one avatar and one name per run
+ *   • the sender's name and avatar sit at the top of their run, the time under their last bubble
+ *   • every message has its own bubble; consecutive messages from the same person
+ *     (within 10 min) stack closely under ONE name and ONE avatar per run
  *   • yours: gold bubble on the right; everyone else: light grey on the left
  * Each message: { id, mine, name, body, title?, at, role?, seen? }
  * `showNames` labels other people's runs (group chats, parent view).
@@ -39,19 +39,24 @@ export default function ChatBubbles({ messages, showNames = true, emptyText = 'N
       {messages.map((m, i) => {
         const first = !sameRun(messages[i - 1], m);
         const last = !sameRun(m, messages[i + 1]);
+        // Every message keeps its own bubble. Inside a run the corners that face
+        // the neighbouring bubble are tightened, so a run reads as one group.
+        const corners = m.mine
+          ? `${first ? '' : 'rounded-tr-md'} ${last ? '' : 'rounded-br-md'}`
+          : `${first ? '' : 'rounded-tl-md'} ${last ? '' : 'rounded-bl-md'}`;
         return (
-          <div key={m.id} className={`flex items-end gap-2 ${m.mine ? 'justify-end' : 'justify-start'} ${first ? (i === 0 ? '' : 'mt-3.5') : 'mt-1'}`}>
+          <div key={m.id} className={`flex items-start gap-2 ${m.mine ? 'justify-end' : 'justify-start'} ${first ? (i === 0 ? '' : 'mt-4') : 'mt-[3px]'}`}>
             {!m.mine && (
-              // Avatar sits beside the LAST bubble of a run (chat-app convention); a spacer keeps the rest aligned.
-              last ? (
+              // One avatar per run, at the top beside the sender's name; a spacer keeps the rest aligned.
+              first ? (
                 <div
-                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold"
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-semibold"
                   style={{ backgroundColor: 'rgba(165,141,105,0.16)', color: '#7a6748' }}
                   aria-hidden="true"
                 >
                   {initials(m.name) || '·'}
                 </div>
-              ) : <div className="shrink-0 w-7" />
+              ) : <div className="shrink-0 w-8" />
             )}
 
             <div className={`flex flex-col max-w-[78%] ${m.mine ? 'items-end' : 'items-start'}`}>
@@ -61,7 +66,7 @@ export default function ChatBubbles({ messages, showNames = true, emptyText = 'N
                 </p>
               )}
               <div
-                className="rounded-2xl px-3.5 py-2"
+                className={`rounded-2xl px-3.5 py-2 ${corners}`}
                 style={m.mine
                   ? { backgroundColor: GOLD, color: '#fff' }
                   : { backgroundColor: '#f1f2f4', color: '#1f2937' }}
