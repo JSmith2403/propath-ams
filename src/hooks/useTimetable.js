@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { AUTO_NOTE } from '../utils/timetable';
 
 /**
- * useTimetable — the signed-in athlete's published timetable slots between two
- * dates (already filtered to their cohort by the database) plus their own
- * answers. `respond(slotId, status, note)` saves optimistically and rolls back
- * on failure; status is 'attending' | 'not_attending' | null (clear).
+ * useTimetable — the signed-in athlete's published group sessions between two
+ * dates (already filtered to their cohort by the database) plus their answers.
+ *
+ * Answers are ONE CHOICE PER DAY: `respondDay(date, slotId, note)` marks that
+ * session as attending and the day's other sessions as "chose the other one";
+ * `respondDay(date, null, reason)` = can't make it; `clearDay(date)` removes the
+ * day's answers. Updates are optimistic and roll back on failure.
  *
  * Degrades to an empty timetable if the timetable SQL hasn't been run.
  */
@@ -25,7 +29,8 @@ export function useTimetable(athleteId, fromISO, toISO) {
         console.warn('[useTimetable] load failed', error.message);
         setSlots([]);
       } else {
-        setSlots(data || []);
+        // 1:1 now works through tokens (see useOneToOne), not timetable slots.
+        setSlots((data || []).filter(s => s.kind === 'session'));
       }
       setLoading(false);
     })();
@@ -39,26 +44,28 @@ export function useTimetable(athleteId, fromISO, toISO) {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refresh]);
 
-  const respond = useCallback(async (slotId, status, note = '') => {
-    let prev;
-    setSlots(list => list.map(s => {
-      if (s.id !== slotId) return s;
-      prev = { status: s.status, note: s.note };
-      return { ...s, status: status || null, note: status ? (note || null) : null };
-    }));
-    const { error } = await supabase.rpc('set_timetable_response', {
-      p_slot_id: slotId,
-      p_status: status,
-      p_note: note || null,
+  const respondDay = useCallback(async (date, slotId, note = '', clear = false) => {
+    let before = [];
+    setSlots(list => {
+      before = list;
+      return list.map(s => {
+        if (s.slot_date !== date) return s;
+        if (clear) return { ...s, status: null, note: null };
+        if (slotId && s.id === slotId) return { ...s, status: 'attending', note: note || null };
+        return { ...s, status: 'not_attending', note: slotId ? AUTO_NOTE : (note || null) };
+      });
+    });
+    const { error } = await supabase.rpc('set_timetable_day', {
+      p_date: date, p_slot_id: slotId || null, p_note: note || null, p_clear: clear,
     });
     if (error) {
-      console.error('[useTimetable] respond failed', error);
-      setSlots(list => list.map(s => (s.id === slotId && prev ? { ...s, ...prev } : s)));
+      console.error('[useTimetable] respondDay failed', error);
+      setSlots(before);
       return { ok: false, error };
     }
     return { ok: true };
   }, []);
 
   const unanswered = slots.filter(s => !s.status).length;
-  return { slots, loading, unanswered, respond, refresh };
+  return { slots, loading, unanswered, respondDay, refresh };
 }

@@ -6,7 +6,7 @@ import WellnessAdherencePanel from './components/recent/WellnessAdherencePanel';
 import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
-import SessionTracker from './components/SessionTracker';
+import SessionsHub from './components/sessions/SessionsHub';
 import UserManagementView from './components/UserManagementView';
 import LoginScreen from './components/LoginScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
@@ -362,7 +362,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         )}
 
         {view === 'sessions' && !isExternal && (
-          <SessionTracker
+          <SessionsHub
             athletes={athletes}
             onNavigateToNote={handleNavigateToNote}
           />

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Lock } from 'lucide-react';
+import { CalendarClock, Lock, Ticket } from 'lucide-react';
 import { useTimetable } from '../../hooks/useTimetable';
-import TimetableSlotRow from './TimetableSlotRow';
-import { addDaysISO, dayLabel, groupByDay } from '../../utils/timetable';
+import { useOneToOne } from '../../hooks/useOneToOne';
+import TimetableDay from './TimetableDay';
+import { addDaysISO, groupByDay } from '../../utils/timetable';
 
 const TZ = 'Asia/Dubai';            // UAE — no daylight saving
 const OPEN_HOUR = 15;               // Sunday 3pm…
@@ -23,9 +24,9 @@ function uaeNow() {
  * Sunday it's wellness first, then this. Nothing else ever stacks.
  *
  * Appears on Sunday from 3pm (UAE) only, and only while the published
- * timetable for the coming week (Mon–Sun) has slots the athlete hasn't
- * answered. Every slot has a "can't make it" option, so nobody is ever stuck.
- * The Train-tab card has the same list for anyone who misses the pop-up.
+ * timetable for the coming week (Mon–Sun) has days the athlete hasn't answered.
+ * Each day is a row of pills — pick one session, or "Can't make it" — so nobody
+ * is ever stuck. The Train-tab card has the same list for anyone who misses it.
  */
 export default function TimetableGate({ athleteId, children }) {
   const now = uaeNow();
@@ -34,10 +35,11 @@ export default function TimetableGate({ athleteId, children }) {
   const to = addDaysISO(now.date, 7);          // following Sunday
 
   // Outside the Sunday window no athlete id is passed, so no query is made.
-  const { slots, loading, respond } = useTimetable(active ? athleteId : null, from, to);
+  const { slots, loading, respondDay } = useTimetable(active ? athleteId : null, from, to);
+  const { balance, requests, request } = useOneToOne(active ? athleteId : null);
 
   // Decide ONCE, when the timetable first loads, whether to block: only if
-  // there's something to answer. Without this, answering the last slot would
+  // there's something to answer. Without this, answering the last day would
   // make the screen vanish before the athlete can review or correct it —
   // they tap "Continue" instead.
   const [mode, setMode] = useState(() => (active ? 'checking' : 'skip'));   // checking | show | skip
@@ -50,10 +52,9 @@ export default function TimetableGate({ athleteId, children }) {
   if (mode === 'skip') return children;
   if (mode === 'checking') return null;
 
-  const unanswered = slots.filter(s => !s.status).length;
-  const answeredNow = slots.length - unanswered;
-  const allDone = unanswered === 0;
   const days = groupByDay(slots);
+  const answeredDays = days.filter(d => d.items.every(s => s.status)).length;
+  const allDone = answeredDays === days.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-ink-100">
@@ -64,19 +65,28 @@ export default function TimetableGate({ athleteId, children }) {
           </div>
           <h1 className="text-h2 font-bold text-ink-900">Next week&rsquo;s timetable</h1>
           <p className="text-meta mt-2 leading-relaxed text-ink-500">
-            Which sessions are you attending? Tap <strong>Attending</strong> or <strong>Can&rsquo;t make it</strong> for
-            each one so your coaches can plan.
+            Tap the session you&rsquo;re coming to each day — <strong>one per day</strong> — or <strong>Can&rsquo;t make it</strong>.
+            You can also ask for a 1:1.
           </p>
+          {balance && (
+            <p className="flex items-center justify-center gap-1.5 text-micro text-ink-500 mt-2">
+              <Ticket size={12} style={{ color: '#A58D69' }} /> 1:1 tokens: <strong className="text-ink-800">{balance.left} of {balance.monthly}</strong> left
+            </p>
+          )}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 space-y-3 pb-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 space-y-3 pb-2">
           {days.map(day => (
-            <div key={day.date} className="rounded-xl p-4 bg-white border border-ink-100 shadow-card">
-              <p className="text-micro font-bold uppercase text-ink-400 mb-2">{dayLabel(day.date)}</p>
-              <div className="space-y-4">
-                {day.items.map(s => <TimetableSlotRow key={s.id} slot={s} onRespond={respond} />)}
-              </div>
-            </div>
+            <TimetableDay
+              key={day.date}
+              date={day.date}
+              slots={day.items}
+              balance={balance}
+              requests={requests}
+              onChoose={respondDay}
+              onClear={(d) => respondDay(d, null, '', true)}
+              onRequest={request}
+            />
           ))}
         </div>
 
@@ -86,11 +96,11 @@ export default function TimetableGate({ athleteId, children }) {
             disabled={!allDone}
             className="w-full rounded-md py-3.5 text-body font-bold transition-all active:scale-[0.99] bg-gold-500 text-white hover:bg-gold-600 disabled:opacity-40 disabled:active:scale-100 shadow-xs"
           >
-            {allDone ? 'Continue' : `${answeredNow} of ${slots.length} answered`}
+            {allDone ? 'Continue' : `${answeredDays} of ${days.length} days answered`}
           </button>
           <p className="flex items-center justify-center gap-1.5 text-micro text-ink-400">
             <Lock size={11} />
-            Dashboard unlocks once you&rsquo;ve answered every session
+            Dashboard unlocks once you&rsquo;ve answered every day
           </p>
         </div>
       </div>

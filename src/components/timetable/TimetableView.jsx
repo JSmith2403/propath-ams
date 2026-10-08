@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
-  COHORT_OPTIONS, fmtRange, addDaysISO, mondayOf, slotAppliesTo, dayLabel,
+  COHORT_OPTIONS, fmtRange, addDaysISO, mondayOf, slotAppliesTo, dayLabel, AUTO_NOTE,
 } from '../../utils/timetable';
 
 const GOLD = '#A58D69';
@@ -42,20 +42,6 @@ function SlotForm({ weekStart, initial, onSave, onCancel, saving }) {
         <input type="time" value={form.start_time} onChange={(e) => set('start_time', e.target.value)} className={cls} aria-label="Start" />
         <span className="self-center text-gray-400 text-sm">to</span>
         <input type="time" value={form.end_time} onChange={(e) => set('end_time', e.target.value)} className={cls} aria-label="End" />
-        <select
-          value={form.kind}
-          onChange={(e) => {
-            const kind = e.target.value;
-            setForm(f => ({
-              ...f, kind,
-              title: ['Group session', '1:1 session', ''].includes(f.title) ? (kind === 'one_to_one' ? '1:1 session' : 'Group session') : f.title,
-            }));
-          }}
-          className={cls} aria-label="Type"
-        >
-          <option value="session">Group session</option>
-          <option value="one_to_one">1:1</option>
-        </select>
       </div>
       <div className="flex flex-wrap gap-2">
         <input value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Title" className={`${cls} flex-1 min-w-[140px]`} />
@@ -196,6 +182,18 @@ export default function TimetableView({ athletes = [] }) {
     await load();
   };
 
+  // The usual week in one click: Monday–Thursday, 4–5pm and 5–6pm (as drafts to edit, then publish).
+  const quickAddStandardWeek = async () => {
+    setError(null); setNotice(null);
+    const rows = [0, 1, 2, 3].flatMap(i => ([['16:00', '17:00'], ['17:00', '18:00']].map(([start_time, end_time]) => ({
+      slot_date: addDaysISO(weekStart, i), start_time, end_time, title: 'Group session', kind: 'session', cohorts: [],
+    }))));
+    const { error: insErr } = await supabase.from('timetable_slots').insert(rows);
+    if (insErr) { setError(insErr.message); return; }
+    setNotice('Added Monday–Thursday, 4–5pm and 5–6pm as drafts. Edit anything, then publish.');
+    await load();
+  };
+
   const publish = async () => {
     setPublishing(true); setError(null); setNotice(null);
     try {
@@ -241,7 +239,9 @@ export default function TimetableView({ athletes = [] }) {
     const eligible = athletes.filter(a => slotAppliesTo(s, a.cohort));
     const mine = responses.filter(r => r.slot_id === s.id);
     const attending = mine.filter(r => r.status === 'attending');
-    const declined = mine.filter(r => r.status === 'not_attending');
+    // Picking the other session that day is recorded as not_attending + AUTO_NOTE — an answer, not a decline.
+    const declined = mine.filter(r => r.status === 'not_attending' && r.note !== AUTO_NOTE);
+    const choseOther = mine.filter(r => r.status === 'not_attending' && r.note === AUTO_NOTE);
     const answeredIds = new Set(mine.map(r => r.athlete_id));
     const waiting = eligible.filter(a => !answeredIds.has(a.id));
     const open = expanded.has(s.id);
@@ -275,6 +275,7 @@ export default function TimetableView({ athletes = [] }) {
                 <span className="font-semibold text-red-600">{declined.length} {oneToOne ? 'not this week' : 'can\'t make it'}</span>
                 <span className="text-gray-300">·</span>
                 <span className="text-gray-500">{waiting.length} no response</span>
+                {choseOther.length > 0 && <><span className="text-gray-300">·</span><span className="text-gray-400">{choseOther.length} chose the other session</span></>}
                 {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
             )}
@@ -331,8 +332,9 @@ export default function TimetableView({ athletes = [] }) {
           <div>
             <h1 className="text-xl font-bold text-gray-900">Timetable</h1>
             <p className="text-xs text-gray-500 mt-0.5 max-w-md">
-              Build the week, publish it, and athletes confirm Attending / Can&rsquo;t make it for each session.
-              They&rsquo;re notified when you publish and get a pop-up on Sunday afternoon.
+              Build the week, publish it, and athletes pick ONE session per day (or can&rsquo;t make it) — add a note if
+              they can only make part of it. They&rsquo;re notified when you publish and get a pop-up on Sunday afternoon.
+              1:1s are requested separately and counted in Sessions &rarr; 1:1 tokens.
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -361,6 +363,14 @@ export default function TimetableView({ athletes = [] }) {
           >
             <Copy size={14} /> Copy last week
           </button>
+          {slots.length === 0 && (
+            <button
+              onClick={quickAddStandardWeek}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
+            >
+              <Plus size={14} /> Mon–Thu 4–5 &amp; 5–6
+            </button>
+          )}
         </div>
 
         {notice && <div className="mb-3 px-4 py-2.5 rounded-xl bg-green-50 border border-green-100 text-sm text-green-800">{notice}</div>}

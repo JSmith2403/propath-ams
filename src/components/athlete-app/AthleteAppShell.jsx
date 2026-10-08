@@ -60,6 +60,9 @@ export default function AthleteAppShell({ athlete }) {
   // ?inbox=1 is what a message push notification opens.
   const [inboxOpen, setInboxOpen] = useState(() => searchParams.get('inbox') === '1');
   const initialRoomId = searchParams.get('room');
+  // Set when we open the inbox straight onto the coaching-team chat (e.g. after a 1:1 request).
+  const [inboxStartOnTeam, setInboxStartOnTeam] = useState(false);
+  const openTeamChat = () => { refreshMessages(); setInboxStartOnTeam(true); setInboxOpen(true); };
 
   // Unread count on the app icon itself, not just inside the app.
   useEffect(() => { setAppBadgeCount(unreadCount); }, [unreadCount]);
@@ -138,6 +141,7 @@ export default function AthleteAppShell({ athlete }) {
               athleteName={athlete.name}
               scrollToResourcesNonce={scrollToResourcesNonce}
               onOpenNutrition={() => setActive('nutrition')}
+              onOpenMessages={openTeamChat}
             />
           )}
           <Suspense fallback={<Loading />}>
@@ -160,7 +164,8 @@ export default function AthleteAppShell({ athlete }) {
           chat={chat}
           athleteId={athlete.id}
           initialRoomId={initialRoomId}
-          onClose={() => setInboxOpen(false)}
+          startOnTeam={inboxStartOnTeam}
+          onClose={() => { setInboxOpen(false); setInboxStartOnTeam(false); }}
         />
       )}
       <InstallPrompt />

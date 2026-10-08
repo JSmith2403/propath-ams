@@ -15,10 +15,10 @@ const SAFEGUARD_NOTE = 'Messages are saved and can be seen by the ProPath coachi
  * the coaching team when that's all there is; once they're in group or private
  * chats it shows a list first. Opening a thread marks it read.
  */
-export default function InboxSheet({ messages, loading, markRead, sendReply, refresh, chat, athleteId, initialRoomId, onClose }) {
+export default function InboxSheet({ messages, loading, markRead, sendReply, refresh, chat, athleteId, initialRoomId, startOnTeam = false, onClose }) {
   const me = useMemo(() => ({ type: 'athlete', athleteId }), [athleteId]);
   const rooms = chat?.rooms || [];
-  const [view, setView] = useState(initialRoomId ? { room: initialRoomId } : null);   // null = default
+  const [view, setView] = useState(initialRoomId ? { room: initialRoomId } : (startOnTeam ? 'team' : null));   // null = default
   const current = view ?? (rooms.length ? 'list' : 'team');
   const room = current?.room ? rooms.find(r => r.id === current.room) : null;
 

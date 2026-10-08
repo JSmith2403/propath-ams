@@ -53,3 +53,15 @@ export function groupByDay(slots) {
 export function slotAppliesTo(slot, cohort) {
   return !slot.cohorts?.length || slot.cohorts.includes(cohort);
 }
+
+/** Stored in a response's note when an athlete picked the OTHER session that day
+ *  (so coaches can tell "chose the other one" from "can't come at all"). */
+export const AUTO_NOTE = '__other__';
+
+/** Placeholder monthly 1:1 allowance until packages are locked in. */
+export const DEFAULT_MONTHLY_TOKENS = 4;
+
+/** Today's date (YYYY-MM-DD) in UAE time. */
+export function todayUAE() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai' }).format(new Date());
+}
