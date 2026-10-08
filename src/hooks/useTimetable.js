@@ -8,8 +8,9 @@ import { AUTO_NOTE } from '../utils/timetable';
  *
  * Answers are ONE CHOICE PER DAY: `respondDay(date, slotId, note)` marks that
  * session as attending and the day's other sessions as "chose the other one";
- * `respondDay(date, null, reason)` = can't make it; `clearDay(date)` removes the
- * day's answers. Updates are optimistic and roll back on failure.
+ * `respondDay(date, null)` = not attending that day (no selection). A day with no
+ * answer at all is simply unanswered until they pick or confirm the week.
+ * Updates are optimistic and roll back on failure.
  *
  * Degrades to an empty timetable if the timetable SQL hasn't been run.
  */
@@ -66,6 +67,13 @@ export function useTimetable(athleteId, fromISO, toISO) {
     return { ok: true };
   }, []);
 
+  // "Confirm my week": every day still without an answer is recorded as not attending.
+  const confirmRemaining = useCallback(async () => {
+    const dates = [...new Set(slots.filter(s => !s.status).map(s => s.slot_date))];
+    const results = await Promise.all(dates.map(d => respondDay(d, null, '')));
+    return { ok: results.every(r => r.ok) };
+  }, [slots, respondDay]);
+
   const unanswered = slots.filter(s => !s.status).length;
-  return { slots, loading, unanswered, respondDay, refresh };
+  return { slots, loading, unanswered, respondDay, confirmRemaining, refresh };
 }

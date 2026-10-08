@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Lock, Ticket } from 'lucide-react';
+import { CalendarClock, Ticket } from 'lucide-react';
 import { useTimetable } from '../../hooks/useTimetable';
 import { useOneToOne } from '../../hooks/useOneToOne';
 import TimetableDay from './TimetableDay';
-import { addDaysISO, groupByDay } from '../../utils/timetable';
+import { addDaysISO, groupByDay, ONE_TO_ONE_OPEN } from '../../utils/timetable';
 
 const TZ = 'Asia/Dubai';            // UAE — no daylight saving
 const OPEN_HOUR = 15;               // Sunday 3pm…
@@ -35,7 +35,8 @@ export default function TimetableGate({ athleteId, children }) {
   const to = addDaysISO(now.date, 7);          // following Sunday
 
   // Outside the Sunday window no athlete id is passed, so no query is made.
-  const { slots, loading, respondDay } = useTimetable(active ? athleteId : null, from, to);
+  const { slots, loading, respondDay, confirmRemaining } = useTimetable(active ? athleteId : null, from, to);
+  const [saving, setSaving] = useState(false);
   const { balance, requests, request } = useOneToOne(active ? athleteId : null);
 
   // Decide ONCE, when the timetable first loads, whether to block: only if
@@ -53,8 +54,14 @@ export default function TimetableGate({ athleteId, children }) {
   if (mode === 'checking') return null;
 
   const days = groupByDay(slots);
-  const answeredDays = days.filter(d => d.items.every(s => s.status)).length;
-  const allDone = answeredDays === days.length;
+  const pickedDays = days.filter(d => d.items.some(s => s.status === 'attending')).length;
+
+  const confirm = async () => {
+    setSaving(true);
+    await confirmRemaining();       // days with no pick are recorded as not attending
+    setSaving(false);
+    setMode('skip');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-ink-100">
@@ -65,10 +72,10 @@ export default function TimetableGate({ athleteId, children }) {
           </div>
           <h1 className="text-h2 font-bold text-ink-900">Next week&rsquo;s timetable</h1>
           <p className="text-meta mt-2 leading-relaxed text-ink-500">
-            Tap the session you&rsquo;re coming to each day — <strong>one per day</strong> — or <strong>Can&rsquo;t make it</strong>.
-            You can also ask for a 1:1.
+            Tap the session you&rsquo;re coming to each day — <strong>one per day</strong>. Any day you don&rsquo;t pick
+            counts as not attending.
           </p>
-          {balance && (
+          {ONE_TO_ONE_OPEN && balance && (
             <p className="flex items-center justify-center gap-1.5 text-micro text-ink-500 mt-2">
               <Ticket size={12} style={{ color: '#A58D69' }} /> 1:1 tokens: <strong className="text-ink-800">{balance.left} of {balance.monthly}</strong> left
             </p>
@@ -84,7 +91,6 @@ export default function TimetableGate({ athleteId, children }) {
               balance={balance}
               requests={requests}
               onChoose={respondDay}
-              onClear={(d) => respondDay(d, null, '', true)}
               onRequest={request}
             />
           ))}
@@ -92,15 +98,14 @@ export default function TimetableGate({ athleteId, children }) {
 
         <div className="px-6 pt-3 pb-8 shrink-0 space-y-3">
           <button
-            onClick={() => setMode('skip')}
-            disabled={!allDone}
-            className="w-full rounded-md py-3.5 text-body font-bold transition-all active:scale-[0.99] bg-gold-500 text-white hover:bg-gold-600 disabled:opacity-40 disabled:active:scale-100 shadow-xs"
+            onClick={confirm}
+            disabled={saving}
+            className="w-full rounded-md py-3.5 text-body font-bold transition-all active:scale-[0.99] bg-gold-500 text-white hover:bg-gold-600 disabled:opacity-60 shadow-xs"
           >
-            {allDone ? 'Continue' : `${answeredDays} of ${days.length} days answered`}
+            {saving ? 'Saving…' : 'Confirm my week'}
           </button>
-          <p className="flex items-center justify-center gap-1.5 text-micro text-ink-400">
-            <Lock size={11} />
-            Dashboard unlocks once you&rsquo;ve answered every day
+          <p className="text-center text-micro text-ink-400">
+            {pickedDays === 0 ? 'No sessions picked — you\'ll be marked as not attending all week.' : `Attending ${pickedDays} of ${days.length} days.`}
           </p>
         </div>
       </div>

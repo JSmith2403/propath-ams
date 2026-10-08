@@ -131,6 +131,11 @@ export default function OneToOneTokens({ athletes = [] }) {
           requests give the token back. The allowance below is a placeholder until packages are set.
         </p>
 
+        <p className="mt-3 text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(165,141,105,0.12)', color: '#7a6748' }}>
+          Athletes can&rsquo;t request 1:1s yet — it shows as a locked &ldquo;coming soon&rdquo; pill. Set the allowances now and
+          it&rsquo;ll be switched on once the token system is final.
+        </p>
+
         {error && <div className="mt-4 px-4 py-3 rounded-xl border border-red-100 bg-red-50 text-sm text-red-600">{error}</div>}
 
         {loading ? (

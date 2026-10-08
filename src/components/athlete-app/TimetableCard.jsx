@@ -3,7 +3,7 @@ import { CalendarClock, ChevronDown, ChevronUp, CheckCircle2, Ticket } from 'luc
 import { useTimetable } from '../../hooks/useTimetable';
 import { useOneToOne } from '../../hooks/useOneToOne';
 import TimetableDay from './TimetableDay';
-import { addDaysISO, groupByDay, todayUAE } from '../../utils/timetable';
+import { addDaysISO, groupByDay, todayUAE, ONE_TO_ONE_OPEN } from '../../utils/timetable';
 
 /**
  * TimetableCard — the academy timetable on the Train tab: each published day
@@ -18,7 +18,8 @@ import { addDaysISO, groupByDay, todayUAE } from '../../utils/timetable';
 export default function TimetableCard({ athleteId, onOpenMessages }) {
   const today = todayUAE();
   const to = addDaysISO(today, 13);
-  const { slots, loading, unanswered, respondDay } = useTimetable(athleteId, today, to);
+  const { slots, loading, unanswered, respondDay, confirmRemaining } = useTimetable(athleteId, today, to);
+  const [confirming, setConfirming] = useState(false);
   const { balance, requests, request } = useOneToOne(athleteId);
   const [manualOpen, setManualOpen] = useState(null);
   const days = useMemo(() => groupByDay(slots), [slots]);
@@ -50,7 +51,7 @@ export default function TimetableCard({ athleteId, onOpenMessages }) {
 
       {open && (
         <div className="px-3 pb-3 pt-3 space-y-3 border-t border-ink-100 bg-ink-50">
-          {balance && (
+          {ONE_TO_ONE_OPEN && balance && (
             <p className="flex items-center gap-1.5 text-micro text-ink-500 px-1">
               <Ticket size={12} style={{ color: '#A58D69' }} />
               1:1 tokens: <strong className="text-ink-800">{balance.left} of {balance.monthly}</strong> left
@@ -65,11 +66,21 @@ export default function TimetableCard({ athleteId, onOpenMessages }) {
               balance={balance}
               requests={requests}
               onChoose={respondDay}
-              onClear={(d) => respondDay(d, null, '', true)}
               onRequest={request}
               onRequested={onOpenMessages}
             />
           ))}
+          {unanswered > 0 && (
+            <button
+              disabled={confirming}
+              onClick={async () => { setConfirming(true); await confirmRemaining(); setConfirming(false); }}
+              className="w-full rounded-xl py-3 text-body font-bold text-white disabled:opacity-60"
+              style={{ backgroundColor: '#A58D69' }}
+            >
+              {confirming ? 'Saving…' : 'Confirm my week'}
+            </button>
+          )}
+          <p className="text-micro text-ink-400 text-center">Days you don&rsquo;t pick a session count as not attending.</p>
         </div>
       )}
     </div>

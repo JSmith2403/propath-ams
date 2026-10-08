@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { ONE_TO_ONE_OPEN } from '../utils/timetable';
 
 /**
  * useOneToOne — the athlete's 1:1 token balance (rolling 30 days) and their own
@@ -16,7 +17,8 @@ export function useOneToOne(athleteId) {
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
   useEffect(() => {
-    if (!athleteId) return undefined;
+    // 1:1 is a locked placeholder for athletes for now — don't touch the token tables.
+    if (!athleteId || !ONE_TO_ONE_OPEN) return undefined;
     let cancelled = false;
     (async () => {
       const [{ data: bal, error: balErr }, { data: reqs }] = await Promise.all([

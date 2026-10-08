@@ -239,7 +239,7 @@ export default function TimetableView({ athletes = [] }) {
     const eligible = athletes.filter(a => slotAppliesTo(s, a.cohort));
     const mine = responses.filter(r => r.slot_id === s.id);
     const attending = mine.filter(r => r.status === 'attending');
-    // Picking the other session that day is recorded as not_attending + AUTO_NOTE — an answer, not a decline.
+    // Picking the other session that day is recorded as not_attending + AUTO_NOTE — an answer, not a decline. A day with no pick (confirmed) is a plain not_attending.
     const declined = mine.filter(r => r.status === 'not_attending' && r.note !== AUTO_NOTE);
     const choseOther = mine.filter(r => r.status === 'not_attending' && r.note === AUTO_NOTE);
     const answeredIds = new Set(mine.map(r => r.athlete_id));
@@ -272,7 +272,7 @@ export default function TimetableView({ athletes = [] }) {
               <button onClick={() => toggleExpanded(s.id)} className="mt-1.5 flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900">
                 <span className="font-semibold text-green-700">{attending.length} {oneToOne ? 'taking it' : 'attending'}</span>
                 <span className="text-gray-300">·</span>
-                <span className="font-semibold text-red-600">{declined.length} {oneToOne ? 'not this week' : 'can\'t make it'}</span>
+                <span className="font-semibold text-red-600">{declined.length} {oneToOne ? 'not this week' : 'not attending'}</span>
                 <span className="text-gray-300">·</span>
                 <span className="text-gray-500">{waiting.length} no response</span>
                 {choseOther.length > 0 && <><span className="text-gray-300">·</span><span className="text-gray-400">{choseOther.length} chose the other session</span></>}
@@ -307,7 +307,7 @@ export default function TimetableView({ athletes = [] }) {
               ))}
             </div>
             <div>
-              <p className="font-semibold text-red-600 mb-1">{oneToOne ? 'Not this week' : 'Can\'t make it'} ({declined.length})</p>
+              <p className="font-semibold text-red-600 mb-1">{oneToOne ? 'Not this week' : 'Not attending'} ({declined.length})</p>
               {declined.map(r => (
                 <p key={r.athlete_id} className="text-gray-700">
                   {nameById.get(r.athlete_id) || r.athlete_id}
@@ -332,9 +332,9 @@ export default function TimetableView({ athletes = [] }) {
           <div>
             <h1 className="text-xl font-bold text-gray-900">Timetable</h1>
             <p className="text-xs text-gray-500 mt-0.5 max-w-md">
-              Build the week, publish it, and athletes pick ONE session per day (or can&rsquo;t make it) — add a note if
-              they can only make part of it. They&rsquo;re notified when you publish and get a pop-up on Sunday afternoon.
-              1:1s are requested separately and counted in Sessions &rarr; 1:1 tokens.
+              Build the week, publish it, and athletes pick ONE session per day (no pick = not attending) — they can add a note if
+              they'll be late. They&rsquo;re notified when you publish and get a pop-up on Sunday afternoon.
+              1:1s are a locked placeholder for athletes for now; allowances are set in Sessions &rarr; 1:1 tokens.
             </p>
           </div>
           <div className="flex items-center gap-1.5">

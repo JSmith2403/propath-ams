@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Ticket, Loader2 } from 'lucide-react';
-import { fmtRange, fmtTime, dayLabel, AUTO_NOTE } from '../../utils/timetable';
+import { fmtRange, fmtTime, dayLabel, AUTO_NOTE, ONE_TO_ONE_OPEN } from '../../utils/timetable';
 
 const GOLD = '#A58D69';
 
@@ -9,10 +9,9 @@ function Pill({ selected, tone = 'gold', onClick, disabled, children }) {
     gold: selected
       ? { backgroundColor: GOLD, borderColor: GOLD, color: '#fff' }
       : { backgroundColor: '#fff', borderColor: '#d9dce1', color: '#374151' },
-    red: selected
-      ? { backgroundColor: '#dc2626', borderColor: '#dc2626', color: '#fff' }
-      : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#6b7280' },
-    ticket: { backgroundColor: 'rgba(165,141,105,0.10)', borderColor: GOLD, color: '#7a6748' },
+    ticket: disabled
+      ? { backgroundColor: '#f3f4f6', borderColor: '#e5e7eb', color: '#9ca3af' }
+      : { backgroundColor: 'rgba(165,141,105,0.10)', borderColor: GOLD, color: '#7a6748' },
   };
   return (
     <button
@@ -20,7 +19,7 @@ function Pill({ selected, tone = 'gold', onClick, disabled, children }) {
       onClick={onClick}
       disabled={disabled}
       aria-pressed={!!selected}
-      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-meta font-semibold transition-colors active:scale-[0.98] disabled:opacity-50"
+      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-meta font-semibold transition-colors active:scale-[0.98] ${disabled ? 'cursor-not-allowed' : ''}`}
       style={tones[tone]}
     >
       {children}
@@ -30,7 +29,7 @@ function Pill({ selected, tone = 'gold', onClick, disabled, children }) {
 
 const STATUS_LABEL = { requested: 'Requested', confirmed: 'Confirmed ✓', declined: 'Declined', completed: 'Done', cancelled: 'Cancelled' };
 
-/** Sheet for asking a coach for a 1:1 on a given day. */
+/** Sheet for asking a coach for a 1:1 on a given day (switched on with ONE_TO_ONE_OPEN). */
 function RequestSheet({ date, balance, onSend, onClose }) {
   const [time, setTime] = useState('14:00');
   const [busy, setBusy] = useState(false);
@@ -74,20 +73,22 @@ function RequestSheet({ date, balance, onSend, onClose }) {
 }
 
 /**
- * TimetableDay — one day of the academy timetable as pills. The athlete picks ONE
- * session (4:00–5:00 or 5:00–6:00) or "Can't make it", can add a note for coming
- * late / leaving early, and can ask for a 1:1 (uses a token and messages their
- * coach). `slots` are that day's published group sessions.
+ * TimetableDay — one day of the academy timetable as pills. The athlete taps the
+ * ONE group session they're coming to (tapping another switches; tapping the
+ * selected one again deselects). No selection = not attending that day. A note
+ * box covers the odd late arrival / early leave.
+ *
+ * 1:1 is a locked placeholder ("coming soon") until the token system is final;
+ * flip ONE_TO_ONE_OPEN in utils/timetable.js to enable the request flow.
  */
-export default function TimetableDay({ date, slots, balance, requests = [], onChoose, onClear, onRequest, onRequested }) {
+export default function TimetableDay({ date, slots, balance, requests = [], onChoose, onRequest, onRequested }) {
   const chosen = slots.find(s => s.status === 'attending') || null;
-  const declined = !chosen && slots.length > 0 && slots.every(s => s.status === 'not_attending');
-  const savedNote = chosen
-    ? (chosen.note || '')
-    : (declined ? (slots.find(s => s.note && s.note !== AUTO_NOTE)?.note || '') : '');
+  const answered = slots.every(s => s.status);
+  const noneSelected = answered && !chosen;
+  const savedNote = chosen ? (chosen.note && chosen.note !== AUTO_NOTE ? chosen.note : '') : '';
 
   const [draft, setDraft] = useState(savedNote);
-  useEffect(() => { setDraft(savedNote); }, [savedNote, chosen?.id, declined]);
+  useEffect(() => { setDraft(savedNote); }, [savedNote, chosen?.id]);
   const [error, setError] = useState(null);
   const [sheet, setSheet] = useState(false);
   const [sentNotice, setSentNotice] = useState(false);
@@ -98,25 +99,25 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
     if (r && !r.ok) setError('Couldn’t save that — try again.');
   };
 
-  const tapSession = (s) => run(() => (chosen?.id === s.id ? onClear(date) : onChoose(date, s.id, '')));
-  const tapDecline = () => run(() => (declined ? onClear(date) : onChoose(date, null, '')));
-  const saveNote = () => run(() => onChoose(date, chosen ? chosen.id : null, draft.trim()));
+  // Tap a session: switch to it, or — if it's already selected — deselect (not attending).
+  const tapSession = (s) => run(() => onChoose(date, chosen?.id === s.id ? null : s.id, ''));
+  const saveNote = () => run(() => onChoose(date, chosen.id, draft.trim()));
 
-  const noTokens = balance && balance.left < 1;
   const sendRequest = async (d, t) => {
     const r = await onRequest(d, t);
     if (r.ok) { setSheet(false); if (onRequested) onRequested(r.message); else setSentNotice(true); }
     return r;
   };
 
-  const dayRequests = requests.filter(r => r.request_date === date && r.status !== 'cancelled');
-  const answered = slots.every(s => s.status);
+  const noTokens = ONE_TO_ONE_OPEN && balance && balance.left < 1;
+  const dayRequests = ONE_TO_ONE_OPEN ? requests.filter(r => r.request_date === date && r.status !== 'cancelled') : [];
 
   return (
     <div className="rounded-xl bg-white border border-ink-100 shadow-card p-4">
       <div className="flex items-center justify-between">
         <p className="text-micro font-bold uppercase text-ink-400">{dayLabel(date)}</p>
         {!answered && <span className="text-[10px] font-bold uppercase text-gold-600">Pick one</span>}
+        {noneSelected && <span className="text-[10px] font-semibold uppercase text-ink-400">Not attending</span>}
       </div>
 
       <div className="flex flex-wrap gap-2 mt-2.5">
@@ -125,10 +126,15 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
             {fmtRange(s.start_time, s.end_time)}
           </Pill>
         ))}
-        <Pill tone="red" selected={declined} onClick={tapDecline}>Can&rsquo;t make it</Pill>
-        <Pill tone="ticket" disabled={!!noTokens} onClick={() => setSheet(true)}>
-          <Ticket size={14} /> 1:1 · 1 token
-        </Pill>
+        {ONE_TO_ONE_OPEN ? (
+          <Pill tone="ticket" disabled={!!noTokens} onClick={() => setSheet(true)}>
+            <Ticket size={14} /> 1:1 · 1 token
+          </Pill>
+        ) : (
+          <Pill tone="ticket" disabled>
+            <Ticket size={14} /> 1:1 · coming soon
+          </Pill>
+        )}
       </div>
 
       {slots.some(s => s.location || s.notes) && (
@@ -138,19 +144,17 @@ export default function TimetableDay({ date, slots, balance, requests = [], onCh
         </p>
       )}
 
-      {(chosen || declined) && (
+      {chosen && (
         <div className="mt-3">
           <label className="block text-micro text-ink-500 mb-1" htmlFor={`note-${date}`}>
-            {chosen
-              ? 'Can only make part of it? Let your coach know (e.g. “arriving 4:30”, “leaving 5:30”).'
-              : 'Reason (optional)'}
+            Sessions start together with a team talk. If you&rsquo;ll be late or leaving early, let your coach know:
           </label>
           <div className="flex gap-2">
             <input
               id={`note-${date}`} type="text" value={draft} maxLength={150}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (draft.trim() !== savedNote) saveNote(); } }}
-              placeholder={chosen ? 'Optional note' : 'e.g. school trip, ill'}
+              placeholder="Optional, e.g. arriving 4:15"
               className="flex-1 min-w-0 text-body border border-ink-200 rounded-lg px-3 py-2"
             />
             {draft.trim() !== savedNote && (

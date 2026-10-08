@@ -58,6 +58,11 @@ export function slotAppliesTo(slot, cohort) {
  *  (so coaches can tell "chose the other one" from "can't come at all"). */
 export const AUTO_NOTE = '__other__';
 
+/** Athletes can request 1:1s (and see their token count) only when this is true.
+ *  Off while the token system is being finalised: the 1:1 pill shows as a locked
+ *  "coming soon" placeholder. Coaches still set allowances in Sessions → 1:1 tokens. */
+export const ONE_TO_ONE_OPEN = false;
+
 /** Placeholder monthly 1:1 allowance until packages are locked in. */
 export const DEFAULT_MONTHLY_TOKENS = 4;
 
