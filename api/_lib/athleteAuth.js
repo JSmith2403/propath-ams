@@ -5,7 +5,7 @@
 // earlier custom session/PIN table approach was replaced.
 
 import { createClient } from '@supabase/supabase-js';
-import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, createHash } from 'node:crypto';
 
 export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -22,24 +22,33 @@ export function sanitizeUsername(raw) {
 
 /** A long random password nobody ever sees. New athlete accounts start with
  *  one of these so they can't be signed into until the athlete sets their own
- *  password through the code-approval flow (see request-setup.js). */
+ *  password through a coach-issued reset (see accounts.js → issue-temp). */
 export function unknownPassword() {
   return randomBytes(32).toString('base64url');
 }
 
-/** 6-digit code shown on the athlete's screen and read out to a coach. */
-export function generateSetupCode() {
-  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+const PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no look-alikes (0/o, 1/l/i)
+
+/** Starting password like "k7mq-x4pw-9dre" (12 random characters). Given to the
+ *  athlete once; they must replace it with their own on first sign-in, and it
+ *  stops working after TEMP_PASSWORD_DAYS if unused. */
+export function generateTempPassword() {
+  const pick = () => PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  return [0, 1, 2].map(() => Array.from({ length: 4 }, pick).join('')).join('-');
+}
+
+export const TEMP_PASSWORD_DAYS = 7;
+
+/** user_metadata flags that make the athlete app demand a new password. */
+export function tempPasswordMeta() {
+  return {
+    must_change_password: true,
+    temp_password_expires_at: new Date(Date.now() + TEMP_PASSWORD_DAYS * 86_400_000).toISOString(),
+  };
 }
 
 export function hashClaim(token) {
   return createHash('sha256').update(String(token || '')).digest('hex');
-}
-
-export function claimMatches(token, expectedHash) {
-  const a = Buffer.from(hashClaim(token), 'hex');
-  const b = Buffer.from(String(expectedHash || ''), 'hex');
-  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /** Finds the auth user for an athlete username (the synthetic email), or

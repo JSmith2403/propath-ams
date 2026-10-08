@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import logo from '../../assets/Propath_Primary Logo_Black.png';
 import { supabase } from '../../lib/supabase';
-import AthleteAccountSetup from './AthleteAccountSetup';
+import AthleteResetRequest from './AthleteResetRequest';
 
 const GOLD = '#A58D69';
 const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
@@ -21,16 +21,12 @@ const ATHLETE_EMAIL_DOMAIN = 'athletes.propath.internal';
  * AthleteStableEntry is already listening for — this component doesn't
  * need to do anything else once the call succeeds.
  */
-export default function AthletePinLogin() {
+export default function AthletePinLogin({ notice = null }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  // A setup already in progress (page reloaded while waiting for the coach)
-  // resumes on the setup screen.
-  const [settingUp, setSettingUp] = useState(() => {
-    try { return !!sessionStorage.getItem('propath_setup_request'); } catch (_) { return false; }
-  });
+  const [forgot, setForgot] = useState(false);
 
   const canSubmit = username.trim() && password.trim().length >= 6;
 
@@ -50,12 +46,16 @@ export default function AthletePinLogin() {
     // On success, onAuthStateChange in AthleteStableEntry takes it from here.
   };
 
-  if (settingUp) return <AthleteAccountSetup onBack={() => setSettingUp(false)} />;
+  if (forgot) return <AthleteResetRequest onBack={() => setForgot(false)} />;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-ink-50 text-center">
       <img src={logo} alt="ProPath" style={{ width: '120px' }} className="mb-8" />
-      <h1 className="text-h2 font-bold text-ink-900 mb-6">Sign in</h1>
+      <h1 className="text-h2 font-bold text-ink-900 mb-2">Sign in</h1>
+      <p className="text-meta text-ink-500 mb-5 max-w-xs">
+        New? Use the username and starting password your coach sent you — you&rsquo;ll choose your own next.
+      </p>
+      {notice && <p className="text-meta text-red-600 mb-4 max-w-xs" role="alert">{notice}</p>}
 
       <form onSubmit={submit} className="w-full max-w-xs">
         <div className="space-y-3 mb-4">
@@ -99,11 +99,11 @@ export default function AthletePinLogin() {
 
       <button
         type="button"
-        onClick={() => setSettingUp(true)}
+        onClick={() => setForgot(true)}
         className="mt-5 text-meta font-semibold"
         style={{ color: GOLD }}
       >
-        First time here, or forgot your password?
+        Forgot your password?
       </button>
 
       <p className="text-micro text-ink-400 mt-4 max-w-xs">

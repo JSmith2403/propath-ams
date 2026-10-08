@@ -83,6 +83,7 @@ export default function Sidebar({
   onSignOut,
   isAdmin = false,
   messagesUnread = 0,
+  passwordRequests = 0,
 }) {
   const isRoster    = view === 'roster' || view === 'profile';
   const isDataEntry = view === 'dataentry';
@@ -203,6 +204,7 @@ export default function Sidebar({
               icon={Shield}
               label="User Management"
               active={view === 'users'}
+              badge={passwordRequests}
               onClick={() => onNavigate('users')}
             />
 

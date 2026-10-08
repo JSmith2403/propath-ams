@@ -5,7 +5,7 @@
 // in api/_lib/athlete-auth/ (folders starting with "_" are NOT deployed as
 // functions) and this file dispatches to them. The public URLs are:
 //   /api/athlete-auth/setup | me | status | reset | accounts
-//   /api/athlete-auth/request-setup | setup-status | complete-setup
+//   /api/athlete-auth/request-reset   (public, "forgot your password?")
 //   /api/athlete-auth/family-view   (public, parent read-only link)
 //
 // Add a new action by dropping a handler in api/_lib/athlete-auth/ and
@@ -16,14 +16,12 @@ import me from '../_lib/athlete-auth/me.js';
 import status from '../_lib/athlete-auth/status.js';
 import reset from '../_lib/athlete-auth/reset.js';
 import accounts from '../_lib/athlete-auth/accounts.js';
-import { requestSetup, setupStatus, completeSetup } from '../_lib/athlete-auth/athlete-setup.js';
+import { requestReset } from '../_lib/athlete-auth/reset-request.js';
 import familyView from '../_lib/athlete-auth/family.js';
 
 const HANDLERS = {
   setup, me, status, reset, accounts,
-  'request-setup': requestSetup,
-  'setup-status': setupStatus,
-  'complete-setup': completeSetup,
+  'request-reset': requestReset,
   'family-view': familyView,
 };
 

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import AthleteAppShell, { Loading } from './AthleteAppShell';
 import AthletePinLogin from './AthletePinLogin';
+import AthleteSetPassword from './AthleteSetPassword';
 import InstallPrompt from '../InstallPrompt';
 
 /**
@@ -18,11 +19,27 @@ import InstallPrompt from '../InstallPrompt';
  * no session → the PIN login screen.
  */
 export default function AthleteStableEntry() {
-  const [status, setStatus]   = useState('loading'); // loading | needs-login | ready | wrong-role
+  const [status, setStatus]   = useState('loading'); // loading | needs-login | set-password | ready | wrong-role
   const [athlete, setAthlete] = useState(null);
+  const [username, setUsername] = useState('');
+  const [notice, setNotice] = useState(null);
 
   const resolve = useCallback(async (session) => {
     if (!session) { setStatus('needs-login'); return; }
+    // A coach-issued starting password only gets them as far as choosing their own.
+    const meta = session.user?.user_metadata || {};
+    if (meta.must_change_password) {
+      if (meta.temp_password_expires_at && new Date(meta.temp_password_expires_at) < new Date()) {
+        setNotice('That starting password has expired. Tap "Forgot your password?" and your coach will send a new one.');
+        await supabase.auth.signOut();
+        setStatus('needs-login');      // keeps the notice above visible on the sign-in screen
+        return;
+      }
+      setUsername((session.user.email || '').split('@')[0]);
+      setStatus('set-password');
+      return;
+    }
+    setNotice(null);
     try {
       const res = await fetch('/api/athlete-auth/me', {
         method: 'POST',
@@ -95,11 +112,21 @@ export default function AthleteStableEntry() {
     );
   }
 
+  if (status === 'set-password') {
+    return (
+      <AthleteSetPassword
+        username={username}
+        onDone={() => supabase.auth.getSession().then(({ data: { session } }) => resolve(session))}
+        onSignOut={() => supabase.auth.signOut()}
+      />
+    );
+  }
+
   if (status === 'needs-login') {
     // InstallPrompt here (not just inside the logged-in shell) so a new
     // athlete can add the app to their home screen before they've even
     // signed in — it hides itself when already installed.
-    return (<><AthletePinLogin /><InstallPrompt /></>);
+    return (<><AthletePinLogin notice={notice} /><InstallPrompt /></>);
   }
 
   return <AthleteAppShell athlete={athlete} />;

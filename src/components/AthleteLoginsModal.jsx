@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, Copy, Check, KeyRound, Loader2, ShieldCheck, Bell, BellOff } from 'lucide-react';
+import { X, Copy, Check, KeyRound, Loader2, ShieldCheck, Bell, BellOff, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { usePushStatus, sendTestPush } from '../hooks/usePushStatus';
 
@@ -21,39 +21,50 @@ async function callAccounts(payload) {
   return json;
 }
 
-function inviteText(name, username, appUrl) {
+const ago = (iso) => {
+  const m = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
+
+function inviteText({ name, username, password }, appUrl, reset = false) {
   const first = (name || '').split(' ')[0] || 'there';
   return [
-    `Hi ${first}, your ProPath app login is ready.`,
+    reset ? `Hi ${first}, here's a new starting password for the ProPath app.` : `Hi ${first}, your ProPath app login is ready.`,
     '',
     `1. Open ${appUrl} on your phone`,
-    `2. Your username is: ${username}`,
-    `3. Tap "First time here, or forgot your password?", enter your username and send me the 6-digit code it shows. I'll approve it and you can choose your own password.`,
-    '4. Then add the app to your Home Screen.',
-  ].join('\n');
+    `2. Username: ${username}`,
+    `3. Starting password: ${password}`,
+    '',
+    "Sign in with those and you'll be asked to choose your own password straight away. The starting password stops working after 7 days if it isn't used.",
+    reset ? '' : 'Then add the app to your Home Screen (iPhone: Share → Add to Home Screen).',
+  ].filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n').trim();
 }
 
 /**
- * Coach tool: give every athlete their own login and approve their
- * set-password requests. Coaches only ever deal with USERNAMES — the athlete
- * chooses their own password, after a coach confirms the 6-digit code shown on
- * the athlete's screen. Passwords are never generated, shown or stored here.
+ * Coach tool: give athletes their login and reset forgotten passwords.
+ *   • Create login → a username plus a random STARTING password, shown once. The
+ *     athlete must choose their own on first sign-in (and it expires in 7 days
+ *     if unused), so you only ever hold a throwaway password.
+ *   • "Forgot your password?" on the athlete's phone lands here as a request.
+ *     Confirm it's really them (message them), then reset: a new starting
+ *     password is shown once — send it and the same first-sign-in process repeats.
  */
 export default function AthleteLoginsModal({ athletes, onClose }) {
   const appUrl = `${window.location.origin}/athlete`;
   const [accounts, setAccounts] = useState(null);   // { athleteId: { username } }
-  const [requests, setRequests] = useState([]);     // pending / approved set-password requests
+  const [requests, setRequests] = useState([]);     // reset requests waiting for a coach
   const [loadError, setLoadError] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [working, setWorking] = useState(false);
-  const [created, setCreated] = useState([]);       // logins just created
+  const [issued, setIssued] = useState([]);         // starting passwords just generated
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(null);
-  const [codes, setCodes] = useState({});           // requestId → typed code
-  const [approving, setApproving] = useState(null);
-  const [requestError, setRequestError] = useState({}); // requestId → message
-  const push = usePushStatus(true);                    // who can receive notifications
-  const [testState, setTestState] = useState({});       // athleteId → message
+  const [busyId, setBusyId] = useState(null);       // athlete id currently being reset
+  const [confirmReset, setConfirmReset] = useState(null);
+  const push = usePushStatus(true);                 // who can receive notifications
+  const [testState, setTestState] = useState({});   // athleteId → message
 
   const runTest = async (athleteId) => {
     setTestState(prev => ({ ...prev, [athleteId]: 'Sending…' }));
@@ -98,6 +109,8 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
     return next;
   });
 
+  const remember = (rows) => setIssued(prev => [...rows, ...prev.filter(p => !rows.some(r => r.athlete_id === p.athlete_id))]);
+
   const create = async (ids) => {
     setWorking(true);
     setError(null);
@@ -106,19 +119,24 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
     if (!json.ok) { setError(json.error || 'Something went wrong.'); return; }
     const made = json.results.filter(r => r.status === 'created');
     const failed = json.results.filter(r => r.status === 'error');
-    setCreated(prev => [...made, ...prev.filter(p => !made.some(m => m.athlete_id === p.athlete_id))]);
+    remember(made.map(m => ({ ...m, reset: false })));
     if (failed.length) setError(failed.map(f => `${f.name || f.athlete_id}: ${f.error}`).join(' · '));
     setSelected(prev => { const next = new Set(prev); made.forEach(m => next.delete(m.athlete_id)); return next; });
     await load();
   };
 
-  const decide = async (req, action) => {
-    setApproving(req.id);
-    setRequestError(prev => ({ ...prev, [req.id]: null }));
-    const json = await callAccounts({ action, request_id: req.id, code: codes[req.id] || '' });
-    setApproving(null);
-    if (!json.ok) { setRequestError(prev => ({ ...prev, [req.id]: json.error || 'Couldn\'t do that.' })); return; }
+  const reset = async (athleteId) => {
+    setBusyId(athleteId); setConfirmReset(null); setError(null);
+    const json = await callAccounts({ action: 'issue-temp', athlete_id: athleteId });
+    setBusyId(null);
+    if (!json.ok) { setError(json.error || 'Couldn’t reset that password.'); return; }
+    remember([{ athlete_id: athleteId, name: json.name, username: json.username, password: json.password, reset: true }]);
     await load();
+  };
+
+  const dismiss = async (req) => {
+    await callAccounts({ action: 'deny', request_id: req.id });
+    load();
   };
 
   const copy = async (key, text) => {
@@ -128,8 +146,6 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
   };
 
   const toCreate = [...selected].filter(id => accounts && !accounts[id]);
-  const waiting = requests.filter(r => r.status === 'pending');
-  const approved = requests.filter(r => r.status === 'approved');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
@@ -138,96 +154,75 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
           <div>
             <h2 className="text-lg font-bold text-gray-900">Athlete app logins</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Athletes sign in at <span className="font-medium">{appUrl}</span>. You give them a username —
-              they choose their own password.
+              Athletes sign in at <span className="font-medium">{appUrl}</span> with a username and a starting password
+              you send them. They choose their own password the first time they sign in.
             </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-gray-100"><X size={16} /></button>
         </div>
 
         <div className="px-5 pb-5 overflow-y-auto">
-          {/* ── Waiting for a coach to approve a code ── */}
-          {(waiting.length > 0 || approved.length > 0) && (
-            <div className="mb-4 rounded-xl border p-3" style={{ borderColor: GOLD, backgroundColor: 'rgba(165,141,105,0.08)' }}>
+          {/* ── Forgot-password requests ── */}
+          {requests.length > 0 && (
+            <div className="mb-4 rounded-xl border p-3" style={{ borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)' }}>
               <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-1">
-                <ShieldCheck size={14} style={{ color: GOLD }} /> Password requests
+                <ShieldCheck size={14} style={{ color: '#d97706' }} /> Password reset requests ({requests.length})
               </p>
-              <p className="text-[11px] text-gray-500 mb-2.5">
-                An athlete is setting up (or resetting) their password. Ask them for the 6-digit code on their screen
-                — only approve a code they've sent <em>you</em>.
+              <p className="text-[11px] text-gray-600 mb-2.5">
+                These athletes tapped &ldquo;Forgot your password?&rdquo;. Check it&rsquo;s really them first (message them) —
+                resetting stops their old password working straight away.
               </p>
               <div className="space-y-2">
-                {waiting.map(r => (
-                  <div key={r.id} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">
-                      {nameById.get(r.athlete_id) || r.username}
-                      <span className="text-xs text-gray-400 font-normal"> · {r.username}</span>
-                    </p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <input
-                        inputMode="numeric" maxLength={6} placeholder="6-digit code"
-                        value={codes[r.id] || ''}
-                        onChange={(e) => setCodes(prev => ({ ...prev, [r.id]: e.target.value.replace(/\D/g, '') }))}
-                        className="w-32 text-center tracking-widest font-mono text-sm rounded-lg border border-gray-200 py-1.5 focus:outline-none focus:border-[#A58D69]"
-                      />
-                      <button
-                        disabled={approving === r.id || (codes[r.id] || '').length !== 6}
-                        onClick={() => decide(r, 'approve')}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-md text-white disabled:opacity-50"
-                        style={{ backgroundColor: GOLD }}
-                      >
-                        {approving === r.id ? 'Checking…' : 'Approve'}
-                      </button>
-                      <button
-                        disabled={approving === r.id}
-                        onClick={() => decide(r, 'deny')}
-                        className="text-xs text-gray-500 hover:text-red-600 px-2 py-1.5"
-                      >
-                        Decline
-                      </button>
+                {requests.map(r => (
+                  <div key={r.id} className="bg-white rounded-lg px-3 py-2 border border-gray-100 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{nameById.get(r.athlete_id) || r.username}</p>
+                      <p className="text-[11px] text-gray-400">requested {ago(r.created_at)} · {r.username}</p>
                     </div>
-                    {requestError[r.id] && <p className="text-[11px] text-red-600 mt-1">{requestError[r.id]}</p>}
+                    <button
+                      onClick={() => reset(r.athlete_id)} disabled={busyId === r.athlete_id}
+                      className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md text-white disabled:opacity-50"
+                      style={{ backgroundColor: GOLD }}
+                    >
+                      {busyId === r.athlete_id ? 'Resetting…' : 'Reset & get new password'}
+                    </button>
+                    <button onClick={() => dismiss(r)} className="shrink-0 text-xs text-gray-500 hover:text-red-600 px-1.5">Dismiss</button>
                   </div>
-                ))}
-                {approved.map(r => (
-                  <p key={r.id} className="text-xs text-gray-600 px-1">
-                    <Check size={12} className="inline text-green-600 mr-1" />
-                    {nameById.get(r.athlete_id) || r.username} approved — waiting for them to choose a password.
-                  </p>
                 ))}
               </div>
             </div>
           )}
 
-          {/* ── Just created ── */}
-          {created.length > 0 && (
+          {/* ── Starting passwords just generated — shown once ── */}
+          {issued.length > 0 && (
             <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-gray-900">New logins created</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-semibold text-gray-900">Starting passwords — send these now</p>
                 <button
-                  onClick={() => copy('all', created.map(c => `${c.name}\n${inviteText(c.name, c.username, appUrl)}`).join('\n\n---\n\n'))}
+                  onClick={() => copy('all', issued.map(c => `${c.name}\n${inviteText(c, appUrl, c.reset)}`).join('\n\n---\n\n'))}
                   className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md text-white"
                   style={{ backgroundColor: GOLD }}
                 >
-                  {copied === 'all' ? <Check size={12} /> : <Copy size={12} />} Copy all invites
+                  {copied === 'all' ? <Check size={12} /> : <Copy size={12} />} Copy all
                 </button>
               </div>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Send each athlete their invite (it contains their username only). They set their own password.
+              <p className="text-[11px] text-gray-600 mb-2">
+                Shown only once. Each athlete is made to choose their own password when they first sign in.
+                Send each person their own message privately.
               </p>
               <div className="space-y-1.5">
-                {created.map(c => (
+                {issued.map(c => (
                   <div key={c.athlete_id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
-                      <p className="text-xs text-gray-500 font-mono">{c.username}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{c.name}{c.reset && <span className="ml-1.5 text-[10px] font-semibold text-amber-600">RESET</span>}</p>
+                      <p className="text-xs text-gray-500 font-mono truncate">{c.username} · {c.password}</p>
                     </div>
                     <button
-                      onClick={() => copy(c.athlete_id, inviteText(c.name, c.username, appUrl))}
-                      className="shrink-0 p-1.5 rounded hover:bg-gray-100 text-gray-500"
-                      aria-label={`Copy invite for ${c.name}`}
+                      onClick={() => copy(c.athlete_id, inviteText(c, appUrl, c.reset))}
+                      className="shrink-0 flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-50"
+                      aria-label={`Copy message for ${c.name}`}
                     >
-                      {copied === c.athlete_id ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === c.athlete_id ? <Check size={13} /> : <Copy size={13} />} Copy message
                     </button>
                   </div>
                 ))}
@@ -259,7 +254,12 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900 truncate">{a.name}</p>
-                      <p className="text-[11px] text-gray-400">{acc ? `Username: ${acc.username || 'set up'}` : 'No login yet'}</p>
+                      <p className="text-[11px] text-gray-400">
+                        {acc ? `Username: ${acc.username || 'set up'}` : 'No login yet'}
+                        {acc?.awaiting_first_signin && (
+                          <span className="ml-1.5 font-semibold text-amber-600">· waiting for first sign-in</span>
+                        )}
+                      </p>
                     </div>
                     {acc && (
                       <div className="flex flex-col items-end gap-0.5 shrink-0">
@@ -277,14 +277,19 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                         {testState[a.id] && <span className="text-[10px] text-gray-500 max-w-[170px] text-right leading-tight">{testState[a.id]}</span>}
                       </div>
                     )}
-                    {acc?.username && (
+                    {acc && (confirmReset === a.id ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => reset(a.id)} className="text-xs font-semibold px-2 py-1 rounded text-white bg-red-500">Yes, reset</button>
+                        <button onClick={() => setConfirmReset(null)} className="text-xs text-gray-500 px-1.5">Cancel</button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={() => copy(`row-${a.id}`, inviteText(a.name, acc.username, appUrl))}
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                        onClick={() => setConfirmReset(a.id)} disabled={busyId === a.id}
+                        className="shrink-0 flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
                       >
-                        {copied === `row-${a.id}` ? <Check size={11} /> : <Copy size={11} />} Copy invite
+                        <RotateCcw size={11} /> Reset password
                       </button>
-                    )}
+                    ))}
                   </div>
                 );
               })}

@@ -1,28 +1,28 @@
 // POST /api/athlete-auth/accounts
 // headers: Authorization: Bearer <coach Supabase session token>
 //
-// Coach-only. Coaches NEVER see or choose an athlete's password — they only
-// create the account (username) and approve the athlete's own set-password
-// request. Actions:
+// Coach-only. Actions:
 //
 //   { action: 'list' }
-//     → { ok, accounts: { [athlete_id]: { username } },
-//             requests: [{ id, athlete_id, username, status, created_at, expires_at }] }
-//     accounts = who already has a login; requests = set-password requests
-//     waiting for approval (or approved and waiting for the athlete).
+//     → { ok, accounts: { [athlete_id]: { username, awaiting_first_signin } },
+//             requests: [{ id, athlete_id, username, created_at }] }
+//     requests = athletes who tapped "Forgot your password?" and are waiting.
+//
+//   { action: 'pending-count' } → { ok, count }     (nav badge)
 //
 //   { action: 'provision', athlete_ids: [...] }
-//     → { ok, results: [{ athlete_id, name, status: 'created'|'exists'|'error', username? }] }
-//     Creates a real Supabase Auth account (+ athlete user_roles row) with a
-//     username derived from the athlete's name and a random password that is
-//     never shown to anyone. The athlete sets their own via the approval flow.
+//     → { ok, results: [{ athlete_id, name, status: 'created'|'exists'|'error', username?, password?, expires_at? }] }
+//     Creates a real account with a username from the athlete's name and a random
+//     STARTING password (returned once). The athlete must replace it with their own
+//     on first sign-in, and it stops working after 7 days if unused.
 //
-//   { action: 'approve', request_id, code }
-//     The athlete reads a 6-digit code off their screen to the coach (on
-//     another platform); the coach types it here. A match lets that athlete's
-//     browser set a password for the next 15 minutes.
+//   { action: 'issue-temp', athlete_id }
+//     → { ok, name, username, password, expires_at }
+//     New starting password for an existing athlete (a reset). Their old password
+//     stops working immediately, so confirm it's really them first. Closes the
+//     matching reset request.
 //
-//   { action: 'deny', request_id }
+//   { action: 'deny', request_id }       dismiss a reset request
 //
 // Also makes sure the athlete has an active athlete_app_tokens + wellness_tokens
 // row, because the athlete app's wellness check-in and legacy link depend on it
@@ -32,12 +32,10 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { requireUser } from '../verifyUser.js';
 import {
   getSupabaseAdmin, isStaffUser, loadAthleteDisplay,
-  unknownPassword, usernameFromName, hashClaim, ATHLETE_EMAIL_DOMAIN,
+  generateTempPassword, tempPasswordMeta, usernameFromName, hashClaim, ATHLETE_EMAIL_DOMAIN,
 } from '../athleteAuth.js';
 
 const MAX_PER_CALL = 100;
-const MAX_CODE_ATTEMPTS = 5;
-const APPROVED_WINDOW_MS = 15 * 60 * 1000;
 
 async function ensureAppAccess(admin, athleteId) {
   const { data: tok } = await admin
@@ -75,13 +73,16 @@ async function provisionOne(admin, athleteId, emailById) {
   const base = usernameFromName(display.athlete.name);
   let created = null;
   let username = base;
+  const password = generateTempPassword();
+  const meta = tempPasswordMeta();
   // Two athletes can share a name — retry with a numeric suffix if taken.
   for (let n = 1; n <= 9 && !created; n++) {
     username = n === 1 ? base : `${base}${n}`;
     const { data, error } = await admin.auth.admin.createUser({
       email: `${username}@${ATHLETE_EMAIL_DOMAIN}`,
-      password: unknownPassword(),
+      password,
       email_confirm: true,
+      user_metadata: meta,
     });
     if (!error) { created = data.user; break; }
     if (!/already.*(registered|exists)/i.test(error.message || '')) {
@@ -99,7 +100,7 @@ async function provisionOne(admin, athleteId, emailById) {
   }
 
   await ensureAppAccess(admin, athleteId);
-  return { athlete_id: athleteId, name, status: 'created', username };
+  return { athlete_id: athleteId, name, status: 'created', username, password, expires_at: meta.temp_password_expires_at };
 }
 
 export default async function handler(req, res) {
@@ -129,29 +130,38 @@ export default async function handler(req, res) {
     const { data: users } = await admin.auth.admin.listUsers({ perPage: 1000 });
     return new Map((users?.users || []).map(u => [u.id, u.email || '']));
   };
+  // Who still has an unused starting password (hasn't chosen their own yet).
+  const loadAwaiting = async () => {
+    const { data: users } = await admin.auth.admin.listUsers({ perPage: 1000 });
+    return new Set((users?.users || []).filter(u => u.user_metadata?.must_change_password).map(u => u.id));
+  };
 
   if (body?.action === 'list') {
     const { data: roles, error } = await admin
       .from('user_roles').select('user_id, athlete_id').eq('role', 'athlete');
     if (error) { res.status(500).json({ ok: false, error: error.message }); return; }
     const emailById = await loadEmails();
+    const awaiting = await loadAwaiting();
 
     const accounts = {};
     for (const r of roles || []) {
       if (!r.athlete_id) continue;
       const email = emailById.get(r.user_id) || '';
-      accounts[r.athlete_id] = { username: email.endsWith(`@${ATHLETE_EMAIL_DOMAIN}`) ? email.split('@')[0] : null };
+      accounts[r.athlete_id] = {
+        username: email.endsWith(`@${ATHLETE_EMAIL_DOMAIN}`) ? email.split('@')[0] : null,
+        awaiting_first_signin: awaiting.has(r.user_id),
+      };
     }
 
-    // Tidy up, then return anything still live. (Table missing → the SQL
-    // hasn't been run yet; the panel just shows no requests.)
+    // Reset requests still waiting. (Table missing → the SQL hasn't been run
+    // yet; the panel just shows no requests.)
     const nowIso = new Date().toISOString();
     await admin.from('athlete_setup_requests')
-      .update({ status: 'expired' }).in('status', ['pending', 'approved']).lt('expires_at', nowIso);
+      .update({ status: 'expired' }).eq('status', 'pending').lt('expires_at', nowIso);
     const { data: requests } = await admin
       .from('athlete_setup_requests')
-      .select('id, athlete_id, username, status, created_at, expires_at')
-      .in('status', ['pending', 'approved'])
+      .select('id, athlete_id, username, created_at')
+      .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
     res.status(200).json({ ok: true, accounts, requests: requests || [] });
@@ -172,43 +182,50 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (body?.action === 'approve' || body?.action === 'deny') {
-    const requestId = String(body.request_id || '');
-    if (!requestId) { res.status(400).json({ ok: false, error: 'request_id is required' }); return; }
+  if (body?.action === 'pending-count') {
+    const { count } = await admin.from('athlete_setup_requests')
+      .select('id', { count: 'exact', head: true }).eq('status', 'pending').gt('expires_at', new Date().toISOString());
+    res.status(200).json({ ok: true, count: count || 0 });
+    return;
+  }
 
-    const { data: row } = await admin
-      .from('athlete_setup_requests').select('*').eq('id', requestId).maybeSingle();
-    if (!row || row.status !== 'pending' || new Date(row.expires_at) < new Date()) {
-      res.status(409).json({ ok: false, error: 'That request has expired or was already handled.' });
-      return;
-    }
+  if (body?.action === 'deny') {
+    await admin.from('athlete_setup_requests').update({ status: 'denied' })
+      .eq('id', String(body.request_id || '')).eq('status', 'pending');
+    res.status(200).json({ ok: true });
+    return;
+  }
 
-    if (body.action === 'deny') {
-      await admin.from('athlete_setup_requests').update({ status: 'denied' }).eq('id', row.id);
-      res.status(200).json({ ok: true });
-      return;
-    }
+  if (body?.action === 'issue-temp') {
+    const athleteId = String(body.athlete_id || '');
+    if (!athleteId) { res.status(400).json({ ok: false, error: 'athlete_id is required' }); return; }
 
-    if (row.attempts >= MAX_CODE_ATTEMPTS) {
-      await admin.from('athlete_setup_requests').update({ status: 'denied' }).eq('id', row.id);
-      res.status(429).json({ ok: false, error: 'Too many wrong codes — the athlete needs to start again.' });
-      return;
-    }
-    if (String(body.code || '').replace(/\s/g, '') !== row.code) {
-      await admin.from('athlete_setup_requests').update({ attempts: row.attempts + 1 }).eq('id', row.id);
-      res.status(400).json({ ok: false, error: 'That code doesn\'t match what the athlete sees — check it with them.' });
-      return;
-    }
+    const { data: role } = await admin.from('user_roles').select('user_id').eq('athlete_id', athleteId).eq('role', 'athlete').maybeSingle();
+    if (!role) { res.status(404).json({ ok: false, error: "That athlete doesn't have a login yet." }); return; }
 
+    const password = generateTempPassword();
+    const meta = tempPasswordMeta();
+    const { error: updErr } = await admin.auth.admin.updateUserById(role.user_id, { password, user_metadata: meta });
+    if (updErr) { res.status(500).json({ ok: false, error: updErr.message }); return; }
+
+    const emailById = await loadEmails();
+    const email = emailById.get(role.user_id) || '';
+    const display = await loadAthleteDisplay(admin, athleteId);
+
+    // Close the matching request(s) so it leaves the coach's list.
     const { data: me } = await admin.from('user_roles').select('full_name').eq('user_id', user.id).maybeSingle();
     await admin.from('athlete_setup_requests').update({
-      status: 'approved',
-      approved_by: user.id,
-      approved_name: (me?.full_name || '').trim() || user.email || null,
-      approved_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + APPROVED_WINDOW_MS).toISOString(),
-    }).eq('id', row.id);
-    res.status(200).json({ ok: true });
+      status: 'used', used_at: new Date().toISOString(), approved_by: user.id,
+      approved_name: (me?.full_name || '').trim() || user.email || null, approved_at: new Date().toISOString(),
+    }).eq('athlete_id', athleteId).eq('status', 'pending');
+
+    res.status(200).json({
+      ok: true,
+      name: display.ok ? display.athlete.name : athleteId,
+      username: email.endsWith('@' + ATHLETE_EMAIL_DOMAIN) ? email.split('@')[0] : null,
+      password,
+      expires_at: meta.temp_password_expires_at,
+    });
     return;
   }
 

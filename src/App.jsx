@@ -29,6 +29,7 @@ import MessagesView from './components/messages/MessagesView';
 import SafeguardingView from './components/messages/SafeguardingView';
 import TimetableView from './components/timetable/TimetableView';
 import { useStaffUnread } from './hooks/useStaffUnread';
+import { usePasswordRequests } from './hooks/usePasswordRequests';
 import { setAppBadgeCount } from './utils/appBadge';
 
 // ── Navigation persistence ──────────────────────────────────────────────────
@@ -88,14 +89,18 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   const [messagesRoomId] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('chat') || null; } catch { return null; }
   });
+  const [deepView] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('view') || null; } catch { return null; }
+  });
   const [view, setView] = useState(() => {
     if (role === 'external') return 'roster';
     if (messagesAthleteId || messagesRoomId) return 'messages';
+    if (deepView === 'users' && role === 'admin') return 'users';
     return loadLastNav()?.view || 'updates';
   });
   useEffect(() => {
-    if (messagesAthleteId || messagesRoomId) window.history.replaceState({}, '', window.location.pathname);
-  }, [messagesAthleteId, messagesRoomId]);
+    if (messagesAthleteId || messagesRoomId || deepView) window.history.replaceState({}, '', window.location.pathname);
+  }, [messagesAthleteId, messagesRoomId, deepView]);
   const [selectedId, setSelectedId] = useState(() => loadLastNav()?.selectedId || null);
   const [profileNav, setProfileNav] = useState(() => {
     const saved = loadLastNav();
@@ -183,6 +188,8 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
   // Unread athlete replies — badge on the Messages nav item.
   const { count: messagesUnread, refresh: refreshMessagesUnread } = useStaffUnread(!isExternal);
   useEffect(() => { setAppBadgeCount(messagesUnread); }, [messagesUnread]);
+  // Athletes waiting on a password reset (admins handle these in User Management).
+  const passwordRequests = usePasswordRequests(isAdmin);
 
   if (loading) return <LoadingSpinner message="Loading ProPath…" />;
 
@@ -261,6 +268,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
           onSignOut={signOut}
           isAdmin={isAdmin}
           messagesUnread={messagesUnread}
+          passwordRequests={passwordRequests}
         />
       </div>
 
