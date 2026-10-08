@@ -8,10 +8,12 @@ import WellnessCheckInGate from './WellnessCheckInGate';
 import TimetableGate from './TimetableGate';
 import NotificationPrompt from './NotificationPrompt';
 import InboxSheet from './InboxSheet';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, CalendarClock } from 'lucide-react';
 import { setAppBadgeCount } from '../../utils/appBadge';
 import { useAthleteMessages } from '../../hooks/useAthleteMessages';
 import { useChatRooms } from '../../hooks/useChatRooms';
+import { useTimetable } from '../../hooks/useTimetable';
+import { addDaysISO, todayUAE } from '../../utils/timetable';
 
 const ProgressTab  = lazy(() => import('./ProgressTab'));
 const NutritionTab = lazy(() => import('./NutritionTab'));
@@ -53,6 +55,17 @@ export default function AthleteAppShell({ athlete }) {
   });
   const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
   const { messages, loading: messagesLoading, unreadCount: teamUnread, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
+  // The published timetable (today → end of next week). Held here so the gold banner
+  // and the Training-tab card share one set of answers.
+  const ttToday = todayUAE();
+  const ttState = useTimetable(athlete.id, ttToday, addDaysISO(ttToday, 13));
+  const timetable = useMemo(() => ({
+    ...ttState,
+    daysToConfirm: new Set(ttState.slots.filter(s => !s.status).map(s => s.slot_date)).size,
+  }), [ttState]);
+  const [timetableFocus, setTimetableFocus] = useState(0);
+  const openTimetable = () => { setActive('train'); setTimetableFocus(n => n + 1); };
+
   // Group & private chats the athlete has been added to.
   const chatMe = useMemo(() => ({ type: 'athlete', athleteId: athlete.id }), [athlete.id]);
   const chat = useChatRooms(chatMe);
@@ -117,19 +130,18 @@ export default function AthleteAppShell({ athlete }) {
           <img src={logo} alt="ProPath" style={{ height: '20px' }} />
         </header>
 
-        {/* Unmissable "you have messages" strip — tap to open the inbox. */}
-        {unreadCount > 0 && !inboxOpen && (
+        {/* "Timetable is up" — gold bar on every tab from the moment a week is published until
+            the athlete has confirmed it. On Sunday afternoon (UAE) the full-screen pop-up takes over. */}
+        {timetable.unanswered > 0 && !inboxOpen && (
           <button
-            onClick={() => setInboxOpen(true)}
+            onClick={openTimetable}
             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-meta font-semibold text-white"
-            style={{ backgroundColor: '#dc2626' }}
+            style={{ backgroundColor: '#A58D69' }}
           >
-            <MessageCircle size={16} className="shrink-0" />
-            <span className="flex-1">
-              {unreadCount === 1 ? '1 new message' : `${unreadCount} new messages`} — tap to read
-            </span>
-            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-white text-[11px] font-bold flex items-center justify-center" style={{ color: '#dc2626' }}>
-              {unreadCount > 9 ? '9+' : unreadCount}
+            <CalendarClock size={16} className="shrink-0" />
+            <span className="flex-1">The timetable is up — tap to choose your sessions</span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white" style={{ color: '#7a6748' }}>
+              {timetable.daysToConfirm} day{timetable.daysToConfirm === 1 ? '' : 's'} to go
             </span>
           </button>
         )}
@@ -142,6 +154,8 @@ export default function AthleteAppShell({ athlete }) {
               scrollToResourcesNonce={scrollToResourcesNonce}
               onOpenNutrition={() => setActive('nutrition')}
               onOpenMessages={openTeamChat}
+              timetable={timetable}
+              timetableFocus={timetableFocus}
             />
           )}
           <Suspense fallback={<Loading />}>

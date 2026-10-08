@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarClock, ChevronDown, ChevronUp, CheckCircle2, Ticket } from 'lucide-react';
-import { useTimetable } from '../../hooks/useTimetable';
 import { useOneToOne } from '../../hooks/useOneToOne';
 import TimetableDay from './TimetableDay';
-import { addDaysISO, groupByDay, todayUAE, ONE_TO_ONE_OPEN } from '../../utils/timetable';
+import { groupByDay, ONE_TO_ONE_OPEN } from '../../utils/timetable';
 
 /**
  * TimetableCard — the academy timetable on the Train tab: each published day
@@ -15,13 +14,19 @@ import { addDaysISO, groupByDay, todayUAE, ONE_TO_ONE_OPEN } from '../../utils/t
  * `onOpenMessages` is called after a 1:1 request is sent, to take the athlete to
  * the chat with their coach where the request message has been posted.
  */
-export default function TimetableCard({ athleteId, onOpenMessages }) {
-  const today = todayUAE();
-  const to = addDaysISO(today, 13);
-  const { slots, loading, unanswered, respondDay, confirmRemaining } = useTimetable(athleteId, today, to);
+export default function TimetableCard({ athleteId, timetable, focusNonce = 0, onOpenMessages }) {
+  const { slots, loading, unanswered, respondDay, confirmRemaining } = timetable;
+  const rootRef = useRef(null);
   const [confirming, setConfirming] = useState(false);
   const { balance, requests, request } = useOneToOne(athleteId);
   const [manualOpen, setManualOpen] = useState(null);
+
+  // Tapping the gold "timetable is up" banner opens this card and brings it into view.
+  useEffect(() => {
+    if (!focusNonce) return;
+    setManualOpen(true);
+    setTimeout(() => rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  }, [focusNonce]);
   const days = useMemo(() => groupByDay(slots), [slots]);
 
   if (loading || !slots.length) return null;
@@ -29,6 +34,7 @@ export default function TimetableCard({ athleteId, onOpenMessages }) {
 
   return (
     <div
+      ref={rootRef}
       className="rounded-xl bg-white border shadow-card overflow-hidden"
       style={{ borderColor: unanswered ? '#A58D69' : '#e5e7eb' }}
     >

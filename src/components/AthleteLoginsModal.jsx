@@ -31,15 +31,17 @@ const ago = (iso) => {
 function inviteText({ name, username, password }, appUrl, reset = false) {
   const first = (name || '').split(' ')[0] || 'there';
   return [
-    reset ? `Hi ${first}, here's a new starting password for the ProPath app.` : `Hi ${first}, your ProPath app login is ready.`,
+    reset ? `Hi ${first}, here's a new first-time password for the ProPath app.` : `Hi ${first}, your ProPath app login is ready.`,
     '',
     `1. Open ${appUrl} on your phone`,
     `2. Username: ${username}`,
-    `3. Starting password: ${password}`,
+    `3. First-time password: ${password}`,
+    '4. Choose your own password when it asks. When your phone offers to save it, tap Save — next time Face ID / fingerprint fills it in.',
+    '5. Add the app to your Home Screen (iPhone: tap Share, then Add to Home Screen). Open it from the icon and sign in once more.',
+    '6. Turn on notifications when asked, so you get messages and timetable updates.',
     '',
-    "Sign in with those and you'll be asked to choose your own password straight away. The starting password stops working after 7 days if it isn't used.",
-    reset ? '' : 'Then add the app to your Home Screen (iPhone: Share → Add to Home Screen).',
-  ].filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n').trim();
+    "The first-time password stops working after 7 days if it isn't used.",
+  ].join('\n');
 }
 
 /**
@@ -58,6 +60,8 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
   const [loadError, setLoadError] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [working, setWorking] = useState(false);
+  const [progress, setProgress] = useState(null);        // { done, total } while a bulk run is going
+  const [confirmAll, setConfirmAll] = useState(false);
   const [issued, setIssued] = useState([]);         // starting passwords just generated
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(null);
@@ -111,18 +115,42 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
 
   const remember = (rows) => setIssued(prev => [...rows, ...prev.filter(p => !rows.some(r => r.athlete_id === p.athlete_id))]);
 
-  const create = async (ids) => {
-    setWorking(true);
-    setError(null);
-    const json = await callAccounts({ action: 'provision', athlete_ids: ids });
-    setWorking(false);
-    if (!json.ok) { setError(json.error || 'Something went wrong.'); return; }
-    const made = json.results.filter(r => r.status === 'created');
-    const failed = json.results.filter(r => r.status === 'error');
-    remember(made.map(m => ({ ...m, reset: false })));
-    if (failed.length) setError(failed.map(f => `${f.name || f.athlete_id}: ${f.error}`).join(' · '));
-    setSelected(prev => { const next = new Set(prev); made.forEach(m => next.delete(m.athlete_id)); return next; });
+  // Runs in small batches so each request stays quick (creating an account takes a moment each).
+  const BATCH = 8;
+  const runBatches = async (ids, resetExisting) => {
+    setWorking(true); setError(null); setProgress({ done: 0, total: ids.length });
+    const failures = [];
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const json = await callAccounts({ action: 'provision', athlete_ids: ids.slice(i, i + BATCH), reset_existing: resetExisting });
+      if (!json.ok) { failures.push(json.error || 'Something went wrong.'); break; }
+      const done = json.results.filter(r => r.password);
+      remember(done.map(m => ({ ...m, reset: m.status === 'reset' })));
+      failures.push(...json.results.filter(r => r.status === 'error').map(r => `${r.name || r.athlete_id}: ${r.error}`));
+      setSelected(prev => { const next = new Set(prev); done.forEach(m => next.delete(m.athlete_id)); return next; });
+      setProgress({ done: Math.min(i + BATCH, ids.length), total: ids.length });
+    }
+    setWorking(false); setProgress(null);
+    if (failures.length) setError(failures.join(' · '));
     await load();
+  };
+
+  const create = (ids) => runBatches(ids, false);
+
+  // "Start again": every athlete gets a fresh first-time password — new logins are
+  // created, existing ones are re-issued (their old password stops working).
+  const startAgain = async () => {
+    setConfirmAll(false);
+    await runBatches(sorted.map(a => a.id), true);
+  };
+
+  const downloadCsv = () => {
+    const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const rows = [['Name', 'Username', 'First-time password', 'App address'], ...issued.map(c => [c.name, c.username, c.password, appUrl])];
+    const blob = new Blob([rows.map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `propath-logins-${new Date().toISOString().slice(0, 10)}.csv`; link.click();
+    URL.revokeObjectURL(url);
   };
 
   const reset = async (athleteId) => {
@@ -197,7 +225,9 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
           {issued.length > 0 && (
             <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-sm font-semibold text-gray-900">Starting passwords — send these now</p>
+                <p className="text-sm font-semibold text-gray-900">First-time passwords — send these now ({issued.length})</p>
+                <div className="flex gap-1.5">
+                <button onClick={downloadCsv} className="text-xs font-semibold px-2.5 py-1.5 rounded-md border border-gray-300 text-gray-700 bg-white">Download list</button>
                 <button
                   onClick={() => copy('all', issued.map(c => `${c.name}\n${inviteText(c, appUrl, c.reset)}`).join('\n\n---\n\n'))}
                   className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-md text-white"
@@ -205,6 +235,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                 >
                   {copied === 'all' ? <Check size={12} /> : <Copy size={12} />} Copy all
                 </button>
+                </div>
               </div>
               <p className="text-[11px] text-gray-600 mb-2">
                 Shown only once. Each athlete is made to choose their own password when they first sign in.
@@ -234,6 +265,32 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
           {loadError && (
             <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 text-xs text-red-600">
               {loadError} {import.meta.env.DEV && '(The login API only runs on the deployed site, not the local dev server.)'}
+            </div>
+          )}
+
+          {accounts && (
+            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm font-semibold text-gray-900">Start again for everyone</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 mb-2.5">
+                Gives all {sorted.length} athletes a username and a fresh first-time password in one go — creating logins for anyone
+                without one, and re-issuing anyone who already has one (their old password stops working). You then copy or
+                download the list and send each person their own details.
+              </p>
+              {working && progress ? (
+                <p className="text-xs text-gray-600 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Setting up… {progress.done} of {progress.total}</p>
+              ) : confirmAll ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-red-600 font-medium">
+                    This resets {Object.keys(accounts).length} existing login{Object.keys(accounts).length === 1 ? '' : 's'} and creates {Math.max(0, sorted.length - Object.keys(accounts).length)} new.
+                  </span>
+                  <button onClick={startAgain} className="text-xs font-semibold px-3 py-1.5 rounded-md text-white bg-red-500">Yes, do it</button>
+                  <button onClick={() => setConfirmAll(false)} className="text-xs text-gray-500 px-1.5">Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmAll(true)} disabled={working} className="text-xs font-semibold px-3.5 py-2 rounded-md text-white disabled:opacity-50" style={{ backgroundColor: GOLD }}>
+                  Set up everyone
+                </button>
+              )}
             </div>
           )}
 

@@ -37,6 +37,13 @@ export default function AthleteSetPassword({ username, onDone, onSignOut }) {
       setSaving(false);
       return;
     }
+    // Chrome / Android: offer the new password to the password manager directly.
+    // (Safari on iPhone offers to save it itself when the form is submitted.)
+    try {
+      if (window.PasswordCredential && navigator.credentials?.store) {
+        await navigator.credentials.store(new window.PasswordCredential({ id: username, password, name: username }));
+      }
+    } catch (_) { /* optional nicety */ }
     onDone();
   };
 

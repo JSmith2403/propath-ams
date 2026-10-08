@@ -34,7 +34,7 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-export default function TrainingTab({ athleteId, athleteName, scrollToResourcesNonce = 0, onOpenNutrition, onOpenMessages }) {
+export default function TrainingTab({ athleteId, athleteName, scrollToResourcesNonce = 0, onOpenNutrition, onOpenMessages, timetable, timetableFocus }) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedISO, setSelectedISO] = useState(toISO(today));
@@ -225,7 +225,7 @@ export default function TrainingTab({ athleteId, athleteName, scrollToResourcesN
 
       {/* ── Academy timetable: Attending / Can't make it (what the Sunday
             pop-up and reminder ask). Hidden until a timetable is published. */}
-      <TimetableCard athleteId={athleteId} onOpenMessages={onOpenMessages} />
+      <TimetableCard athleteId={athleteId} timetable={timetable} focusNonce={timetableFocus} onOpenMessages={onOpenMessages} />
 
       {/* ── 3. Wellness CTA ─────────────────────────────────────────────────── */}
       <WellnessInline athleteId={athleteId} dateISO={selectedISO} />

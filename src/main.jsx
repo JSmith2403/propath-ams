@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import SaveErrorToast from './components/SaveErrorToast.jsx'
 import './index.css'
+import './utils/installPrompt.js'   // grabs Android's install event before any screen needs it
 
 // The coach App is now lazy too. Athletes loading /athlete/:token used
 // to pay for the entire coach surface (AthleteProfile, DataEntryView,

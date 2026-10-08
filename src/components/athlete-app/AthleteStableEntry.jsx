@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import AthleteAppShell, { Loading } from './AthleteAppShell';
 import AthletePinLogin from './AthletePinLogin';
 import AthleteSetPassword from './AthleteSetPassword';
+import AthleteOnboarding from './AthleteOnboarding';
 import InstallPrompt from '../InstallPrompt';
 
 /**
@@ -19,10 +20,14 @@ import InstallPrompt from '../InstallPrompt';
  * no session → the PIN login screen.
  */
 export default function AthleteStableEntry() {
-  const [status, setStatus]   = useState('loading'); // loading | needs-login | set-password | ready | wrong-role
+  const [status, setStatus]   = useState('loading'); // loading | needs-login | set-password | onboarding | ready | wrong-role
   const [athlete, setAthlete] = useState(null);
   const [username, setUsername] = useState('');
   const [notice, setNotice] = useState(null);
+  // True from the moment someone lands on "choose your own password" until they've been through
+  // the first-time guide. Saving a password fires Supabase's own "user updated" event, which
+  // would otherwise whisk them straight into the app and skip the guide.
+  const firstTimeFlow = useRef(false);
 
   const resolve = useCallback(async (session) => {
     if (!session) { setStatus('needs-login'); return; }
@@ -36,8 +41,16 @@ export default function AthleteStableEntry() {
         return;
       }
       setUsername((session.user.email || '').split('@')[0]);
+      firstTimeFlow.current = true;
       setStatus('set-password');
       return;
+    }
+    if (firstTimeFlow.current) {
+      // Just finished choosing a password. In a browser tab, show the guide (save the
+      // password + add to Home Screen); if they're already in the installed app, carry on.
+      const installed = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true;
+      if (!installed) { setStatus('onboarding'); return; }
+      firstTimeFlow.current = false;
     }
     setNotice(null);
     try {
@@ -118,6 +131,17 @@ export default function AthleteStableEntry() {
         username={username}
         onDone={() => supabase.auth.getSession().then(({ data: { session } }) => resolve(session))}
         onSignOut={() => supabase.auth.signOut()}
+      />
+    );
+  }
+
+  if (status === 'onboarding') {
+    return (
+      <AthleteOnboarding
+        onDone={() => {
+          firstTimeFlow.current = false;
+          supabase.auth.getSession().then(({ data: { session } }) => resolve(session));
+        }}
       />
     );
   }

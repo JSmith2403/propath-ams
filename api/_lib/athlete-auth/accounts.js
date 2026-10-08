@@ -10,8 +10,10 @@
 //
 //   { action: 'pending-count' } → { ok, count }     (nav badge)
 //
-//   { action: 'provision', athlete_ids: [...] }
-//     → { ok, results: [{ athlete_id, name, status: 'created'|'exists'|'error', username?, password?, expires_at? }] }
+//   { action: 'provision', athlete_ids: [...], reset_existing?: boolean }
+//     → { ok, results: [{ athlete_id, name, status: 'created'|'reset'|'exists'|'error', username?, password?, expires_at? }] }
+//     reset_existing:true also gives athletes who ALREADY have a login a fresh first-use
+//     password ("start again") — their current password stops working.
 //     Creates a real account with a username from the athlete's name and a random
 //     STARTING password (returned once). The athlete must replace it with their own
 //     on first sign-in, and it stops working after 7 days if unused.
@@ -57,13 +59,29 @@ async function ensureAppAccess(admin, athleteId) {
   }
 }
 
-async function provisionOne(admin, athleteId, emailById) {
+// Fresh first-use password for an athlete who already has a login (their old
+// password stops working; they must choose a new one on next sign-in).
+async function reissue(admin, athleteId, userId, emailById, name) {
+  const password = generateTempPassword();
+  const meta = tempPasswordMeta();
+  const { error } = await admin.auth.admin.updateUserById(userId, { password, user_metadata: meta });
+  if (error) return { athlete_id: athleteId, name, status: 'error', error: error.message };
+  await ensureAppAccess(admin, athleteId);
+  const email = emailById.get(userId) || '';
+  return {
+    athlete_id: athleteId, name, status: 'reset', password, expires_at: meta.temp_password_expires_at,
+    username: email.endsWith('@' + ATHLETE_EMAIL_DOMAIN) ? email.split('@')[0] : null,
+  };
+}
+
+async function provisionOne(admin, athleteId, emailById, resetExisting = false) {
   const display = await loadAthleteDisplay(admin, athleteId);
   if (!display.ok) return { athlete_id: athleteId, name: null, status: 'error', error: display.error };
   const name = display.athlete.name || athleteId;
 
   const { data: existing } = await admin
     .from('user_roles').select('user_id').eq('athlete_id', athleteId).maybeSingle();
+  if (existing && resetExisting) return reissue(admin, athleteId, existing.user_id, emailById, name);
   if (existing) {
     const email = emailById.get(existing.user_id) || '';
     const username = email.endsWith(`@${ATHLETE_EMAIL_DOMAIN}`) ? email.split('@')[0] : null;
@@ -177,7 +195,7 @@ export default async function handler(req, res) {
     // Sequential on purpose — Supabase Auth admin calls are rate limited and
     // username collisions need to be resolved one at a time.
     const results = [];
-    for (const id of ids) results.push(await provisionOne(admin, id, emailById));
+    for (const id of ids) results.push(await provisionOne(admin, id, emailById, !!body.reset_existing));
     res.status(200).json({ ok: true, results });
     return;
   }
