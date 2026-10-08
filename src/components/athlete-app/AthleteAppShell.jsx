@@ -8,7 +8,8 @@ import WellnessCheckInGate from './WellnessCheckInGate';
 import TimetableGate from './TimetableGate';
 import NotificationPrompt from './NotificationPrompt';
 import InboxSheet from './InboxSheet';
-import { MessageCircle, CalendarClock } from 'lucide-react';
+import { MessageCircle, CalendarClock, LogOut } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { setAppBadgeCount } from '../../utils/appBadge';
 import { useAthleteMessages } from '../../hooks/useAthleteMessages';
 import { useChatRooms } from '../../hooks/useChatRooms';
@@ -64,6 +65,7 @@ export default function AthleteAppShell({ athlete }) {
     daysToConfirm: new Set(ttState.slots.filter(s => !s.status).map(s => s.slot_date)).size,
   }), [ttState]);
   const [timetableFocus, setTimetableFocus] = useState(0);
+  const [accountMenu, setAccountMenu] = useState(false);
   const openTimetable = () => { setActive('train'); setTimetableFocus(n => n + 1); };
 
   // Group & private chats the athlete has been added to.
@@ -102,14 +104,39 @@ export default function AthleteAppShell({ athlete }) {
         <header
           className="sticky top-0 z-20 px-4 py-2.5 flex items-center gap-3 bg-white border-b border-ink-100"
         >
-          <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 ring-1 ring-ink-200 bg-ink-100">
-            {athlete.photo
-              ? <img src={athlete.photo} alt={athlete.name} className="w-full h-full object-cover" />
-              : (
-                <span className="text-[10px] font-bold text-ink-600">
-                  {athlete.name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
-                </span>
-              )}
+          {/* Their initials / photo: tap for account options (sign out — e.g. on a shared phone or a
+              coach testing the app, so they can get back to their own login). */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAccountMenu(o => !o)}
+              aria-label="Account menu"
+              aria-expanded={accountMenu}
+              className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center ring-1 ring-ink-200 bg-ink-100"
+            >
+              {athlete.photo
+                ? <img src={athlete.photo} alt={athlete.name} className="w-full h-full object-cover" />
+                : (
+                  <span className="text-[10px] font-bold text-ink-600">
+                    {athlete.name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
+                  </span>
+                )}
+            </button>
+            {accountMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setAccountMenu(false)} />
+                <div className="absolute left-0 top-11 z-40 w-52 rounded-xl bg-white border border-ink-100 shadow-raised p-1.5">
+                  <p className="px-3 pt-2 pb-1 text-micro text-ink-400">Signed in as</p>
+                  <p className="px-3 pb-2 text-meta font-semibold text-ink-900 truncate">{athlete.name}</p>
+                  <button
+                    onClick={() => { setAccountMenu(false); supabase.auth.signOut(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-meta font-semibold text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut size={14} /> Sign out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           <p className="flex-1 text-meta text-ink-500">{greeting()}</p>
           <button
