@@ -55,7 +55,7 @@ export default function FamilyView() {
   const first = data?.athlete?.name?.split(' ')[0] || 'your child';
 
   const teamBubbles = (data?.team || []).map(m => ({
-    id: m.id, mine: false, role: m.sender_type === 'athlete' ? 'athlete' : 'staff',
+    id: m.id, mine: m.sender_type === 'athlete', role: m.sender_type === 'athlete' ? 'athlete' : 'staff',
     name: m.sender_type === 'athlete' ? data.athlete.name : (m.sent_by || 'Coach'),
     title: m.title, body: m.body, at: m.created_at,
   }));
@@ -108,7 +108,8 @@ export default function FamilyView() {
                   <ChatBubbles
                     emptyText="No messages yet."
                     messages={chat.messages.map(m => ({
-                      id: m.id, mine: false, role: m.sender_type, name: m.sender_name, body: m.body, at: m.created_at,
+                      id: m.id, mine: m.sender_type === 'athlete' && m.sender_name === data.athlete.name,
+                      role: m.sender_type === 'athlete' ? 'athlete' : 'staff', name: m.sender_name, body: m.body, at: m.created_at,
                     }))}
                   />
                 </div>

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Send, Loader2, ArrowLeft, Bell, BellOff, MessageCircle, Megaphone, Check, Plus, Users, UserRound, Settings2, Link2 } from 'lucide-react';
+import { Search, ArrowLeft, Bell, BellOff, MessageCircle, Megaphone, Plus, Users, UserRound, Settings2, Link2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { pushSupported, subscribeStaffToPush } from '../../utils/pushSubscribe';
 import MessageComposerModal from '../recent/MessageComposerModal';
 import RoomThread from './RoomThread';
+import ChatBubbles from './ChatBubbles';
+import ChatComposer from './ChatComposer';
 import ChatSetupModal from './ChatSetupModal';
 import ParentLinksModal from './ParentLinksModal';
 import { useChatRooms, roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
@@ -12,12 +14,6 @@ import { usePushStatus } from '../../hooks/usePushStatus';
 const GOLD = '#A58D69';
 const COLS = 'id, athlete_id, title, body, sent_by, created_at, read_at, sender_type';
 
-function stamp(iso) {
-  const d = new Date(iso);
-  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === new Date().toDateString()) return time;
-  return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, ${time}`;
-}
 function short(iso) {
   const d = new Date(iso);
   if (d.toDateString() === new Date().toDateString()) {
@@ -307,7 +303,7 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
       </div>
 
       {/* ── Thread ── */}
-      <div className={`${hasSelection ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col bg-white md:rounded-xl border border-ink-100 overflow-hidden`}>
+      <div className={`${hasSelection ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col bg-white md:rounded-3xl border border-ink-100 shadow-sm overflow-hidden`}>
         {selectedRoom ? (
           <>
             <div className="flex items-center gap-3 px-4 py-3 border-b border-ink-100 shrink-0">
@@ -380,57 +376,29 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5" style={{ backgroundColor: '#fafafa' }}>
+            <div className="flex-1 overflow-y-auto px-5 py-4 bg-white">
               {threadLoading ? (
                 <p className="py-8 text-center text-xs text-ink-400">Loading…</p>
-              ) : thread.length === 0 ? (
-                <p className="py-10 text-center text-xs text-ink-400">No messages yet — say hello below.</p>
-              ) : thread.map(m => {
-                const mine = m.sender_type === 'coach';
-                return (
-                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className="max-w-[80%] rounded-2xl px-3.5 py-2"
-                      style={mine
-                        ? { backgroundColor: GOLD, color: '#fff', borderBottomRightRadius: 6 }
-                        : { backgroundColor: '#fff', color: '#1C1C1C', border: '1px solid #e5e7eb', borderBottomLeftRadius: 6 }}
-                    >
-                      {mine && m.sent_by && <p className="text-[10px] font-semibold opacity-80 mb-0.5">{m.sent_by}</p>}
-                      {m.title && <p className="text-xs font-bold mb-0.5">{m.title}</p>}
-                      {m.body && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>}
-                      <p className="text-[10px] mt-1 opacity-60 text-right flex items-center justify-end gap-1">
-                        {stamp(m.created_at)}
-                        {mine && m.read_at && <><Check size={10} /> Seen</>}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={endRef} />
+              ) : (
+                <ChatBubbles
+                  scrollKey={selectedId}
+                  emptyText="No messages yet — say hello below."
+                  messages={thread.map(m => ({
+                    id: m.id, mine: m.sender_type === 'coach', name: m.sent_by, body: m.body, title: m.title,
+                    at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete', seen: !!m.read_at,
+                  }))}
+                />
+              )}
             </div>
 
-            <form onSubmit={send} className="px-4 py-3 border-t border-ink-100 shrink-0">
-              {sendError && <p className="text-xs text-red-600 mb-1.5" role="alert">{sendError}</p>}
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && (e.metaKey || e.ctrlKey)) send(e); }}
-                  rows={2}
-                  maxLength={2000}
-                  placeholder={`Reply to ${selected.name.split(' ')[0]} as ${senderName || 'coach'}…`}
-                  className="flex-1 resize-none rounded-xl border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:border-gold-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!text.trim() || sending}
-                  className="shrink-0 h-10 px-4 rounded-lg flex items-center gap-1.5 text-sm font-semibold text-white disabled:opacity-50"
-                  style={{ backgroundColor: GOLD }}
-                >
-                  {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send
-                </button>
-              </div>
-            </form>
+            <ChatComposer
+              value={text}
+              onChange={setText}
+              onSubmit={send}
+              sending={sending}
+              error={sendError}
+              placeholder={`Reply to ${selected.name.split(' ')[0]} as ${senderName || 'coach'}…`}
+            />
           </>
         )}
       </div>
