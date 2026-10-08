@@ -3,7 +3,7 @@ import { Send, Loader2 } from 'lucide-react';
 
 /**
  * ChatComposer — the message box under every chat: a grey pill that grows with
- * what you type, and a round black send button. On a computer, Enter sends and
+ * what you type, and a round gold send button. On a computer, Enter sends and
  * Shift+Enter adds a line; on a phone, Enter is a new line and the button sends.
  */
 export default function ChatComposer({ value, onChange, onSubmit, sending = false, error = null, placeholder = 'Write a message…', note = null }) {
@@ -36,15 +36,15 @@ export default function ChatComposer({ value, onChange, onSubmit, sending = fals
           rows={1}
           maxLength={2000}
           placeholder={placeholder}
-          className="flex-1 resize-none rounded-[22px] px-4 py-[11px] text-[15px] leading-snug text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+          className="flex-1 resize-none rounded-[22px] px-4 py-[11px] text-[15px] leading-snug text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#A58D69]/40"
           style={{ backgroundColor: '#f1f2f3', maxHeight: 128 }}
         />
         <button
           type="submit"
           disabled={!canSend}
           aria-label="Send message"
-          className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-white transition-opacity disabled:opacity-35"
-          style={{ backgroundColor: '#000' }}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ backgroundColor: '#A58D69' }}
         >
           {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} style={{ marginLeft: -1 }} />}
         </button>
