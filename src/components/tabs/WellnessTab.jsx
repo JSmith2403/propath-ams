@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useWellness } from '../../hooks/useWellness';
 import { getRagColour } from '../../utils/wellnessRag';
 import WellnessQuestionsBuilder from '../wellness/WellnessQuestionsBuilder';
+import GarminCard from '../garmin/GarminCard';
 import WellnessQuestionChart, { isChartable } from '../wellness/WellnessQuestionChart';
 
 const COLOUR_MAP = { green: '#22c55e', amber: '#f59e0b', red: '#ef4444' };
@@ -71,6 +72,7 @@ export default function WellnessTab({ athlete, role }) {
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {role !== 'external' && <GarminCard athleteId={athlete.id} viewer="coach" />}
       <WellnessQuestionsBuilder athleteId={athlete.id} role={role} />
 
       {/* Submission log — dynamic columns based on selected questions */}

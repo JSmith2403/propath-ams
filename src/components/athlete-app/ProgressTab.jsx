@@ -7,6 +7,7 @@ import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useAthleteGoals } from '../../hooks/useAthleteGoals';
 import { useAthleteReports } from '../../hooks/useAthleteReports';
+import GarminCard from '../garmin/GarminCard';
 import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, currentYearQuarter } from '../../utils/goalTree';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
@@ -301,6 +302,7 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
 
   return (
     <div className="px-4 pt-4 pb-24">
+      <GarminCard athleteId={athleteId} />
       <ReportSection athleteId={athleteId} />
 
       {progressMetrics.length > 0 && (

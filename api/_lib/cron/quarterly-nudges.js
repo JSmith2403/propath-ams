@@ -17,6 +17,7 @@ import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushToAthlete } from '../push.js';
 import { expireTempPasswords } from '../athlete-auth/sweep.js';
+import { syncAllConnected } from '../garmin/sync.js';
 
 const REMINDER_WINDOW_DAYS = 10;
 
@@ -39,6 +40,8 @@ export default async function handler(req, res) {
 
   // Daily housekeeping that doesn't need push: scramble unused starting passwords.
   try { await expireTempPasswords(getSupabaseAdmin()); } catch (err) { console.error('[cron] temp password sweep failed', err.message); }
+  // Refresh every connected athlete's Garmin data (Hobby plan has no spare cron slot, so it rides this one).
+  try { const admin = getSupabaseAdmin(); if (admin) await syncAllConnected(admin); } catch (err) { console.error('[cron] garmin sync failed', err.message); }
 
   const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
   const { VAPID_PRIVATE_KEY, VAPID_SUBJECT } = process.env;
