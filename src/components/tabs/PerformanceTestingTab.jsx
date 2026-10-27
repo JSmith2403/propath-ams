@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { Settings, RotateCcw } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP, LABEL_OVERRIDES } from '../../data/sessionMetrics';
+import { BASE_KEYS, MAX_EXTRA_METRICS } from '../../data/progressBase';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
 import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useKpiBoard } from '../../hooks/useKpiBoard';
@@ -320,20 +321,27 @@ export default function PerformanceTestingTab({
     setProgressSet(new Set(reportMetrics || []));
   }, [reportMetrics.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The six base metrics (CMJ, IMTP, 10-5 hops, back squat / bench 3RM, chin-ups) show for every athlete, so
+  // they're always "on" here. The cap and the saved list only concern the athlete-specific extras.
   const toggleProgressMetric = useCallback((key) => {
+    if (BASE_KEYS.has(key)) {
+      setProgressWarning('This is one of the base tests — it always shows on every athlete\'s progress tab');
+      setTimeout(() => setProgressWarning(null), 3000);
+      return;
+    }
     setProgressSet(prev => {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
       } else {
-        if (next.size >= 8) {
-          setProgressWarning('Maximum 8 metrics can be shown on the athlete\'s progress tab');
+        if ([...next].filter(k => !BASE_KEYS.has(k)).length >= MAX_EXTRA_METRICS) {
+          setProgressWarning(`Maximum ${MAX_EXTRA_METRICS} extra metrics on top of the base tests`);
           setTimeout(() => setProgressWarning(null), 3000);
           return prev;
         }
         next.add(key);
       }
-      onSaveReportMetrics?.(Array.from(next));
+      onSaveReportMetrics?.(Array.from(next).filter(k => !BASE_KEYS.has(k)));
       return next;
     });
   }, [onSaveReportMetrics]);
@@ -384,9 +392,9 @@ export default function PerformanceTestingTab({
               valdMetrics={valdMetrics}
               valdEntriesFor={valdEntriesFor}
               valdDefFor={valdDefFor}
-              shownOnProgress={progressSet.has(row.metric_key)}
+              shownOnProgress={BASE_KEYS.has(row.metric_key) || progressSet.has(row.metric_key)}
               onToggleProgress={toggleProgressMetric}
-              toggleWarning={progressWarning && !progressSet.has(row.metric_key) ? progressWarning : null}
+              toggleWarning={progressWarning && !BASE_KEYS.has(row.metric_key) && !progressSet.has(row.metric_key) ? progressWarning : null}
               onRemove={() => removeMetric(row.metric_key)}
               onResize={newSpan => resizeMetric(row.metric_key, newSpan)}
               onDragStart={() => handleDragStart(row.metric_key)}

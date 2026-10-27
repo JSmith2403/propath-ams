@@ -81,6 +81,7 @@ export const METRIC_CATEGORIES = [
       { key: 'imtpPeakForceLR',     label: 'IMTP Peak Force L/R',      unit: 'N',    bilateral: true,  attempts: 1 },
       { key: 'chinUpMaxReps',       label: 'Chin-up Max Reps',         unit: 'reps', bilateral: false, attempts: 1 },
       { key: 'benchPress3RM',       label: '3RM Bench Press',          unit: 'kg',   bilateral: false, attempts: 1 },
+      { key: 'backSquat3RM',        label: '3RM Back Squat',           unit: 'kg',   bilateral: false, attempts: 1 },
       { key: 'hamstring0',          label: 'Hamstring 0°',             unit: 'kg', bilateral: true,  attempts: 1 },
       { key: 'hamstring30',         label: 'Hamstring 30°',            unit: 'kg', bilateral: true,  attempts: 1 },
       { key: 'hamstring90',         label: 'Hamstring 90°',            unit: 'kg', bilateral: true,  attempts: 1 },

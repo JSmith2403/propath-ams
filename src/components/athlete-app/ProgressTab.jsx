@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, Plus, CheckCircle2, User, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, CheckCircle2, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { ComposedChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { METRIC_MAP, SPECIAL_METRICS, LABEL_OVERRIDES, DUAL_LINE_METRICS, LOWER_IS_BETTER } from '../../data/sessionMetrics';
 import { useCustomMetrics } from '../../hooks/useCustomMetrics';
@@ -8,6 +8,7 @@ import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useAthleteGoals } from '../../hooks/useAthleteGoals';
 import { useAthleteReports } from '../../hooks/useAthleteReports';
 import GarminCard from '../garmin/GarminCard';
+import { BASE_BY_KEY, withBaseMetrics } from '../../data/progressBase';
 import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, currentYearQuarter } from '../../utils/goalTree';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
@@ -276,10 +277,23 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
 
   const loading = entriesLoading || valdLoading;
 
+  // Everyone gets the base set; the coach's pins are extras on top.
+  const allKeys = useMemo(() => withBaseMetrics(progressMetrics), [progressMetrics]);
+
   const cards = useMemo(() => {
-    return (progressMetrics || []).map(metricKey => {
+    return allKeys.map(metricKey => {
       const isVALD = metricKey?.startsWith?.('vald:');
-      const rawEntries = isVALD ? valdEntriesFor(metricKey) : (entries?.[metricKey] || []);
+      const base = BASE_BY_KEY[metricKey];
+      let rawEntries = isVALD ? valdEntriesFor(metricKey) : (entries?.[metricKey] || []);
+      // A base test that VALD also measures: fold the VALD results into the same trend (best of the day).
+      if (base?.vald) {
+        const byDay = new Map();
+        for (const e of [...rawEntries, ...valdEntriesFor(`vald:${base.vald.testType}:${base.vald.name}`)]) {
+          const day = String(e.date).slice(0, 10);
+          if (e.value != null && (!byDay.has(day) || e.value > byDay.get(day).value)) byDay.set(day, { ...e, date: day });
+        }
+        rawEntries = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+      }
       const isDualLine = !isVALD && DUAL_LINE_METRICS.has(metricKey);
       // Maturation entries (bodyweight) aren't available on the athlete
       // side — only affects the two bodyweight-relative special metrics
@@ -293,45 +307,31 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
         ? valdDefFor(metricKey)
         : (SPECIAL_METRICS[metricKey] || METRIC_MAP[metricKey] || customMetrics?.[metricKey]);
       const unit  = metricDef?.unit || '';
-      const label = LABEL_OVERRIDES[metricKey] || metricDef?.label || metricKey;
+      const label = base?.label || LABEL_OVERRIDES[metricKey] || metricDef?.label || metricKey;
       const testLabel = isVALD ? valdDefFor(metricKey)?.testType : null;
 
       return { metricKey, chartData, isDualLine, unit, label, testLabel };
     });
-  }, [progressMetrics, entries, valdEntriesFor, valdDefFor, customMetrics]);
+  }, [allKeys, entries, valdEntriesFor, valdDefFor, customMetrics]);
 
   return (
     <div className="px-4 pt-4 pb-24">
       <GarminCard athleteId={athleteId} />
       <ReportSection athleteId={athleteId} />
 
-      {progressMetrics.length > 0 && (
-        <>
-          <h2 className="text-base font-bold text-ink-900 mb-1">Testing Data</h2>
-          <p className="text-meta text-ink-500 mb-4">
-            Metrics your coach is tracking with you — updates as new results come in.
-          </p>
-        </>
-      )}
+      <h2 className="text-base font-bold text-ink-900 mb-1">Testing Data</h2>
+      <p className="text-meta text-ink-500 mb-4">
+        Your core tests, plus anything your coach is tracking with you — updates as new results come in.
+      </p>
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 rounded-full border-4 animate-spin"
                style={{ borderColor: 'rgba(165,141,105,0.25)', borderTopColor: GOLD }} />
         </div>
-      ) : progressMetrics.length > 0 ? (
+      ) : (
         <div className="space-y-3">
           {cards.map(card => <ProgressCard key={card.metricKey} {...card} />)}
-        </div>
-      ) : (
-        <div className="pt-8 flex flex-col items-center text-center">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gold-50">
-            <TrendingUp size={28} className="text-gold-600" />
-          </div>
-          <p className="text-h3 mb-1 text-ink-900">Track Progress</p>
-          <p className="text-meta max-w-xs text-ink-500">
-            Your coach hasn't pinned any metrics to track here yet — check back once they've set some up.
-          </p>
         </div>
       )}
     </div>
