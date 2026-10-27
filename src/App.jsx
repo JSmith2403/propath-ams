@@ -353,6 +353,7 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
             updateLatestEntry={updateLatestEntry}
             updateEntryById={updateEntryById}
             onUpdateAthlete={updateAthlete}
+            onAddPerformanceEntry={addPerformanceEntry}
           />
         )}
 

@@ -126,7 +126,10 @@ function upstreamErrorMessage(detail) {
   return detail;
 }
 
+const RESULTS_OCR_PROMPT = 'This image shows a table of athlete test results (a testing sheet, spreadsheet screenshot or handwritten sheet). Transcribe it as TAB-separated text: the first line is the column headers exactly as written (keep every word of a test name — grip, stance, distance, unit — e.g. "Wide grip pull-up", "10-5 RSI", "CMJ (cm)"), then one line per athlete with the athlete name first. Keep left/right pairs together in one cell as "18/20". Leave a cell empty if it is blank. Return ONLY the table — no commentary, no markdown.';
+
 async function handleOcr(req, res) {
+  const resultsMode = req.body?.kind === 'results';
   const imageBase64 = String(req.body?.image_base64 || '');
   const mediaType   = String(req.body?.media_type || '');
   if (!imageBase64) { res.status(400).json({ ok: false, error: 'image_base64 is required' }); return; }
@@ -149,14 +152,14 @@ async function handleOcr(req, res) {
     },
     body: JSON.stringify({
       model:      ANTHROPIC_MODEL,
-      max_tokens: 1500,
+      max_tokens: resultsMode ? 3000 : 1500,
       messages: [{
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
           {
             type: 'text',
-            text: 'Transcribe every word of the workout programme visible in this image exactly as written, preserving line breaks and order. It may be handwritten, a whiteboard photo, or a typed sheet. Return ONLY the transcribed text — no commentary, no headings you did not see, no markdown formatting.',
+            text: resultsMode ? RESULTS_OCR_PROMPT : 'Transcribe every word of the workout programme visible in this image exactly as written, preserving line breaks and order. It may be handwritten, a whiteboard photo, or a typed sheet. Return ONLY the transcribed text — no commentary, no headings you did not see, no markdown formatting.',
           },
         ],
       }],

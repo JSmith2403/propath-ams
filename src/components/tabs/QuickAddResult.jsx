@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { BASE_PROGRESS, BASE_KEYS } from '../../data/progressBase';
+import { familyOf, protocolOf } from '../../data/testCatalog';
 
 const GOLD = '#A58D69';
 const todayISO = () => new Date().toLocaleDateString('en-CA');
@@ -36,7 +37,7 @@ export default function QuickAddResult({ athleteName, entries = {}, customMetric
   const metric = METRIC_MAP[metricKey] || customMetrics[metricKey] || null;
   const bilateral = !!metric?.bilateral;
   const unit = metric?.unit || '';
-  const all = entries[metricKey] || [];
+  const all = useMemo(() => entries[metricKey] || [], [entries, metricKey]);
   const recent = useMemo(() => [...all].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 3), [all]);
   const sameDay = all.find(e => String(e.date).slice(0, 10) === date);
 
@@ -81,6 +82,26 @@ export default function QuickAddResult({ athleteName, entries = {}, customMetric
               ))}
             </select>
           </div>
+
+          {protocolOf(metricKey) && (
+            <p className="text-xs text-gray-500 rounded-lg px-3 py-2" style={{ backgroundColor: '#f9fafb' }}>
+              <strong className="text-gray-700">Method: </strong>{protocolOf(metricKey)}
+            </p>
+          )}
+          {familyOf(metricKey) && (
+            <div>
+              <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Same movement, different method — pick the one you ran</p>
+              <div className="flex flex-wrap gap-1.5">
+                {familyOf(metricKey).variants.map(v => (
+                  <button type="button" key={v.key} onClick={() => { setMetricKey(v.key); setError(null); }}
+                    className="text-xs px-2.5 py-1 rounded-full border font-semibold"
+                    style={v.key === metricKey ? { backgroundColor: GOLD, borderColor: GOLD, color: '#fff' } : { borderColor: '#e5e7eb', color: '#4b5563' }}>
+                    {v.short}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1" htmlFor="qa-date">Date measured</label>
