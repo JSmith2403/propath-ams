@@ -1,5 +1,6 @@
 -- ============================================================================
 -- SECURITY WAVE 1 — stop the public key reaching the core tables.   2026-10-27
+-- APPLIED to live 2026-10-27 as migration 20261027084653.
 -- Undo with: sql/security_wave1_ROLLBACK_2026-10-27.sql  (restores the old open rules)
 --
 -- FOUND (live DB, 27 Oct): `athletes`, `sessions` and `app_settings` still had the original
