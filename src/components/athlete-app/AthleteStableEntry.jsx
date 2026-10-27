@@ -69,7 +69,7 @@ export default function AthleteStableEntry() {
         photo: json.athlete.photo || null,
         sport: json.athlete.sport || '',
         wellnessToken: json.athlete.wellness_token || null,
-        progressMetrics: [],
+        progressMetrics: Array.isArray(json.athlete.progress_metrics) ? json.athlete.progress_metrics : [],
       });
       setStatus('ready');
     } catch (_) {

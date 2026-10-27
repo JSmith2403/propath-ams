@@ -131,6 +131,10 @@ export async function loadAthleteDisplay(supabaseAdmin, athleteId) {
       photo: d.photo || null,
       sport: d.sport || null,
       wellness_token: wellnessToken,
+      // The metrics the coach has pinned for this athlete's Progress tab — same source as the
+      // token route's validate_athlete_token (phase2.progressMetrics, legacy reportMetrics).
+      progress_metrics: Array.isArray(d.phase2?.progressMetrics) ? d.phase2.progressMetrics
+        : Array.isArray(d.phase2?.reportMetrics) ? d.phase2.reportMetrics : [],
     },
   };
 }
