@@ -27,7 +27,7 @@ export function usePerformanceResults(athleteId) {
       setLoading(true);
       const { data, error } = await supabase
         .from('performance_test_results')
-        .select('id, metric_key, date, value, value_left, value_right, session_id')
+        .select('id, metric_key, date, value, value_left, value_right, session_id, source')
         .eq('athlete_id', athleteId)
         .order('date', { ascending: true });
       if (cancelled) return;
@@ -39,7 +39,7 @@ export function usePerformanceResults(athleteId) {
       }
       const grouped = {};
       (data || []).forEach(row => {
-        const entry = { id: row.id, date: row.date, sessionId: row.session_id || undefined };
+        const entry = { id: row.id, date: row.date, sessionId: row.session_id || undefined, source: row.source || 'manual' };
         if (row.value_left != null || row.value_right != null) {
           entry.left = row.value_left;
           entry.right = row.value_right;

@@ -8,7 +8,7 @@ import { useVALDMetrics } from '../../hooks/useVALDMetrics';
 import { useAthleteGoals } from '../../hooks/useAthleteGoals';
 import { useAthleteReports } from '../../hooks/useAthleteReports';
 import GarminCard from '../garmin/GarminCard';
-import { BASE_BY_KEY, withBaseMetrics } from '../../data/progressBase';
+import { BASE_BY_KEY, withBaseMetrics, bestPerDay } from '../../data/progressBase';
 import { TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, currentYearQuarter } from '../../utils/goalTree';
 import { buildKpiData, buildDualKpiData, fmtNum, lsiColour } from '../../utils/kpiStats';
 
@@ -285,14 +285,10 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
       const isVALD = metricKey?.startsWith?.('vald:');
       const base = BASE_BY_KEY[metricKey];
       let rawEntries = isVALD ? valdEntriesFor(metricKey) : (entries?.[metricKey] || []);
-      // A base test that VALD also measures: fold the VALD results into the same trend (best of the day).
-      if (base?.vald) {
-        const byDay = new Map();
-        for (const e of [...rawEntries, ...valdEntriesFor(`vald:${base.vald.testType}:${base.vald.name}`)]) {
-          const day = String(e.date).slice(0, 10);
-          if (e.value != null && (!byDay.has(day) || e.value > byDay.get(day).value)) byDay.set(day, { ...e, date: day });
-        }
-        rawEntries = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+      // Base tests: one point per day. A test VALD also measures folds its VALD results into the same trend, and a
+      // real test beats an automatic estimate (the 3RMs) on the same day.
+      if (base) {
+        rawEntries = bestPerDay([...rawEntries, ...(base.vald ? valdEntriesFor(`vald:${base.vald.testType}:${base.vald.name}`) : [])]);
       }
       const isDualLine = !isVALD && DUAL_LINE_METRICS.has(metricKey);
       // Maturation entries (bodyweight) aren't available on the athlete
@@ -310,7 +306,7 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
       const label = base?.label || LABEL_OVERRIDES[metricKey] || metricDef?.label || metricKey;
       const testLabel = isVALD ? valdDefFor(metricKey)?.testType : null;
 
-      return { metricKey, chartData, isDualLine, unit, label, testLabel };
+      return { metricKey, chartData, isDualLine, unit, label, testLabel, note: base?.note || null };
     });
   }, [allKeys, entries, valdEntriesFor, valdDefFor, customMetrics]);
 
@@ -338,7 +334,7 @@ export default function ProgressTab({ athleteId, progressMetrics = [] }) {
   );
 }
 
-function ProgressCard({ label, unit, testLabel, chartData, isDualLine }) {
+function ProgressCard({ label, unit, testLabel, chartData, isDualLine, note }) {
   return (
     <div className="rounded-xl bg-white border border-ink-100 p-4" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
       <div className="mb-2">
@@ -348,6 +344,7 @@ function ProgressCard({ label, unit, testLabel, chartData, isDualLine }) {
             {[testLabel, chartData ? `${chartData.chartData.length} recorded` : null].filter(Boolean).join(' — ')}
           </p>
         )}
+        {note && <p className="text-micro text-ink-400 mt-0.5">{note}</p>}
       </div>
 
       {!chartData ? (

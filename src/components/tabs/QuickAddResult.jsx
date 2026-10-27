@@ -137,7 +137,7 @@ export default function QuickAddResult({ athleteName, entries = {}, customMetric
             <div>
               <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Recent results</p>
               <ul className="text-xs text-gray-600 space-y-0.5">
-                {recent.map(e => <li key={e.id || e.date}>{fmtDate(e.date)} — {fmtVal(e)}{unit ? ` ${unit}` : ''}</li>)}
+                {recent.map(e => <li key={e.id || e.date}>{fmtDate(e.date)} — {fmtVal(e)}{unit ? ` ${unit}` : ''}{e.source === 'estimate' ? ' (auto estimate)' : ''}</li>)}
               </ul>
             </div>
           )}
