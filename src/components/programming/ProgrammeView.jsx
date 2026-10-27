@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { supabase } from '../../lib/supabase';
 import { useProgrammingSettings } from '../../hooks/useProgrammingSettings';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
@@ -91,6 +92,11 @@ export default function ProgrammeView({
     addWeekToBlock,
     removeLastWeekFromBlock,
   } = useTrainingBlocks(athleteIds);
+
+  // FreeForm blocks hold one-off / single-week sessions. They're plumbing, not something the coach
+  // planned as a block, so they stay out of the timeline bar and the Manage Blocks list — their
+  // sessions still show on the calendar as normal pills.
+  const realBlocks = useMemo(() => blocks.filter(b => b.block_name !== FREEFORM_NAME), [blocks]);
 
   // Planned training sessions (block-based, including lightweight
   // FreeForm blocks) — fed into the calendar as pills via
@@ -243,7 +249,21 @@ export default function ProgrammeView({
       showToast(`Couldn't open block. ${res.error?.message || ''}`.trim(), 'error');
     }
   };
-  const closeBuilder = () => setBuilderState(null);
+  // Closing the builder (Cancel / X / backdrop). A FreeForm block is created the moment "Plan for 1
+  // Session" is tapped, so if the coach backs out without adding anything, remove the empty block
+  // rather than leaving a stray one behind. Only ever touches an empty block named FreeForm.
+  const closeBuilder = async () => {
+    const id = builderState?.blockId;
+    setBuilderState(null);
+    const block = id ? blocks.find(b => b.id === id) : null;
+    if (!block || block.block_name !== FREEFORM_NAME) return;
+    const [planned, templates] = await Promise.all([
+      supabase.from('planned_sessions').select('id', { count: 'exact', head: true }).eq('block_id', id),
+      supabase.from('block_sessions').select('id', { count: 'exact', head: true }).eq('block_id', id),
+    ]);
+    if (planned.error || templates.error) return;            // can't tell — leave it alone
+    if (planned.count === 0 && templates.count === 0) await deleteBlockOptimistic(id);
+  };
 
   // AthleteWeekViewV2 hands back a planned_sessions row (from
   // usePlannedWeekDetail) rather than the calendar-pill event shape —
@@ -262,6 +282,8 @@ export default function ProgrammeView({
   const createFreeFormAndOpen = async (dateISO, { weekMode = false } = {}) => {
     if (!canEdit) return;
     const startDate = weekMode ? mondayOfISO(dateISO) : dateISO;
+    const existing = blocks.find(b => b.block_name === FREEFORM_NAME && b.start_date <= dateISO && dateISO <= b.end_date);
+    if (existing) { await openBlockBuilder(existing); return; }
     const res = await addBlock({
       athlete_id: athlete.id,
       block_name: FREEFORM_NAME,
@@ -476,7 +498,7 @@ export default function ProgrammeView({
           Click block → session builder for that athlete's snapshot.
           Pencil hover-icon on block → block-details modal (name/dates). */}
       <BlockTimelineBar
-        blocks={blocks}
+        blocks={realBlocks}
         canEdit={canEdit}
         onAdd={() => openBlockAdd()}
         onClickBlock={openBlockBuilder}
@@ -543,7 +565,7 @@ export default function ProgrammeView({
 
       {/* Manage Blocks — collapsible secondary list */}
       <BlockList
-        blocks={blocks}
+        blocks={realBlocks}
         events={events}
         loading={blocksLoading}
         canEdit={canEdit}
