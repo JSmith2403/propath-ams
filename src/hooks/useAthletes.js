@@ -384,16 +384,22 @@ export function useAthletes({ seedEnabled = true } = {}) {
       };
     }), [p2update]);
 
-  const addPerformanceEntry = useCallback((id, metric, entry) =>
+  // Adds one result. Saved to the athlete record AND the results table (what the athlete's Progress tab
+  // and the KPI tiles read) — this used to write the record only, so a result added here never showed up
+  // there. The id is made once, outside the state updater, so both copies share it.
+  const addPerformanceEntry = useCallback((id, metric, entry) => {
+    const full = { ...entry, id: uid() };
+    upsertPerformanceResultRow(id, metric, full);
     p2update(id, p2 => {
       const existing = p2.performance.entries[metric] || [];
       return {
         ...p2,
         performance: {
-          entries: { ...p2.performance.entries, [metric]: [{ ...entry, id: uid() }, ...existing] },
+          entries: { ...p2.performance.entries, [metric]: [full, ...existing] },
         },
       };
-    }), [p2update]);
+    });
+  }, [p2update]);
 
   const addPhysioEntry = useCallback((id, entry) =>
     p2update(id, p2 => ({

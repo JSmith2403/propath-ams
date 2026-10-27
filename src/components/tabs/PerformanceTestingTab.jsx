@@ -14,6 +14,7 @@ import { usePerformanceResults } from '../../hooks/usePerformanceResults';
 import { extractScalar } from '../../utils/kpiStats';
 import KpiTile from '../kpi/KpiTile';
 import AddMetricTile from '../kpi/AddMetricTile';
+import QuickAddResult from './QuickAddResult';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -242,13 +243,25 @@ export default function PerformanceTestingTab({
   reportMetrics = [],
   onSaveBrag,
   onSaveReportMetrics,
+  onAddEntry,
 }) {
   const { customMetrics } = useCustomMetrics();
   const athleteId = athlete?.id || '';
 
   // Normalized performance test results (performance_test_results table) —
   // replaces the old phase2.performance.entries blob as this tab's source.
-  const { entries } = usePerformanceResults(athleteId);
+  const { entries, refresh: refreshResults } = usePerformanceResults(athleteId);
+
+  // "+ Add result" — a single result without a testing-day sheet.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [savedNote, setSavedNote] = useState(null);
+  const handleQuickSave = (metricKey, entry) => {
+    onAddEntry?.(metricKey, entry);
+    setQuickAddOpen(false);
+    setSavedNote(`Result saved for ${athlete?.name || 'athlete'}.`);
+    setTimeout(refreshResults, 900);          // the save is fire-and-forget; pick it up once it lands
+    setTimeout(() => setSavedNote(null), 3500);
+  };
 
   // VALD imports for this athlete — surfaced in the KPI metric picker
   // alongside manual + custom metrics. Lets coaches chart any imported
@@ -379,7 +392,18 @@ export default function PerformanceTestingTab({
 
       {/* ── Section 2: KPI Board ──────────────────────────────────── */}
       <div>
-        <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">KPI Dashboard</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">KPI Dashboard</h3>
+          <div className="flex items-center gap-3">
+            {savedNote && <span className="text-xs font-semibold" style={{ color: '#15803d' }} role="status">{savedNote}</span>}
+            {onAddEntry && (
+              <button onClick={() => setQuickAddOpen(true)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ backgroundColor: GOLD }}>
+                + Add result
+              </button>
+            )}
+          </div>
+        </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 items-stretch" data-board>
           {orderedBoard.map(row => (
             <KpiTile
@@ -459,6 +483,16 @@ export default function PerformanceTestingTab({
             </table>
           </div>
         </div>
+      )}
+
+      {quickAddOpen && (
+        <QuickAddResult
+          athleteName={athlete?.name || ''}
+          entries={entries}
+          customMetrics={customMetrics}
+          onSave={handleQuickSave}
+          onClose={() => setQuickAddOpen(false)}
+        />
       )}
     </div>
   );
