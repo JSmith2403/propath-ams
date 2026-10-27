@@ -39,7 +39,7 @@ many rules say "everyone" (`USING (true)`):
   (`performance_test_results`, `development_plans`, `goals`, `athlete_kpi_board`, meals, water, logs,
   VALD, training blocks, calendar events). The app never shows this, but nothing in the database stops
   it.
-- The `athletes` blob itself *is* locked to coaches (and allocated providers) — good.
+- **CORRECTION (checked on the live database, 27 Oct):** the `athletes` table is **not** locked. It, `sessions` and `app_settings` still have the original open rule (`allow_all` to everyone), so the public key alone can read/change/delete every athlete record. Confirmed with a count-only request (athletes: 17 reachable without a login). Fix + undo: `sql/security_wave1_*_2026-10-27.sql`.
 - This was a known, deliberate stop-gap (`security-lockdown-2026-07-06.sql` says "needs a token-exchange
   … so reads are scoped per-athlete"). Individual logins are what make the proper fix possible now.
 

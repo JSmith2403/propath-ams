@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
-import RecentUpdatesView from './components/recent/RecentUpdatesView';
-import WellnessAdherencePanel from './components/recent/WellnessAdherencePanel';
+import UpdatesDashboard from './components/dashboard/UpdatesDashboard';
 import AthleteRoster from './components/AthleteRoster';
 import AthleteProfile from './components/AthleteProfile';
 import DataEntryView from './components/dataentry/DataEntryView';
@@ -286,21 +285,17 @@ function AuthenticatedApp({ role, allocations, userEmail, userName, signOut }) {
         )}
 
         {view === 'updates' && !isExternal && (
-          <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-            <div className="flex-1 min-w-0 flex flex-col overflow-hidden rounded-xl border border-ink-100 bg-white">
-              <RecentUpdatesView
+          <div className="flex-1 flex flex-col overflow-hidden p-4">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+              <UpdatesDashboard
                 athletes={visibleAthletes}
+                userName={userName || userEmail}
                 onNavigateToAthlete={handleSelectAthlete}
+                onNavigate={handleNavigate}
                 onAddRagEntry={addRagEntry}
                 onAddPhysioEntry={addPhysioEntry}
                 onAddGeneralNote={addGeneralNote}
                 senderName={userName || userEmail}
-              />
-            </div>
-            <div className="hidden xl:flex flex-1 min-w-0">
-              <WellnessAdherencePanel
-                athletes={visibleAthletes}
-                onNavigate={handleNavigate}
               />
             </div>
           </div>
