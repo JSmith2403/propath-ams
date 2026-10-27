@@ -13,9 +13,11 @@ const greeting = () => {
 };
 
 /**
- * Updates dashboard — four panels that answer "who needs me today?":
- *   Recent Updates · Nutrition Submissions (with hydration) · Athlete Wellness · Wellness Compliance.
- * "View all" on Recent Updates opens the full feed (filters, notes, messaging) and Back returns here.
+ * Updates dashboard — four panels on ONE static screen, each scrolling inside itself:
+ *   Recent Updates (completed training sessions) · Nutrition Submissions (with hydration)
+ *   Athlete Wellness · Wellness Compliance.
+ * On a wide screen the grid fills the window exactly, so nothing needs a page scroll. On narrower screens the
+ * panels stack at a fixed height and the page scrolls instead. "View all" opens the full feed; Back returns.
  */
 export default function UpdatesDashboard({ athletes, userName, onNavigateToAthlete, onNavigate, ...feedProps }) {
   const [feed, setFeed] = useState(false);
@@ -25,8 +27,8 @@ export default function UpdatesDashboard({ athletes, userName, onNavigateToAthle
 
   if (feed) {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <button onClick={() => setFeed(false)} className="inline-flex items-center gap-1.5 text-meta font-semibold px-5 py-3 border-b border-ink-100 self-stretch text-left" style={{ color: '#A58D69' }}>
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <button onClick={() => setFeed(false)} className="inline-flex items-center gap-1.5 text-meta font-semibold px-5 py-3 border-b border-ink-100 self-stretch text-left bg-white shrink-0" style={{ color: '#A58D69' }}>
           <ArrowLeft size={14} /> Back to dashboard
         </button>
         <RecentUpdatesView athletes={athletes} onNavigateToAthlete={onNavigateToAthlete} {...feedProps} />
@@ -35,21 +37,18 @@ export default function UpdatesDashboard({ athletes, userName, onNavigateToAthle
   }
 
   const first = (userName || '').split(/[\s@]/)[0];
+  const cell = 'h-[420px] xl:h-auto min-h-0 min-w-0';
   return (
-    <div className="flex-1 overflow-y-auto pb-24 md:pb-6">
-      <div className="px-5 md:px-8 pt-6 pb-4">
-        <h1 className="text-h1 font-bold text-ink-900">{greeting()}{first ? `, ${first}` : ''}</h1>
-        <p className="text-meta text-ink-500">Here’s an overview of your athletes’ progress, wellness and nutrition.</p>
+    <div className="flex-1 min-h-0 flex flex-col overflow-y-auto xl:overflow-hidden pb-24 md:pb-0">
+      <div className="px-5 md:px-6 pt-4 pb-2 shrink-0">
+        <h1 className="text-h2 font-bold text-ink-900 leading-tight">{greeting()}{first ? `, ${first}` : ''}</h1>
+        <p className="text-micro text-ink-500">Here’s an overview of your athletes’ progress, wellness and nutrition.</p>
       </div>
-      <div className="px-4 md:px-6 grid gap-4 xl:grid-cols-2 items-start">
-        <div className="space-y-4 min-w-0">
-          <RecentUpdatesCard athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onViewAll={() => setFeed(true)} />
-          <WellnessInsightsCard data={data.loading ? null : data} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onViewAll={() => onNavigate('wellness')} />
-        </div>
-        <div className="space-y-4 min-w-0">
-          <NutritionCard data={data.loading ? null : data} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} />
-          <ComplianceCard athletes={athletes} onViewAll={() => onNavigate('wellness')} />
-        </div>
+      <div className="px-3 md:px-4 pb-3 grid gap-3 xl:flex-1 xl:min-h-0 xl:grid-cols-2 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className={cell}><RecentUpdatesCard athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onViewAll={() => setFeed(true)} /></div>
+        <div className={cell}><NutritionCard data={data.loading ? null : data} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} /></div>
+        <div className={cell}><WellnessInsightsCard data={data.loading ? null : data} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onViewAll={() => onNavigate('wellness')} /></div>
+        <div className={cell}><ComplianceCard athletes={athletes} onViewAll={() => onNavigate('wellness')} /></div>
       </div>
     </div>
   );

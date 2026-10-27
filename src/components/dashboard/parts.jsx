@@ -44,18 +44,22 @@ export function Chip({ tone, children }) {
   );
 }
 
-/** Card shell shared by the four dashboard panels. */
+/**
+ * Card shell shared by the four dashboard panels. Fills whatever grid cell it's given; the header and
+ * any fixed summary stay put and the list inside <Scroll> scrolls on its own, so the whole dashboard
+ * can sit on one static screen.
+ */
 export function DashCard({ icon: Icon, title, subtitle, badge, onViewAll, viewAllLabel = 'View all', children }) {
   return (
-    <section className="rounded-xl bg-white border border-ink-100 shadow-card overflow-hidden">
-      <header className="flex items-start gap-3 px-5 pt-5 pb-3">
-        <Icon size={22} style={{ color: GOLD }} className="shrink-0 mt-0.5" />
+    <section className="h-full min-h-0 flex flex-col rounded-xl bg-white border border-ink-100 shadow-card overflow-hidden">
+      <header className="flex items-start gap-2.5 px-4 pt-3 pb-2 shrink-0">
+        <Icon size={20} style={{ color: GOLD }} className="shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <h2 className="text-body font-bold text-ink-900 flex items-center gap-2">
             {title}
             {badge ? <span className="text-[11px] font-bold text-white rounded-full px-1.5 min-w-[18px] text-center" style={{ backgroundColor: '#dc2626' }}>{badge}</span> : null}
           </h2>
-          {subtitle && <p className="text-micro text-ink-500">{subtitle}</p>}
+          {subtitle && <p className="text-micro text-ink-500 truncate">{subtitle}</p>}
         </div>
         {onViewAll && (
           <button onClick={onViewAll} className="inline-flex items-center gap-1 text-meta font-semibold shrink-0" style={{ color: GOLD }}>
@@ -63,9 +67,14 @@ export function DashCard({ icon: Icon, title, subtitle, badge, onViewAll, viewAl
           </button>
         )}
       </header>
-      <div className="px-5 pb-5">{children}</div>
+      <div className="flex-1 min-h-0 flex flex-col px-4 pb-3">{children}</div>
     </section>
   );
+}
+
+/** The scrolling part of a card — takes all the space left after the fixed bits. */
+export function Scroll({ children, className = '' }) {
+  return <div className={`flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 ${className}`}>{children}</div>;
 }
 
 export function Empty({ children }) {

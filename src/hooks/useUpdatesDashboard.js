@@ -77,7 +77,7 @@ export function useUpdatesDashboard(athleteIds) {
       const submittedTodayIds = new Set(mealRows.filter(m => m.log_date === today).map(m => m.athlete_id));
       const incompleteIds = loggers.filter(id => !submittedTodayIds.has(id));
 
-      const latest = mealRows.slice(0, 5).map(m => {
+      const latest = mealRows.slice(0, 20).map(m => {
         const photo = (m.meal_photos || [])[0];
         return {
           id: m.id,

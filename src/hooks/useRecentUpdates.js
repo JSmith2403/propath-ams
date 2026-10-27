@@ -77,7 +77,7 @@ function wellnessRag(row) {
  *
  * Both survive across sessions in localStorage. Per-device for MVP.
  */
-export function useRecentUpdates() {
+export function useRecentUpdates({ sessionsOnly = false } = {}) {
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
   const loadedOnceRef = useRef(false);
@@ -121,7 +121,11 @@ export function useRecentUpdates() {
     (async () => {
       if (!loadedOnceRef.current) setLoading(true);
       const sinceISO = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString();
+      // sessionsOnly (the dashboard's training-sessions panel): skip every other source so a busy day of
+      // meal logs can't push completed sessions out of the capped list.
+      const none = Promise.resolve({ data: [], error: null });
       const [sessRes, wellRes, pbRes, mealRes, attRes] = await Promise.all([
+        // (order: sessions, wellness, PBs, meals, attendance)
         supabase
           .from('session_logs')
           // Direct FK to block_sessions gets the template name when the
@@ -139,19 +143,19 @@ export function useRecentUpdates() {
           .gte('completed_at', sinceISO)
           .order('completed_at', { ascending: false })
           .limit(MAX_ITEMS),
-        supabase
+        sessionsOnly ? none : supabase
           .from('wellness_submissions')
           .select('id, athlete_id, submission_date, created_at, sleep_quality, fatigue, muscle_soreness, stress')
           .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
           .limit(MAX_ITEMS),
-        supabase
+        sessionsOnly ? none : supabase
           .from('athlete_e1rm')
           .select('id, athlete_id, exercise_id, e1rm_kg, created_at, exercise_library ( name )')
           .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
           .limit(MAX_ITEMS),
-        supabase
+        sessionsOnly ? none : supabase
           .from('meal_entries')
           .select('id, athlete_id, log_date, meal_type, description, submitted_at, created_at')
           .not('submitted_at', 'is', null)
@@ -162,7 +166,7 @@ export function useRecentUpdates() {
         // source failed" error count below — if the attendance columns
         // haven't been migrated yet this query just errors and the rest of
         // the feed is unaffected.
-        supabase
+        sessionsOnly ? none : supabase
           .from('planned_sessions')
           .select('id, athlete_id, planned_date, attendance, attendance_note, attendance_at, block_sessions ( session_name )')
           .not('attendance', 'is', null)
@@ -172,8 +176,9 @@ export function useRecentUpdates() {
       ]);
       if (cancelled) return;
 
-      const errors = [sessRes.error, wellRes.error, pbRes.error, mealRes.error].filter(Boolean);
-      if (errors.length === 4) {
+      const sources = sessionsOnly ? [sessRes] : [sessRes, wellRes, pbRes, mealRes];
+      const errors = sources.map(r => r.error).filter(Boolean);
+      if (errors.length === sources.length) {
         console.error('[useRecentUpdates] every source failed', errors);
         setError(errors[0]);
         setUpdates([]);
@@ -329,7 +334,7 @@ export function useRecentUpdates() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [tick]);
+  }, [tick, sessionsOnly]);
 
   // ── Read-state helpers ─────────────────────────────────────────
   const isRead = useCallback((u) => {
