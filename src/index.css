@@ -33,6 +33,16 @@
   }
 }
 
+/* ── Phones: stop the page jumping/zooming ──
+   iPhones zoom the whole page when you tap a text box whose font is under 16px, and they don't always zoom back
+   out — the app then looks too big until the person pinches. Keep every form field at 16px on touch screens, and
+   stop double-tap zooming on controls. Text-size-adjust stops the phone inflating text on its own. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+  button, a, input, select, textarea, label { touch-action: manipulation; }
+}
+
 /* ── Print styles ── */
 @media print {
   /* Preserve background colours and backgrounds without requiring the

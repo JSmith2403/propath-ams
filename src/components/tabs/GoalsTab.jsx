@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useDevelopmentPlans } from '../../hooks/useDevelopmentPlans';
-import { useAthleteApp } from '../../hooks/useAthleteApp';
 import SessionDetailCard from '../SessionDetailCard';
 import {
   TIER_ORDER, TIER_META, DOMAIN_META, GOAL_STATUS_META, QUARTER_META,
@@ -323,7 +322,6 @@ export default function GoalsTab({
   highlightEntry = null, onClearHighlight,
 }) {
   const { plans, loading, goalsForPlan, startReview, addGoal, updateGoal, deleteGoal, adoptAthleteGoal, closeReview, saveDraft, sendToAthlete } = useDevelopmentPlans(athleteId);
-  const { tokenData: athleteToken } = useAthleteApp(athleteId);
 
   const initial = currentYearQuarter();
   const [year, setYear] = useState(initial.year);
@@ -492,7 +490,7 @@ export default function GoalsTab({
           athlete_id: athleteId,
           title: 'Your quarterly report is ready',
           body: `Your ${plan.period_label} report is now available on your Progress tab.`,
-          url: athleteToken?.token ? `/athlete/${athleteToken.token}?tab=progress` : '/',
+          url: '/athlete?tab=progress',
         }),
       });
     } catch (e) {

@@ -1,9 +1,5 @@
 import { Dumbbell, TrendingUp, Apple, BookOpen, MessageCircle } from 'lucide-react';
 
-// Resources isn't a top-level tab — it's a section at the bottom of
-// Training. The button here just signals 'scroll me down to it' (handled
-// by the parent), so we never mark it as active.
-//
 // Messages isn't a tab either — it opens the inbox sheet over whatever
 // tab you're on (handled by the parent). Its red badge is the unread count.
 //
@@ -17,7 +13,7 @@ const TABS = [
   { id: 'resources', label: 'Resources', icon: BookOpen      },
 ];
 
-const SCROLL_OR_OVERLAY = new Set(['resources', 'messages']);
+const OVERLAY = new Set(['messages']);
 
 export default function TabBar({ active, onChange, badges = {} }) {
   return (
@@ -30,8 +26,8 @@ export default function TabBar({ active, onChange, badges = {} }) {
       }}
     >
       {TABS.map(({ id, label, icon: Icon }) => {
-        // Resources / Messages aren't routes — they never light up as "active".
-        const isActive = active === id && !SCROLL_OR_OVERLAY.has(id);
+        // Messages isn't a route — it never lights up as "active".
+        const isActive = active === id && !OVERLAY.has(id);
         const badge = badges[id] || 0;
         return (
           <button

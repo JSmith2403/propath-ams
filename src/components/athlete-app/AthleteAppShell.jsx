@@ -18,6 +18,7 @@ import { addDaysISO, todayUAE } from '../../utils/timetable';
 
 const ProgressTab  = lazy(() => import('./ProgressTab'));
 const NutritionTab = lazy(() => import('./NutritionTab'));
+const ResourcesTab = lazy(() => import('./ResourcesTab'));
 
 function Loading() {
   return (
@@ -30,7 +31,7 @@ function Loading() {
   );
 }
 
-const VALID_TABS = new Set(['train', 'progress', 'nutrition']);
+const VALID_TABS = new Set(['train', 'progress', 'nutrition', 'resources']);
 
 function greeting() {
   const h = new Date().getHours();
@@ -54,7 +55,6 @@ export default function AthleteAppShell({ athlete }) {
     const requested = searchParams.get('tab');
     return VALID_TABS.has(requested) ? requested : 'train';
   });
-  const [scrollToResourcesNonce, setScrollToResourcesNonce] = useState(0);
   const { messages, loading: messagesLoading, unreadCount: teamUnread, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
   // The published timetable (today → end of next week). Held here so the gold banner
   // and the Training-tab card share one set of answers.
@@ -84,11 +84,6 @@ export default function AthleteAppShell({ athlete }) {
 
   const handleTabChange = (id) => {
     if (id === 'messages') { setInboxOpen(true); return; }
-    if (id === 'resources') {
-      if (activeTab !== 'train') setActive('train');
-      setScrollToResourcesNonce(n => n + 1);
-      return;
-    }
     setActive(id);
   };
 
@@ -178,7 +173,6 @@ export default function AthleteAppShell({ athlete }) {
             <TrainingTab
               athleteId={athlete.id}
               athleteName={athlete.name}
-              scrollToResourcesNonce={scrollToResourcesNonce}
               onOpenNutrition={() => setActive('nutrition')}
               onOpenMessages={openTeamChat}
               timetable={timetable}
@@ -190,6 +184,7 @@ export default function AthleteAppShell({ athlete }) {
               <ProgressTab athleteId={athlete.id} progressMetrics={athlete.progressMetrics} />
             )}
             {activeTab === 'nutrition' && <NutritionTab athleteId={athlete.id} />}
+            {activeTab === 'resources' && <ResourcesTab />}
           </Suspense>
         </main>
 

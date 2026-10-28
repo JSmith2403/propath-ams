@@ -51,6 +51,35 @@ const CATEGORIES = [
 
 const GOLD = '#A58D69';
 
+// Tags: short lowercase sub-topics ("pre-game", "recovery") shown as filter chips in the athlete app and searched first.
+const cleanTags = (tags) => {
+  const seen = new Set();
+  return (Array.isArray(tags) ? tags : [])
+    .map(t => String(t).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 30))
+    .filter(t => t && !seen.has(t) && seen.add(t))
+    .slice(0, 12);
+};
+
+// All the text inside a PDF, so the athlete search can find a guide by what it says, not just what it's called.
+// Capped so one huge file can't bloat the row. Scanned (image-only) PDFs have no text — returns ''.
+async function extractPdfText(file) {
+  try {
+    const pdfjs     = await import('pdfjs-dist');
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    let out = '';
+    for (let p = 1; p <= Math.min(pdf.numPages, 60) && out.length < 120000; p++) {
+      const tc = await (await pdf.getPage(p)).getTextContent();
+      out += ' ' + tc.items.map(i => i.str).join(' ');
+    }
+    return out.replace(/\s+/g, ' ').trim().slice(0, 120000);
+  } catch (e) {
+    console.warn('[PDF text extract] failed:', e);
+    return '';
+  }
+}
+
 function blankItem() {
   return {
     id:               null,
@@ -63,6 +92,8 @@ function blankItem() {
     file_name:        null,
     display_order:    0,
     is_published:     true,
+    tags:             [],
+    search_text:      null,
   };
 }
 
@@ -114,6 +145,8 @@ export default function ResourcesAdminView() {
       file_name:        draft.file_name || null,
       display_order:    draft.display_order ?? 0,
       is_published:     !!draft.is_published,
+      tags:             cleanTags(draft.tags),
+      search_text:      draft.search_text || null,
     };
     if (!payload.title) {
       showToast('Title is required.', 'error');
@@ -133,6 +166,34 @@ export default function ResourcesAdminView() {
     showToast(draft.id ? 'Resource updated.' : 'Resource created.');
     await fetchAll();
     return true;
+  };
+
+  // Reads the text out of every uploaded PDF that hasn't been indexed yet, so athlete search can find it.
+  const [indexing, setIndexing] = useState(false);
+  const reindex = async () => {
+    const todo = items.filter(it => it.file_url && (it.file_name || '').toLowerCase().endsWith('.pdf') && !it.search_text);
+    if (!todo.length) { showToast('Search index is already up to date.'); return; }
+    setIndexing(true);
+    let done = 0;
+    for (const it of todo) {
+      try {
+        const path = bucketPathFromUrl(it.file_url);
+        const { data: blob, error: dlErr } = path
+          ? await supabase.storage.from('resources').download(path)
+          : { data: await (await fetch(it.file_url)).blob(), error: null };
+        if (dlErr) throw dlErr;
+        const text = await extractPdfText(blob);
+        if (!text) continue;                                   // scanned PDF — nothing to read
+        const { error } = await supabase.from('resource_items').update({ search_text: text }).eq('id', it.id);
+        if (error) throw error;
+        done++;
+      } catch (e) {
+        console.warn('[Resources] reindex failed for', it.title, e);
+      }
+    }
+    setIndexing(false);
+    showToast(done === todo.length ? `Indexed ${done} PDF${done === 1 ? '' : 's'}.` : `Indexed ${done} of ${todo.length} — the rest have no readable text.`, done ? 'success' : 'error');
+    await fetchAll();
   };
 
   const togglePublish = async (it) => {
@@ -215,6 +276,14 @@ export default function ResourcesAdminView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={reindex}
+            disabled={indexing}
+            title="Read the text inside uploaded PDFs so athletes can find them by searching"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {indexing ? 'Indexing…' : 'Update search index'}
+          </button>
           <button
             onClick={() => showToast('Custom categories coming soon — using the four built-in categories for now.', 'info')}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -593,6 +662,13 @@ function Editor({ draft: initial, onSave, onCancel }) {
                 placeholder="Short blurb shown in the list view."
                 className={inp} />
             </div>
+            <div className="mb-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Tags</label>
+              <TagsField value={draft.tags || []} onChange={(tags) => set({ tags })} />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Short topics like pre-game, hydration, recovery. Athletes filter by these and search finds them first.
+              </p>
+            </div>
             <label className="inline-flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={!!draft.is_published}
                 onChange={e => set({ is_published: e.target.checked })} />
@@ -927,6 +1003,39 @@ async function uploadAndSet(file, kind, set, draft) {
   }
 }
 
+// ─── TagsField — type a tag, Enter or comma to add; tap × to remove ───────
+function TagsField({ value, onChange }) {
+  const [text, setText] = useState('');
+  const commit = (raw) => {
+    const next = cleanTags([...value, ...String(raw).split(',')]);
+    if (next.length !== value.length) onChange(next);
+    setText('');
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1.5">
+      {value.map(t => (
+        <span key={t} className="inline-flex items-center gap-1 rounded-full bg-gray-100 pl-2.5 pr-1.5 py-0.5 text-xs text-gray-700">
+          {t}
+          <button type="button" onClick={() => onChange(value.filter(x => x !== t))} aria-label={`Remove ${t}`} className="text-gray-400 hover:text-red-600">
+            <X size={12} />
+          </button>
+        </span>
+      ))}
+      <input
+        type="text" value={text}
+        onChange={e => (e.target.value.includes(',') ? commit(e.target.value) : setText(e.target.value))}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(text); }
+          else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1));
+        }}
+        onBlur={() => text.trim() && commit(text)}
+        placeholder={value.length ? '' : 'Add a tag…'}
+        className="flex-1 min-w-[90px] bg-transparent px-1 py-1 text-sm outline-none"
+      />
+    </div>
+  );
+}
+
 // ─── UploadFile — single dropzone matching the coach mockup ──────────────
 // One area accepting PDF / PNG / JPG. Drop or click → immediate upload
 // + (for PDFs) auto-extract page 1 as cover. Inline error / status so
@@ -995,7 +1104,8 @@ function UploadFile({ draft, set }) {
         const patch = {};
         if (meta.title   && !(draft.title   || '').trim()) patch.title   = meta.title;
         if (meta.summary && !(draft.summary || '').trim()) patch.summary = meta.summary;
-        if (Object.keys(patch).length) set(patch);
+        const text = await extractPdfText(file);
+        set({ ...patch, search_text: text || null });
       } else {
         // Image: serves as both file (download) and cover.
         set({ file_url: pub.publicUrl, file_name: file.name, cover_image_url: pub.publicUrl });
@@ -1021,7 +1131,7 @@ function UploadFile({ draft, set }) {
         {hasFile && (
           <button
             type="button"
-            onClick={() => set({ file_url: null, file_name: null, cover_image_url: null })}
+            onClick={() => set({ file_url: null, file_name: null, cover_image_url: null, search_text: null })}
             className="text-[11px] font-semibold text-gray-400 hover:text-red-600 transition-colors"
           >
             Remove
