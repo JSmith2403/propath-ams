@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { uniqueChannelName } from '../lib/realtime';
 
 const SETTINGS_KEY = 'custom_metrics';
 
@@ -35,7 +36,7 @@ export function useCustomMetrics() {
       });
 
     const channel = supabase
-      .channel('custom-metrics-changes')
+      .channel(uniqueChannelName('custom-metrics-changes'))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'app_settings', filter: `key=eq.${SETTINGS_KEY}` },

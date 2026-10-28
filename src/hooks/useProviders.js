@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { uniqueChannelName } from '../lib/realtime';
 
 const SETTINGS_KEY = 'providers';
 
@@ -46,7 +47,7 @@ export function useProviders() {
       });
 
     const channel = supabase
-      .channel('providers-changes')
+      .channel(uniqueChannelName('providers-changes'))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'app_settings', filter: `key=eq.${SETTINGS_KEY}` },

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { uniqueChannelName } from '../lib/realtime';
 import { DUMMY_ATHLETES } from '../data/athletes';
 import { SYNC_MAP, METRIC_MAP } from '../data/sessionMetrics';
 
@@ -232,7 +233,7 @@ export function useAthletes({ seedEnabled = true } = {}) {
     })();
 
     const channel = supabase
-      .channel('athletes-changes')
+      .channel(uniqueChannelName('athletes-changes'))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'athletes' },

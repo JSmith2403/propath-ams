@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { uniqueChannelName } from '../lib/realtime';
 
 function uid() {
   return crypto.randomUUID();
@@ -26,7 +27,7 @@ export function useSessions() {
     });
 
     const channel = supabase
-      .channel('sessions-changes')
+      .channel(uniqueChannelName('sessions-changes'))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sessions' },
