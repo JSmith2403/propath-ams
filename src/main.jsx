@@ -1,7 +1,7 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import ErrorBoundary from './components/ErrorBoundary.jsx'
+import ErrorBoundary, { reloadForNewVersion } from './components/ErrorBoundary.jsx'
 import SaveErrorToast from './components/SaveErrorToast.jsx'
 import './index.css'
 import './utils/installPrompt.js'   // grabs Android's install event before any screen needs it
@@ -12,6 +12,9 @@ import './utils/installPrompt.js'   // grabs Android's install event before any 
 // they never see any of it. Lazy splitting drops the athlete first-
 // paint bundle by hundreds of kilobytes.
 const App = lazy(() => import('./App.jsx'))
+
+// Vite fires this when a lazily loaded file is gone (an open tab from before a deploy). Reload to the new version.
+window.addEventListener('vite:preloadError', (e) => { if (reloadForNewVersion()) e.preventDefault() })
 
 // ── PWA athlete-app launch shortcut ──────────────────────────────────────────
 // Home-screen launches keep landing on "/" (the coach admin root) for
