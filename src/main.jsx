@@ -32,9 +32,10 @@ const App = lazy(() => import('./App.jsx'))
     if (!isStandalone) return;
 
     // Legacy token-only athletes (pin_login_enabled off) — unchanged.
-    const legacyToken = localStorage.getItem('propath_athlete_token');
-    if (legacyToken) {
-      window.location.replace(`/athlete/${legacyToken}${window.location.search}`);
+    // Retired 28 Oct 2026: private links no longer work. An icon that still remembers one goes to the sign-in page.
+    if (localStorage.getItem('propath_athlete_token')) {
+      localStorage.removeItem('propath_athlete_token');
+      window.location.replace('/athlete');
       return;
     }
 
@@ -68,8 +69,7 @@ const App = lazy(() => import('./App.jsx'))
   } catch (_) { /* best effort */ }
 })();
 
-const WellnessFormPage  = lazy(() => import('./components/wellness/WellnessFormPage.jsx'))
-const AthleteAppPage    = lazy(() => import('./components/athlete-app/AthleteAppPage.jsx'))
+const LegacyLinkNotice  = lazy(() => import('./components/LegacyLinkNotice.jsx'))
 // Parent/guardian read-only link — no login (see api/_lib/athlete-auth/family.js).
 const FamilyView        = lazy(() => import('./components/family/FamilyView.jsx'))
 // Stable, token-free entry point for PIN-login athletes (see
@@ -86,7 +86,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           path="/wellness/:token"
           element={
             <Suspense fallback={null}>
-              <WellnessFormPage />
+              <LegacyLinkNotice />
             </Suspense>
           }
         />
@@ -110,7 +110,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           path="/athlete/:token"
           element={
             <Suspense fallback={null}>
-              <AthleteAppPage />
+              <LegacyLinkNotice />
             </Suspense>
           }
         />
