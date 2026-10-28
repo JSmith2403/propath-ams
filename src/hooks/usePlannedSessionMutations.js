@@ -121,7 +121,7 @@ async function findOrCreateFreeFormBlock(athleteId, dateISO) {
     .select()
     .single();
   if (e2) return { ok: false, error: e2 };
-  return { ok: true, block: created };
+  return { ok: true, block: created, created: true };
 }
 
 /**
@@ -419,4 +419,235 @@ export async function listAddableSessionsForDate(athleteId, plannedDateISO) {
     ok: true,
     groups: blocks.map(b => ({ block: b, sessions: byBlock.get(b.id) || [] })),
   };
+}
+
+// ─── Paste a copied run of weeks ─────────────────────────────────────────────
+
+/** Next free session_order in a block, remembered per block so several clones in one paste don't collide. */
+async function nextSessionOrder(blockId, counters) {
+  if (!counters.has(blockId)) {
+    const { data } = await supabase
+      .from('block_sessions').select('session_order')
+      .eq('block_id', blockId).order('session_order', { ascending: false }).limit(1).maybeSingle();
+    counters.set(blockId, (data?.session_order ?? -1) + 1);
+  }
+  const n = counters.get(blockId);
+  counters.set(blockId, n + 1);
+  return n;
+}
+
+/**
+ * Full copy of a block_session into another block: name, notes, sections, every exercise (with its section,
+ * superset grouping, warm-up flag, notes). Prescriptions are copied separately, per week, so the same clone
+ * can serve several pasted weeks. Returns the new id and a map of old exercise id → new exercise id.
+ */
+async function cloneBlockSessionFull(sourceBlockSessionId, targetBlockId, counters) {
+  const { data: src, error: e1 } = await supabase
+    .from('block_sessions').select('session_name, coach_notes').eq('id', sourceBlockSessionId).single();
+  if (e1) return { ok: false, error: e1 };
+
+  const { data: ns, error: e2 } = await supabase
+    .from('block_sessions')
+    .insert({
+      block_id: targetBlockId,
+      session_name: src.session_name,
+      session_order: await nextSessionOrder(targetBlockId, counters),
+      coach_notes: src.coach_notes,
+    })
+    .select().single();
+  if (e2) return { ok: false, error: e2 };
+
+  const { data: srcSections, error: e3 } = await supabase
+    .from('session_sections').select('id, name, display_order, is_warm_up')
+    .eq('block_session_id', sourceBlockSessionId).order('display_order', { ascending: true });
+  if (e3) return { ok: false, error: e3, blockSessionId: ns.id };
+  const sectionMap = new Map();
+  if (srcSections?.length) {
+    const { data: newSections, error: e4 } = await supabase
+      .from('session_sections')
+      .insert(srcSections.map(({ id: _id, ...rest }) => ({ ...rest, block_session_id: ns.id })))
+      .select();
+    if (e4) return { ok: false, error: e4, blockSessionId: ns.id };
+    srcSections.forEach((sec, i) => sectionMap.set(sec.id, newSections[i].id));
+  }
+
+  const { data: srcEx, error: e5 } = await supabase
+    .from('session_exercises')
+    .select('id, exercise_id, display_order, group_label, group_colour, prescription_type, notes, is_warm_up, section_id, superset_group_id')
+    .eq('block_session_id', sourceBlockSessionId).order('display_order', { ascending: true });
+  if (e5) return { ok: false, error: e5, blockSessionId: ns.id };
+
+  const exMap = new Map();
+  if (srcEx?.length) {
+    const supersetMap = new Map();
+    const rows = srcEx.map(({ id: _id, section_id, superset_group_id, ...rest }) => {
+      if (superset_group_id && !supersetMap.has(superset_group_id)) supersetMap.set(superset_group_id, crypto.randomUUID());
+      return {
+        ...rest,
+        block_session_id: ns.id,
+        section_id: section_id ? (sectionMap.get(section_id) ?? null) : null,
+        superset_group_id: superset_group_id ? supersetMap.get(superset_group_id) : null,
+      };
+    });
+    const { data: newEx, error: e6 } = await supabase.from('session_exercises').insert(rows).select();
+    if (e6) return { ok: false, error: e6, blockSessionId: ns.id };
+    srcEx.forEach((ex, i) => exMap.set(ex.id, newEx[i].id));
+  }
+  return { ok: true, blockSessionId: ns.id, exMap };
+}
+
+/** Copy the loads for one source week onto a clone, as the target week. Exact week, else the nearest earlier one, else the first. */
+async function copyWeekPrescriptions(exMap, sourceWeek, targetWeek) {
+  const oldIds = [...exMap.keys()];
+  if (!oldIds.length) return { ok: true };
+  const { data, error } = await supabase
+    .from('exercise_week_prescriptions')
+    .select('session_exercise_id, week_number, sets, reps, target_value, rest_seconds, override_exercise_id')
+    .in('session_exercise_id', oldIds);
+  if (error) return { ok: false, error };
+
+  const byEx = new Map();
+  for (const p of data || []) {
+    if (!byEx.has(p.session_exercise_id)) byEx.set(p.session_exercise_id, []);
+    byEx.get(p.session_exercise_id).push(p);
+  }
+  const rows = [];
+  for (const [oldId, list] of byEx) {
+    list.sort((a, b) => a.week_number - b.week_number);
+    const pick = list.find(p => p.week_number === sourceWeek)
+      || [...list].reverse().find(p => p.week_number < sourceWeek)
+      || list[0];
+    rows.push({
+      session_exercise_id: exMap.get(oldId),
+      week_number: targetWeek,
+      sets: pick.sets,
+      reps: pick.reps,
+      target_value: pick.target_value,
+      rest_seconds: pick.rest_seconds,
+      override_exercise_id: pick.override_exercise_id,
+    });
+  }
+  if (!rows.length) return { ok: true };
+  const { error: insErr } = await supabase.from('exercise_week_prescriptions').insert(rows);
+  return insErr ? { ok: false, error: insErr } : { ok: true };
+}
+
+/**
+ * Paste planned sessions onto an athlete (the same one or another).
+ *
+ * pairs = [{ plannedId, targetDateISO }] — see planPaste() in utils/weekClipboard.
+ *
+ *   • Same athlete, target date inside the source session's own block → the session is simply re-planned on
+ *     the new date and follows that block's programme for the new week (how copy/repeat already behaves).
+ *   • Anywhere else (a different block, no block yet, another athlete) → the session is copied in full, with
+ *     the loads it had in its source week, into the block covering that date — or a new FreeForm week.
+ *
+ * Returns { ok, copied, reused, cloned, missing, created } where `created` is what undoPastedSessions() needs.
+ */
+export async function pastePlannedSessions({ pairs, targetAthleteId }) {
+  const created = { plannedIds: [], blockSessionIds: [], blockIds: [] };
+  if (!pairs?.length) return { ok: true, copied: 0, reused: 0, cloned: 0, missing: 0, created };
+
+  const { data: srcRows, error: e1 } = await supabase
+    .from('planned_sessions').select('id, athlete_id, block_id, block_session_id, week_number')
+    .in('id', pairs.map(p => p.plannedId));
+  if (e1) return { ok: false, error: e1, created };
+  const srcById = new Map(srcRows.map(r => [r.id, r]));
+
+  const { data: blocks, error: e2 } = await supabase
+    .from('training_blocks').select('id, start_date, end_date')
+    .in('id', [...new Set(srcRows.map(r => r.block_id))]);
+  if (e2) return { ok: false, error: e2, created };
+  const blockById = new Map(blocks.map(b => [b.id, b]));
+
+  const clones = new Map();        // "srcBlockSession|targetBlock" → { blockSessionId, exMap }
+  const weeksDone = new Set();     // "cloneId|targetWeek" — loads already copied
+  const counters = new Map();      // session_order counters per target block
+  const blockForDate = new Map();  // dateISO → target block
+  const rows = [];
+  let reused = 0, cloned = 0, missing = 0;
+
+  for (const { plannedId, targetDateISO } of pairs) {
+    const src = srcById.get(plannedId);
+    if (!src) { missing++; continue; }
+    const srcBlock = blockById.get(src.block_id);
+    const reuseWeek = src.athlete_id === targetAthleteId && srcBlock
+      ? weekNumberWithin(srcBlock.start_date, srcBlock.end_date, targetDateISO) : null;
+
+    if (reuseWeek != null) {
+      rows.push({ athlete_id: targetAthleteId, block_id: src.block_id, block_session_id: src.block_session_id,
+        week_number: reuseWeek, planned_date: targetDateISO, status: 'planned' });
+      reused++;
+      continue;
+    }
+
+    let target = blockForDate.get(targetDateISO);
+    if (!target) {
+      const found = await findOrCreateFreeFormBlock(targetAthleteId, targetDateISO);
+      if (!found.ok) return { ok: false, error: found.error, created };
+      target = found.block;
+      if (found.created) created.blockIds.push(target.id);
+      blockForDate.set(targetDateISO, target);
+    }
+    const targetWeek = weekNumberWithin(target.start_date, target.end_date, targetDateISO);
+
+    const key = `${src.block_session_id}|${target.id}`;
+    let clone = clones.get(key);
+    if (!clone) {
+      const c = await cloneBlockSessionFull(src.block_session_id, target.id, counters);
+      if (c.blockSessionId) created.blockSessionIds.push(c.blockSessionId);
+      if (!c.ok) return { ok: false, error: c.error, created };
+      clone = c;
+      clones.set(key, clone);
+    }
+    const wk = `${clone.blockSessionId}|${targetWeek}`;
+    if (!weeksDone.has(wk)) {
+      weeksDone.add(wk);
+      const p = await copyWeekPrescriptions(clone.exMap, src.week_number, targetWeek);
+      if (!p.ok) return { ok: false, error: p.error, created };
+    }
+    rows.push({ athlete_id: targetAthleteId, block_id: target.id, block_session_id: clone.blockSessionId,
+      week_number: targetWeek, planned_date: targetDateISO, status: 'planned' });
+    cloned++;
+  }
+
+  if (!rows.length) {
+    return { ok: false, error: new Error('Nothing to paste — the copied sessions no longer exist.'), created };
+  }
+  const { data, error } = await supabase.from('planned_sessions').insert(rows).select('id');
+  if (error) return { ok: false, error, created };
+  created.plannedIds = (data || []).map(r => r.id);
+  return { ok: true, copied: rows.length, reused, cloned, missing, created };
+}
+
+/** Take back a paste: remove the sessions it added, the copies it made, and any FreeForm weeks it created. */
+export async function undoPastedSessions(created) {
+  if (created?.plannedIds?.length) {
+    const { error } = await supabase.from('planned_sessions').delete().in('id', created.plannedIds);
+    if (error) return { ok: false, error };
+  }
+  if (created?.blockSessionIds?.length) {
+    const { error } = await supabase.from('block_sessions').delete().in('id', created.blockSessionIds);
+    if (error) return { ok: false, error };
+  }
+  if (created?.blockIds?.length) {
+    // Only the empty FreeForm weeks this paste created.
+    const { error } = await supabase.from('training_blocks').delete().in('id', created.blockIds).eq('block_name', FREEFORM_NAME);
+    if (error) return { ok: false, error };
+  }
+  return { ok: true };
+}
+
+/** Clear 'planned' (not completed / missed) sessions from a date range — the "Replace" choice when pasting over a busy week. */
+export async function clearPlannedInRange(athleteId, startISO, endISO) {
+  const { data, error } = await supabase
+    .from('planned_sessions').select('id')
+    .eq('athlete_id', athleteId).eq('status', 'planned')
+    .gte('planned_date', startISO).lte('planned_date', endISO);
+  if (error) return { ok: false, error };
+  for (const { id } of data || []) {
+    const res = await deletePlannedSession(id);
+    if (!res.ok) return res;
+  }
+  return { ok: true, deleted: (data || []).length };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Cake, CalendarDays, ChevronLeft, ChevronRight, Dumbbell, Gauge, Plus, Tent,
+  Cake, CalendarDays, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Dumbbell, Gauge, GripVertical, Plus, Tent,
   Trash2, Trophy, Volleyball, X,
 } from 'lucide-react';
 
@@ -16,6 +16,8 @@ const EVENT_TYPE_ICONS = {
   other:             CalendarDays,
 };
 import { colourForAthlete, tintForColour } from '../../utils/programmingColours';
+import { addDaysISO } from '../../utils/blockHelpers';
+import { weekMondays } from '../../utils/weekClipboard';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -626,6 +628,9 @@ function DragGhost({ x, y, seg, copyArmed }) {
  *   • Hold, then drag     → onCopyMove(event, newStartDateISO) — planned
  *                           sessions only; falls back to onMoveEvent (a
  *                           plain move) when the caller doesn't supply it.
+ * Week tools (month view, optional `weekTools`):
+ *   • Drag down the gold strip beside the weeks to select a run of weeks → "Copy to board"
+ *   • While the board holds weeks, a paste button beside every week pastes them starting there
  * Cells:
  *   • Hover affordance "+ Event" → onAddEventOnDate(dateISO) (canEdit only)
  *   • Add Event toolbar button   → onAddEvent()
@@ -668,6 +673,9 @@ export default function ProgrammeCalendar({
   // onMoveEvent (plain move) when omitted, so callers that don't care
   // about the copy gesture don't have to wire anything extra.
   onCopyMove = null,
+  // Optional: { board, slot, onCopyWeeks(startMondayISO, endMondayISO), onPasteWeeks(mondayISO) }
+  //   board — the copied weeks ({ weeks, items }) or null; slot — a node shown under the toolbar (board status).
+  weekTools = null,
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const containerRef = useRef(null);
@@ -825,6 +833,62 @@ export default function ProgrammeCalendar({
   // it is anchored to a specific cell which may no longer exist.
   useEffect(() => { setPopover(null); }, [viewMode, viewDate]);
 
+  // ─── Week selection ────────────────────────────────────────────────
+  const weekToolsOn = !!weekTools && canEdit && viewMode === 'month';
+  const GUTTER = weekToolsOn ? 30 : 0;
+  const [weekSel, setWeekSel]       = useState(null);   // { a, b } — Mondays (ISO) the drag started / is now on
+  const [weekDrag, setWeekDrag]     = useState(false);
+  const [pasteHover, setPasteHover] = useState(null);   // Monday whose paste button is hovered (for the preview)
+  useEffect(() => { setWeekSel(null); }, [viewMode]);
+
+  useEffect(() => {
+    if (!weekDrag) return undefined;
+    const rowAt = (x, y) => {
+      let n = document.elementFromPoint(x, y);
+      while (n && n !== document.body) {
+        if (n.dataset && n.dataset.weekrow) return n.dataset.weekrow;
+        n = n.parentElement;
+      }
+      return null;
+    };
+    const move = (e) => {
+      const m = rowAt(e.clientX, e.clientY);
+      if (m) setWeekSel(sel => (sel && sel.b !== m ? { ...sel, b: m } : sel));
+    };
+    const up = () => setWeekDrag(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, [weekDrag]);
+
+  const startWeekSel = (e, mondayISO) => {
+    e.preventDefault();
+    if (e.shiftKey && weekSel) { setWeekSel({ a: weekSel.a, b: mondayISO }); setWeekDrag(true); return; }
+    if (weekSel && weekSel.a === mondayISO && weekSel.b === mondayISO) { setWeekSel(null); return; }   // tap again to deselect
+    setWeekSel({ a: mondayISO, b: mondayISO });
+    setWeekDrag(true);
+  };
+
+  const selMondays = useMemo(() => (weekSel ? weekMondays(weekSel.a, weekSel.b) : []), [weekSel]);
+  const selSet     = useMemo(() => new Set(selMondays), [selMondays]);
+  const selSessions = useMemo(() => {
+    if (!selMondays.length) return 0;
+    const from = selMondays[0];
+    const to = addDaysISO(selMondays[selMondays.length - 1], 6);
+    return events.filter(e => e.is_planned && e.start_date >= from && e.start_date <= to).length;
+  }, [selMondays, events]);
+
+  // Weeks a paste would cover if it started at the hovered paste button.
+  const pasteSet = useMemo(() => {
+    if (!pasteHover || !weekTools?.board) return new Set();
+    return new Set(weekMondays(pasteHover, addDaysISO(pasteHover, (weekTools.board.weeks - 1) * 7)));
+  }, [pasteHover, weekTools?.board]);
+
   return (
     <div ref={containerRef} className="rounded-xl bg-white" style={{ border: '1px solid #e5e7eb' }}>
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
@@ -880,8 +944,35 @@ export default function ProgrammeCalendar({
         </div>
       </div>
 
+      {/* ── Week tools: selection bar, board status, hint ────────────── */}
+      {weekToolsOn && weekSel && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b" style={{ backgroundColor: '#faf6ee', borderColor: '#eadfcb' }}>
+          <span className="text-xs font-semibold" style={{ color: '#7a6748' }}>
+            {selMondays.length} week{selMondays.length === 1 ? '' : 's'} selected
+            <span className="font-normal"> · {selSessions} session{selSessions === 1 ? '' : 's'}</span>
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={() => { weekTools.onCopyWeeks(selMondays[0], selMondays[selMondays.length - 1]); setWeekSel(null); }}
+            disabled={selSessions === 0}
+            title={selSessions === 0 ? 'No planned sessions in these weeks' : 'Copy these weeks to the board'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded disabled:opacity-40"
+            style={{ backgroundColor: '#A58D69' }}
+          >
+            <Copy size={12} /> Copy to board
+          </button>
+          <button onClick={() => setWeekSel(null)} className="text-xs font-semibold text-gray-500 hover:text-gray-800">Cancel</button>
+        </div>
+      )}
+      {weekToolsOn && weekTools.slot}
+      {weekToolsOn && !weekSel && !weekTools.board && !weekTools.slot && (
+        <p className="px-4 py-1.5 text-[11px] border-b border-gray-100" style={{ color: '#9ca3af' }}>
+          Tip: drag down the gold strip beside the weeks to select several, then copy them to the board and paste them anywhere.
+        </p>
+      )}
+
       {/* ── Day-of-week header ────────────────────────────────────────── */}
-      <div className="grid grid-cols-7 border-b border-gray-100 text-center">
+      <div className="grid grid-cols-7 border-b border-gray-100 text-center" style={{ paddingLeft: GUTTER }}>
         {DAY_LABELS.map(d => (
           <div
             key={d}
@@ -907,9 +998,54 @@ export default function ProgrammeCalendar({
         return (
           <div
             key={wIdx}
+            data-weekrow={toISO(wkStart)}
             className="relative grid grid-cols-7 border-b border-gray-100"
-            style={{ height: rowHeight }}
+            style={{ height: rowHeight, paddingLeft: GUTTER }}
           >
+            {weekToolsOn && (() => {
+              const mon = toISO(wkStart);
+              const isSel = selSet.has(mon);
+              return (
+                <div
+                  className="absolute left-0 top-0 bottom-0 flex flex-col select-none"
+                  style={{ width: GUTTER, zIndex: 3, backgroundColor: isSel ? '#A58D69' : '#f5f1ea', borderRight: '1px solid #eadfcb' }}
+                >
+                  <div
+                    onPointerDown={(e) => startWeekSel(e, mon)}
+                    className="flex-1 flex items-center justify-center cursor-pointer"
+                    style={{ touchAction: 'none' }}
+                    title="Click, or drag down, to select weeks"
+                    role="button"
+                    aria-label={`Select week of ${mon}`}
+                  >
+                    <GripVertical size={14} style={{ color: isSel ? '#fff' : '#A58D69' }} />
+                  </div>
+                  {weekTools.board && (
+                    <button
+                      onClick={() => weekTools.onPasteWeeks(mon)}
+                      onMouseEnter={() => setPasteHover(mon)}
+                      onMouseLeave={() => setPasteHover(h => (h === mon ? null : h))}
+                      title={`Paste ${weekTools.board.weeks} week${weekTools.board.weeks === 1 ? '' : 's'} starting this week`}
+                      aria-label={`Paste starting week of ${mon}`}
+                      className="h-9 flex items-center justify-center hover:bg-white/60"
+                      style={{ color: '#437E8D' }}
+                    >
+                      <ClipboardPaste size={15} />
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            {weekToolsOn && (selSet.has(toISO(wkStart)) || pasteSet.has(toISO(wkStart))) && (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  top: 0, bottom: 0, left: GUTTER, right: 0, zIndex: 2,
+                  backgroundColor: selSet.has(toISO(wkStart)) ? 'rgba(165,141,105,0.14)' : 'rgba(67,126,141,0.10)',
+                  boxShadow: selSet.has(toISO(wkStart)) ? 'none' : 'inset 0 0 0 2px rgba(67,126,141,0.55)',
+                }}
+              />
+            )}
             {[0,1,2,3,4,5,6].map(col => {
               const day = addDays(wkStart, col);
               const iso = toISO(day);
@@ -1006,7 +1142,7 @@ export default function ProgrammeCalendar({
             {/* Pills layer */}
             <div
               className="absolute pointer-events-none"
-              style={{ top: DAY_NUMBER_RESERVE, left: 0, right: 0, bottom: 0 }}
+              style={{ top: DAY_NUMBER_RESERVE, left: GUTTER, right: 0, bottom: 0 }}
             >
               {visible.map((seg, i) => {
                 const isThisDragged = drag?.started && drag.event?.id === seg.event.id;

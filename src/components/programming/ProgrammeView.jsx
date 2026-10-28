@@ -5,7 +5,12 @@ import { useCalendarEvents } from '../../hooks/useCalendarEvents';
 import { useTrainingBlocks } from '../../hooks/useTrainingBlocks';
 import { usePlannedSessions, plannedSessionsAsEvents } from '../../hooks/usePlannedSessions';
 import { useAttendanceForRange } from '../../hooks/useSessionAttendance';
-import { movePlannedSession, copyPlannedSession, deletePlannedSession } from '../../hooks/usePlannedSessionMutations';
+import {
+  movePlannedSession, copyPlannedSession, deletePlannedSession,
+  pastePlannedSessions, undoPastedSessions, clearPlannedInRange,
+} from '../../hooks/usePlannedSessionMutations';
+import { useWeekBoard, setWeekBoard } from '../../hooks/useWeekBoard';
+import { buildWeekClipboard, planPaste, pasteSpan } from '../../utils/weekClipboard';
 import EventModal from './EventModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
@@ -154,6 +159,97 @@ export default function ProgrammeView({
     refreshPlanned();
     showToast(`Pasted '${clipboard.name}'`);
   };
+
+  // ── Week board: copy a run of weeks, paste them anywhere ─────────────────
+  const board = useWeekBoard();
+  const [pasteConfirm, setPasteConfirm] = useState(null);   // { mondayISO, span, existing } while asking add / replace
+  const [lastPaste, setLastPaste]       = useState(null);   // { created, copied, span, canUndo } for the Undo strip
+  const [pasting, setPasting]           = useState(false);
+
+  const spanLabel = (span) => `${formatToastDate(span.startISO)} – ${formatToastDate(span.endISO)}`;
+
+  const handleCopyWeeks = (aISO, bISO) => {
+    const clip = buildWeekClipboard(plannedEvents, aISO, bISO, { athleteId: athlete.id, athleteName: athlete.name });
+    if (!clip.items.length) { showToast('No planned sessions in those weeks.', 'error'); return; }
+    setWeekBoard(clip);
+    setLastPaste(null);
+    showToast(`Copied ${clip.weeks} week${clip.weeks === 1 ? '' : 's'} (${clip.items.length} sessions) to the board`);
+  };
+
+  const runPasteWeeks = async (mondayISO, mode) => {
+    if (!board || pasting) return;
+    setPasteConfirm(null);
+    setPasting(true);
+    const span = pasteSpan(board, mondayISO);
+    if (mode === 'replace') {
+      const cleared = await clearPlannedInRange(athlete.id, span.startISO, span.endISO);
+      if (!cleared.ok) {
+        setPasting(false);
+        showToast(`Couldn't clear those weeks. ${cleared.error?.message || ''}`.trim(), 'error');
+        return;
+      }
+    }
+    const res = await pastePlannedSessions({ pairs: planPaste(board, mondayISO), targetAthleteId: athlete.id });
+    if (!res.ok) {
+      await undoPastedSessions(res.created);   // don't leave half a paste behind
+      setPasting(false);
+      refreshPlanned();
+      showToast(`Couldn't paste. ${res.error?.message || ''}`.trim(), 'error');
+      return;
+    }
+    setPasting(false);
+    refreshPlanned();
+    setProgrammeVersion(v => v + 1);
+    setLastPaste({ created: res.created, copied: res.copied, span, canUndo: mode !== 'replace', replaced: mode === 'replace' });
+  };
+
+  const handlePasteWeeks = (mondayISO) => {
+    if (!board) return;
+    const span = pasteSpan(board, mondayISO);
+    const existing = plannedEvents.filter(e => e.start_date >= span.startISO && e.start_date <= span.endISO).length;
+    if (existing > 0) setPasteConfirm({ mondayISO, span, existing });
+    else runPasteWeeks(mondayISO, 'add');
+  };
+
+  const handleUndoPaste = async () => {
+    const last = lastPaste;
+    if (!last) return;
+    setLastPaste(null);
+    const res = await undoPastedSessions(last.created);
+    refreshPlanned();
+    setProgrammeVersion(v => v + 1);
+    showToast(res.ok ? 'Paste undone' : `Couldn't undo. ${res.error?.message || ''}`.trim(), res.ok ? 'success' : 'error');
+  };
+
+  // Status strip under the calendar toolbar: what's on the board, or what the last paste did.
+  const boardSlot = (board || lastPaste || pasting) ? (
+    <div className="flex items-center gap-3 px-4 py-2 border-b text-xs" style={{ backgroundColor: '#eef5f7', borderColor: '#d3e4e9' }}>
+      {pasting ? (
+        <span className="font-semibold" style={{ color: '#2f5f6c' }}>Pasting…</span>
+      ) : lastPaste ? (
+        <>
+          <span className="font-semibold" style={{ color: '#2f5f6c' }}>
+            Pasted {lastPaste.copied} session{lastPaste.copied === 1 ? '' : 's'} on {spanLabel(lastPaste.span)}
+          </span>
+          <div className="flex-1" />
+          {lastPaste.canUndo && (
+            <button onClick={handleUndoPaste} className="font-semibold underline" style={{ color: '#2f5f6c' }}>Undo</button>
+          )}
+          <button onClick={() => setLastPaste(null)} className="text-gray-500 hover:text-gray-800" aria-label="Dismiss">✕</button>
+        </>
+      ) : (
+        <>
+          <span className="font-semibold" style={{ color: '#2f5f6c' }}>
+            Board: {board.weeks} week{board.weeks === 1 ? '' : 's'} · {board.items.length} session{board.items.length === 1 ? '' : 's'}
+            {board.sourceAthleteName ? ` · from ${board.sourceAthleteName}` : ''}
+          </span>
+          <span className="text-gray-500 hidden md:inline">Tap the clipboard beside any week to paste starting there</span>
+          <div className="flex-1" />
+          <button onClick={() => setWeekBoard(null)} className="font-semibold text-gray-500 hover:text-gray-800">Clear board</button>
+        </>
+      )}
+    </div>
+  ) : null;
 
   // ── Modal state ─────────────────────────────────────────────────────────
   // event === null means a fresh add. event === { start_date, ... } may carry
@@ -560,6 +656,7 @@ export default function ProgrammeView({
           ) : null}
           onCopyPlanned={canEdit ? (event) => setClipboard({ plannedId: event._planned_id, name: event.event_name }) : null}
           onDeletePlanned={canEdit ? (event) => setConfirmDeleteSession(event) : null}
+          weekTools={canEdit ? { board, slot: boardSlot, onCopyWeeks: handleCopyWeeks, onPasteWeeks: handlePasteWeeks } : null}
         />
       )}
 
@@ -654,6 +751,30 @@ export default function ProgrammeView({
           danger
           onConfirm={handleConfirmDeleteSession}
           onCancel={() => setConfirmDeleteSession(null)}
+        />
+      )}
+
+      {pasteConfirm && (
+        <ConfirmDialog
+          title="Those weeks already have sessions"
+          body={
+            <>
+              {spanLabel(pasteConfirm.span)} already has {pasteConfirm.existing} session{pasteConfirm.existing === 1 ? '' : 's'} for {athlete.name}.
+              {'\n\n'}<strong>Add alongside</strong> keeps them and puts the pasted sessions in as well.
+              {'\n'}<strong>Replace</strong> clears the planned sessions first (completed and missed ones stay). It can't be undone.
+              {'\n\n'}
+              <button
+                onClick={() => runPasteWeeks(pasteConfirm.mondayISO, 'replace')}
+                className="px-3 py-1.5 text-xs font-semibold text-white rounded"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                Replace them
+              </button>
+            </>
+          }
+          confirmLabel="Add alongside"
+          onConfirm={() => runPasteWeeks(pasteConfirm.mondayISO, 'add')}
+          onCancel={() => setPasteConfirm(null)}
         />
       )}
 
