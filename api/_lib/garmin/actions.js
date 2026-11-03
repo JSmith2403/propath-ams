@@ -1,6 +1,6 @@
 // /api/garmin/<action> handlers (dispatched from api/garmin/[action].js).
 //
-//   POST start       (athlete)            begin sign-in → { url } to send the athlete to Garmin
+//   POST start       { share? }  (athlete)  begin sign-in → { url } to send the athlete to Garmin; share = what coaches may see
 //   GET  callback    (Garmin redirects)   swap the one-time code for tokens, store them, send the athlete back to the app
 //   POST webhook     (Garmin pushes)      receive sleep / daily / activity data and deregistrations
 //   POST disconnect  { deleteData?, athlete_id? }   athlete, or a coach on their behalf
@@ -18,6 +18,7 @@ import {
   fetchUserId, fetchPermissions, deleteRegistration,
 } from './oauth.js';
 import { parsePush } from './push.js';
+import { cleanShare } from './share.js';
 
 const STATE_TTL_MS = 15 * 60 * 1000;
 const APP_RETURN = '/athlete?tab=progress';
@@ -63,7 +64,7 @@ async function accessTokenFor(admin, conn) {
 // ── start ──────────────────────────────────────────────────────────────────
 async function start(req, res) {
   const ctx = await begin(req, res, { athleteOnly: true }); if (!ctx) return;
-  const { admin, athleteId } = ctx;
+  const { admin, body, athleteId } = ctx;
   if (!oauthConfigured()) { res.status(503).json({ ok: false, error: 'Garmin isn’t set up on the server yet.' }); return; }
   if (!encryptionConfigured()) { res.status(503).json({ ok: false, error: 'Garmin storage isn’t set up yet (GARMIN_KEY_SECRET missing on the server).' }); return; }
 
@@ -74,6 +75,7 @@ async function start(req, res) {
     state,
     athlete_id: athleteId,
     verifier_ciphertext: encryptKey(verifier),
+    share: cleanShare(body.share),                                // what they chose to let coaches see, applied when they come back
     expires_at: new Date(Date.now() + STATE_TTL_MS).toISOString(),
   });
   if (error) { res.status(500).json({ ok: false, error: 'Couldn’t start the Garmin sign-in.' }); return; }
@@ -112,6 +114,7 @@ async function callback(req, res) {
       access_expires_at: tok.accessExpiresAt,
       refresh_expires_at: tok.refreshExpiresAt,
       permissions,
+      share: cleanShare(st.share),
       status: 'connected',
       connected_at: now,
       last_error: null,

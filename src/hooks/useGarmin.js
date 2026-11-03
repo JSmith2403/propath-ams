@@ -33,9 +33,8 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
     setStatus(connected);
     if (row) {
       const [d, a] = await Promise.all([
-        supabase.from('garmin_daily')
-          .select('day, steps, resting_hr, avg_stress, body_battery_high, body_battery_low, active_kcal, sleep_seconds, sleep_score, hrv_last_night, hrv_weekly_avg, hrv_status')
-          .eq('athlete_id', athleteId).order('day', { ascending: false }).limit(30),
+        // Through the function, not the table: for a coach it blanks whatever the athlete switched off.
+        supabase.rpc('garmin_daily_for', { p_athlete_ids: [athleteId], p_limit: 30 }),
         supabase.from('garmin_activities')
           .select('activity_id, started_at, day, activity_type, name, duration_s, distance_m, avg_hr, max_hr, calories, training_load')
           .eq('athlete_id', athleteId).order('started_at', { ascending: false, nullsFirst: false }).limit(15),
@@ -73,10 +72,17 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
   return {
     available, loading, busy, error, status, daily, activities,
     refresh: load,
-    /** Athletes only. Sends the browser to Garmin's own sign-in page. */
-    connect: async () => {
+    /** The athlete's yes/no switches for what coaches can see. Applies straight away. */
+    setSharing: (share) => run(async () => {
+      const { error: e } = await supabase.rpc('garmin_set_sharing', {
+        p_sleep: !!share.sleep, p_stress: !!share.stress, p_body_battery: !!share.body_battery, p_womens_health: !!share.womens_health,
+      });
+      return e ? { ok: false, error: 'Couldn’t save that — try again.' } : { ok: true };
+    }),
+    /** Athletes only. Sends the browser to Garmin's own sign-in page; `share` is what coaches may see. */
+    connect: async (share) => {
       setBusy(true); setError(null);
-      const r = await call('start');
+      const r = await call('start', { share });
       if (r.ok && r.url) { window.location.assign(r.url); return r; }     // leaves the app; busy stays on until the page unloads
       setError(r.error || 'Couldn’t start the Garmin sign-in.');
       setBusy(false);

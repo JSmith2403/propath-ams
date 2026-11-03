@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Watch, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Watch, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { useGarmin } from '../../hooks/useGarmin';
 
 const GOLD = '#A58D69';
+
+// What the athlete lets their coaches see. Enforced in the database (garmin_daily_for), not just hidden here.
+const DEFAULT_SHARE = { sleep: true, stress: true, body_battery: true, womens_health: false };
+const SHARE_ROWS = [
+  { key: 'sleep', label: 'Sleep', sub: 'Hours slept, sleep score and overnight HRV' },
+  { key: 'stress', label: 'Stress', sub: 'Average stress level' },
+  { key: 'body_battery', label: 'Body Battery', sub: 'Daily high and low' },
+  {
+    key: 'womens_health', label: 'Women’s Health', sub: 'Cycle tracking',
+    info: 'Menstrual cycle and related data from your Garmin, if you track it. It’s off unless you turn it on. If you do, only you and the coaches who work with you directly can see it — never on squad-wide screens. ProPath is still building how this appears, so nothing is shown to coaches yet. You can change this any time.',
+  },
+];
 
 const fmtSleep = (s) => (s == null ? '—' : `${Math.floor(s / 3600)}h ${String(Math.round((s % 3600) / 60)).padStart(2, '0')}m`);
 const fmtDay = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : '');
@@ -48,23 +60,87 @@ function Bars({ title, rows, pick, format }) {
   );
 }
 
+/**
+ * Yes / No switches for what coaches can see. `readOnly` is the coach's view of the athlete's choices.
+ * Steps, resting heart rate and workouts aren't switchable — they come with connecting.
+ */
+function SharingToggles({ value, onChange, disabled = false, readOnly = false }) {
+  const [infoFor, setInfoFor] = useState(null);
+  return (
+    <div className="rounded-lg border border-ink-100 bg-white divide-y divide-ink-100">
+      {SHARE_ROWS.map(row => {
+        const on = !!value[row.key];
+        return (
+          <div key={row.key} className="px-3 py-2.5">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-meta font-semibold text-ink-900 flex items-center gap-1.5">
+                  {row.label}
+                  {row.info && (
+                    <button
+                      type="button" onClick={() => setInfoFor(f => (f === row.key ? null : row.key))}
+                      aria-label={`About ${row.label}`} aria-expanded={infoFor === row.key}
+                      className="text-ink-400 hover:text-ink-700"
+                    >
+                      <Info size={14} />
+                    </button>
+                  )}
+                </p>
+                <p className="text-micro text-ink-400">{row.sub}</p>
+              </div>
+              {readOnly ? (
+                <span className="text-micro font-bold px-2.5 py-1 rounded-full" style={on ? { backgroundColor: '#ecfdf5', color: '#065f46' } : { backgroundColor: '#f3f4f6', color: '#6b7280' }}>
+                  {on ? 'Yes' : 'No'}
+                </span>
+              ) : (
+                <div className="inline-flex rounded-full border border-ink-200 overflow-hidden shrink-0" role="group" aria-label={`Share ${row.label} with coaches`}>
+                  {[true, false].map(v => (
+                    <button
+                      key={String(v)} type="button" disabled={disabled}
+                      aria-pressed={on === v}
+                      onClick={() => on !== v && onChange({ ...value, [row.key]: v })}
+                      className="px-3.5 py-1.5 text-micro font-bold disabled:opacity-50"
+                      style={on === v ? { backgroundColor: v ? GOLD : '#6b7280', color: '#fff' } : { backgroundColor: '#fff', color: '#6b7280' }}
+                    >
+                      {v ? 'Yes' : 'No'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {row.info && infoFor === row.key && (
+              <p className="mt-2 text-micro text-ink-500 rounded-md bg-ink-50 px-2.5 py-2">{row.info}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Shown to the athlete before they leave for Garmin's own sign-in page. */
-function ConnectPanel({ onConnect, busy, error }) {
+function ConnectPanel({ onConnect, busy, error, initialShare }) {
+  const [share, setShare] = useState({ ...DEFAULT_SHARE, ...(initialShare || {}) });
   return (
     <div className="space-y-3">
       <p className="text-meta text-ink-600">
         Connect your Garmin watch so your sleep, recovery and training show up here and your coaches can see how you’re
         recovering. You’ll sign in on <strong>Garmin’s own page</strong> and choose what to share — ProPath never sees your Garmin password.
       </p>
+      <div>
+        <p className="text-micro font-bold uppercase text-ink-400 mb-1.5">What can your coaches see?</p>
+        <SharingToggles value={share} onChange={setShare} disabled={busy} />
+        <p className="text-micro text-ink-400 mt-1.5">Steps, resting heart rate and workouts are shared once you connect. You can change these switches whenever you like.</p>
+      </div>
       <ul className="text-meta text-ink-600 space-y-1 list-disc pl-5">
-        <li>Your coaches can see: sleep, overnight HRV, resting heart rate, stress, steps and workouts.</li>
+        <li>Anything you switch to No is hidden from your coaches — you still see all of your own data.</li>
         <li>Only you and your coaching team can see it. It is never sold or shared. <a href="/privacy.html" target="_blank" rel="noreferrer" className="underline" style={{ color: GOLD }}>Privacy policy</a></li>
         <li>Data starts from the moment you connect — Garmin doesn’t send past history.</li>
         <li>You can disconnect at any time from here or in your Garmin Connect settings.</li>
       </ul>
       {error && <p className="text-meta text-red-600" role="alert">{error}</p>}
       <button
-        onClick={onConnect} disabled={busy}
+        onClick={() => onConnect(share)} disabled={busy}
         className="w-full rounded-xl py-3 text-body font-bold text-white disabled:opacity-50"
         style={{ backgroundColor: GOLD }}
       >
@@ -107,6 +183,8 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
 
   if (!g.available || g.loading) return null;
   const connected = !!g.status;
+  const share = { ...DEFAULT_SHARE, ...(g.status?.share || {}) };
+  const notShared = (key) => (viewer === 'coach' && !share[key] ? 'Not shared by the athlete' : null);
   const attention = g.status?.status === 'needs_attention';
   const expanded = open || !connected;
 
@@ -153,8 +231,8 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <Tile label="Sleep" value={fmtSleep(sleep?.sleep_seconds)} sub={sleep?.sleep_score != null ? `score ${sleep.sleep_score} · ${fmtDay(sleep.day)}` : (sleep ? fmtDay(sleep.day) : null)} />
-                    <Tile label="HRV (overnight)" value={hrv ? `${hrv.hrv_last_night} ms` : null} sub={hrv ? [hrv.hrv_status && String(hrv.hrv_status).toLowerCase(), hrv.hrv_weekly_avg != null && `week avg ${hrv.hrv_weekly_avg}`].filter(Boolean).join(' · ') : null} />
+                    <Tile label="Sleep" value={fmtSleep(sleep?.sleep_seconds)} sub={notShared('sleep') || (sleep?.sleep_score != null ? `score ${sleep.sleep_score} · ${fmtDay(sleep.day)}` : (sleep ? fmtDay(sleep.day) : null))} />
+                    <Tile label="HRV (overnight)" value={hrv ? `${hrv.hrv_last_night} ms` : null} sub={notShared('sleep') || (hrv ? [hrv.hrv_status && String(hrv.hrv_status).toLowerCase(), hrv.hrv_weekly_avg != null && `week avg ${hrv.hrv_weekly_avg}`].filter(Boolean).join(' · ') : null)} />
                     <Tile label="Resting heart rate" value={rhr ? `${rhr.resting_hr} bpm` : null} sub={rhr ? fmtDay(rhr.day) : null} />
                     <Tile label="Steps" value={latest.steps != null ? latest.steps.toLocaleString() : null} sub={fmtDay(latest.day)} />
                   </div>
@@ -186,6 +264,11 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
                 </div>
               )}
 
+              <div>
+                <p className="text-micro font-bold uppercase text-ink-400 mb-1.5">{viewer === 'coach' ? 'What this athlete shares with coaches' : 'What your coaches can see'}</p>
+                <SharingToggles value={share} onChange={g.setSharing} disabled={g.busy} readOnly={viewer === 'coach'} />
+              </div>
+
               {g.error && <p className="text-meta text-red-600" role="alert">{g.error}</p>}
               <div className="flex items-center gap-3">
                 {!confirmOff ? (
@@ -203,7 +286,7 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
           )}
 
           {(!connected || attention) && viewer === 'athlete' && (
-            <ConnectPanel onConnect={g.connect} busy={g.busy} error={g.error} />
+            <ConnectPanel onConnect={g.connect} busy={g.busy} error={g.error} initialShare={g.status?.share} />
           )}
           {!connected && viewer === 'coach' && (
             <p className="text-meta text-ink-500">This athlete hasn’t connected Garmin. They connect it themselves from the Progress tab in their own app, so the consent comes from them.</p>

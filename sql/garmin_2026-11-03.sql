@@ -23,7 +23,9 @@ CREATE TABLE public.garmin_connections (
   tokens_ciphertext  text,                                  -- AES-256-GCM JSON {access, refresh}; key = GARMIN_KEY_SECRET (server env)
   access_expires_at  timestamptz,
   refresh_expires_at timestamptz,
-  permissions        text[]      NOT NULL DEFAULT '{}',     -- what the athlete agreed to share, e.g. HEALTH_EXPORT, ACTIVITY_EXPORT
+  permissions        text[]      NOT NULL DEFAULT '{}',     -- what the athlete agreed to share on GARMIN's consent screen, e.g. HEALTH_EXPORT
+  share              jsonb       NOT NULL DEFAULT '{"sleep":true,"stress":true,"body_battery":true,"womens_health":false}'::jsonb,
+                                                            -- what the athlete lets COACHES see (their own switches in ProPath)
   status             text        NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'needs_attention', 'disconnected')),
   connected_at       timestamptz NOT NULL DEFAULT now(),
   last_sync_at       timestamptz,                           -- when we last RECEIVED data from Garmin
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS public.garmin_oauth_states (
   state               text        PRIMARY KEY,
   athlete_id          text        NOT NULL REFERENCES public.athletes(id) ON DELETE CASCADE,
   verifier_ciphertext text        NOT NULL,                 -- the PKCE code verifier, encrypted
+  share               jsonb       NOT NULL DEFAULT '{"sleep":true,"stress":true,"body_battery":true,"womens_health":false}'::jsonb,  -- chosen before leaving for Garmin
   created_at          timestamptz NOT NULL DEFAULT now(),
   expires_at          timestamptz NOT NULL
 );
@@ -88,7 +91,9 @@ CREATE TABLE IF NOT EXISTS public.garmin_activities (
 );
 CREATE INDEX IF NOT EXISTS idx_garmin_activities_day ON public.garmin_activities (athlete_id, started_at DESC);
 
--- ── 5. Row-level security: own rows for athletes, everything for coaches ────
+-- ── 5. Row-level security ───────────────────────────────────────────────────
+-- Athletes read their own rows. Coaches read activities directly, but daily data (sleep / stress / body battery)
+-- ONLY through garmin_daily_for() below, so an athlete's "No" switches are enforced here, not just on screen.
 DO $$
 DECLARE t text;
 BEGIN
@@ -99,17 +104,17 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS own_select ON public.%I', t);
     EXECUTE format('CREATE POLICY own_select ON public.%I FOR SELECT TO authenticated USING (athlete_id = public.my_athlete_id())', t);
     EXECUTE format('DROP POLICY IF EXISTS staff_select ON public.%I', t);
-    EXECUTE format('CREATE POLICY staff_select ON public.%I FOR SELECT TO authenticated USING (public.is_staff())', t);
   END LOOP;
+  CREATE POLICY staff_select ON public.garmin_activities FOR SELECT TO authenticated USING (public.is_staff());
 END $$;
 
 -- ── 6. Connection status for the screens (never returns tokens) ─────────────
 -- No argument → the signed-in athlete's own status. With an athlete id → coaches only.
 DROP FUNCTION IF EXISTS public.garmin_status(text);
 CREATE OR REPLACE FUNCTION public.garmin_status(p_athlete_id text DEFAULT NULL)
-RETURNS TABLE (connected boolean, status text, connected_at timestamptz, last_sync_at timestamptz, last_error text, permissions text[])
+RETURNS TABLE (connected boolean, status text, connected_at timestamptz, last_sync_at timestamptz, last_error text, permissions text[], share jsonb)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
-  SELECT (c.status <> 'disconnected'), c.status, c.connected_at, c.last_sync_at, c.last_error, c.permissions
+  SELECT (c.status <> 'disconnected'), c.status, c.connected_at, c.last_sync_at, c.last_error, c.permissions, c.share
   FROM public.garmin_connections c
   WHERE c.athlete_id = CASE
           WHEN p_athlete_id IS NULL THEN public.my_athlete_id()
@@ -119,3 +124,51 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 $$;
 REVOKE ALL ON FUNCTION public.garmin_status(text) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.garmin_status(text) TO authenticated;
+
+-- ── 7. Daily data as the viewer is allowed to see it ────────────────────────
+-- The athlete sees all of their own columns. A coach sees a column only if the athlete's switch for it is on:
+--   sleep → sleep_seconds, sleep_score, hrv_*      stress → avg_stress      body_battery → body_battery_*
+-- Steps, resting heart rate and active calories come with connecting. Everyone else (anon, other athletes,
+-- external providers) gets nothing.
+DROP FUNCTION IF EXISTS public.garmin_daily_for(text[], date, integer);
+CREATE OR REPLACE FUNCTION public.garmin_daily_for(p_athlete_ids text[], p_since date DEFAULT NULL, p_limit integer DEFAULT 400)
+RETURNS TABLE (athlete_id text, day date, steps integer, resting_hr integer, avg_stress integer,
+               body_battery_high integer, body_battery_low integer, active_kcal integer,
+               sleep_seconds integer, sleep_score integer, hrv_last_night integer, hrv_weekly_avg integer, hrv_status text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT d.athlete_id, d.day, d.steps, d.resting_hr,
+         CASE WHEN v.own OR COALESCE((c.share->>'stress')::boolean, false)       THEN d.avg_stress END,
+         CASE WHEN v.own OR COALESCE((c.share->>'body_battery')::boolean, false) THEN d.body_battery_high END,
+         CASE WHEN v.own OR COALESCE((c.share->>'body_battery')::boolean, false) THEN d.body_battery_low END,
+         d.active_kcal,
+         CASE WHEN v.own OR COALESCE((c.share->>'sleep')::boolean, false)        THEN d.sleep_seconds END,
+         CASE WHEN v.own OR COALESCE((c.share->>'sleep')::boolean, false)        THEN d.sleep_score END,
+         CASE WHEN v.own OR COALESCE((c.share->>'sleep')::boolean, false)        THEN d.hrv_last_night END,
+         CASE WHEN v.own OR COALESCE((c.share->>'sleep')::boolean, false)        THEN d.hrv_weekly_avg END,
+         CASE WHEN v.own OR COALESCE((c.share->>'sleep')::boolean, false)        THEN d.hrv_status END
+  FROM public.garmin_daily d
+  LEFT JOIN public.garmin_connections c ON c.athlete_id = d.athlete_id
+  CROSS JOIN LATERAL (SELECT (d.athlete_id = public.my_athlete_id()) AS own) v
+  WHERE d.athlete_id = ANY (p_athlete_ids)
+    AND (v.own OR public.is_staff())
+    AND (p_since IS NULL OR d.day >= p_since)
+  ORDER BY d.day DESC
+  LIMIT LEAST(GREATEST(p_limit, 1), 2000);
+$$;
+REVOKE ALL ON FUNCTION public.garmin_daily_for(text[], date, integer) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.garmin_daily_for(text[], date, integer) TO authenticated;
+
+-- ── 8. The athlete's own switches ───────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.garmin_set_sharing(boolean, boolean, boolean, boolean);
+CREATE OR REPLACE FUNCTION public.garmin_set_sharing(p_sleep boolean, p_stress boolean, p_body_battery boolean, p_womens_health boolean)
+RETURNS void
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  UPDATE public.garmin_connections
+     SET share = jsonb_build_object(
+           'sleep', COALESCE(p_sleep, true), 'stress', COALESCE(p_stress, true),
+           'body_battery', COALESCE(p_body_battery, true), 'womens_health', COALESCE(p_womens_health, false)),
+         updated_at = now()
+   WHERE athlete_id = public.my_athlete_id();
+$$;
+REVOKE ALL ON FUNCTION public.garmin_set_sharing(boolean, boolean, boolean, boolean) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.garmin_set_sharing(boolean, boolean, boolean, boolean) TO authenticated;

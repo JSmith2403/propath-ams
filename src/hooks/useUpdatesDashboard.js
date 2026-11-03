@@ -63,9 +63,8 @@ export function useUpdatesDashboard(athleteIds) {
           .select('athlete_id, submission_date, created_at, sleep_duration, sleep_quality, fatigue, muscle_soreness, stress')
           .in('athlete_id', athleteIds).gte('submission_date', weekAgo)
           .order('submission_date', { ascending: false }).order('created_at', { ascending: false }),
-        supabase.from('garmin_daily')
-          .select('athlete_id, day, sleep_seconds, hrv_last_night, body_battery_high')
-          .in('athlete_id', athleteIds).gte('day', addDays(today, -2)).order('day', { ascending: false }),
+        // Through the function so only what each athlete lets coaches see comes back.
+        supabase.rpc('garmin_daily_for', { p_athlete_ids: athleteIds, p_since: addDays(today, -2) }),
       ]);
       if (cancelled) return;
 
