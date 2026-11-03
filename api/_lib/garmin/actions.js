@@ -4,6 +4,7 @@
 //   GET  callback    (Garmin redirects)   swap the one-time code for tokens, store them, send the athlete back to the app
 //   POST webhook     (Garmin pushes)      receive sleep / daily / activity data and deregistrations
 //   POST disconnect  { deleteData?, athlete_id? }   athlete, or a coach on their behalf
+//   POST diagnose    { athlete_id }          staff only: asks Garmin who this is and what they agreed to share
 //
 // Starter access is push-only, so there is nothing to "sync": data arrives when the athlete's watch syncs.
 // The athlete id for start/disconnect always comes from the verified login, never from the request body —
@@ -291,4 +292,22 @@ async function disconnect(req, res) {
   res.status(200).json({ ok: true, warning });
 }
 
-export default { start, callback, webhook, disconnect };
+// ── diagnose ───────────────────────────────────────────────────────────────
+// Asks Garmin directly, with the athlete's own access token, who the connection belongs to and which data categories
+// they agreed to share. Returns no tokens and no health data.
+async function diagnose(req, res) {
+  const ctx = await begin(req, res); if (!ctx) return;
+  const { admin, athleteId } = ctx;
+  const { data: conn } = await admin.from('garmin_connections').select('*').eq('athlete_id', athleteId).maybeSingle();
+  if (!conn?.tokens_ciphertext || conn.status === 'disconnected') { res.status(200).json({ ok: false, error: 'No active Garmin connection for this athlete.' }); return; }
+  try {
+    const token = await accessTokenFor(admin, conn);
+    const [garminUserId, permissions] = await Promise.all([fetchUserId(token), fetchPermissions(token)]);
+    if (permissions.length) await admin.from('garmin_connections').update({ permissions, updated_at: new Date().toISOString() }).eq('athlete_id', athleteId);
+    res.status(200).json({ ok: true, garminUserId: garminUserId ? `…${garminUserId.slice(-6)}` : null, matchesStored: garminUserId === conn.garmin_user_id, permissions });
+  } catch (e) {
+    res.status(200).json({ ok: false, error: `Garmin answered: ${e.message}` });
+  }
+}
+
+export default { start, callback, webhook, disconnect, diagnose };

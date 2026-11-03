@@ -90,5 +90,7 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
       return r;
     },
     disconnect: (deleteData = false) => run(() => call('disconnect', { deleteData })),
+    /** Asks Garmin who this connection belongs to and what the athlete agreed to share (no health data). */
+    check: () => call('diagnose'),
   };
 }
