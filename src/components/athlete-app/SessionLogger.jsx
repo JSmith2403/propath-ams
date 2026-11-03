@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3, PlayCircle, CheckSquare } from 'lucide-react';
+import { X, Plus, Timer, CheckCircle2, Check, Minus, ArrowLeft, Dumbbell, Layers, Repeat, Clock, Flame, BarChart3, PlayCircle, CheckSquare, MessageSquare } from 'lucide-react';
 import { useSessionLogger } from '../../hooks/useSessionLogger';
 import { usePreviousExerciseSets } from '../../hooks/usePreviousExerciseSets';
 import { tintForExercise } from '../../utils/letterTints';
@@ -112,7 +112,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
     [session.items]
   );
 
-  const { sessionLog, sets, loading, start, logSet, deleteSet, finish } =
+  const { sessionLog, sets, loading, start, logSet, deleteSet, setExerciseNote, finish } =
     useSessionLogger({
       athleteId,
       plannedSessionId: session.id,
@@ -319,6 +319,7 @@ export default function SessionLogger({ session, athleteId, onClose }) {
                   previous={previousByExerciseId.get(ex.exercise_id) || null}
                   onLog={logSet}
                   onDelete={deleteSet}
+                  onNote={setExerciseNote}
                 />
               );
             })}
@@ -731,7 +732,7 @@ function rpeColour(rpe) {
 }
 
 function ExerciseLogger({
-  exercise, index, upNext, sets, onLog, onDelete,
+  exercise, index, upNext, sets, onLog, onDelete, onNote,
   linkedToPrev = false,
   linkedToNext = false,
   previous = null,
@@ -750,6 +751,14 @@ function ExerciseLogger({
   const completedCount = Math.min(prescribedSets.length, N);
   const isComplete = completedCount >= N;
 
+  // One comment for the whole exercise (e.g. which band). It's saved on every set; sets logged afterwards inherit it.
+  const savedNote = sortedSets.find(s => s.notes)?.notes || '';
+  const [noteOpen, setNoteOpen] = useState(!!savedNote);
+  const [noteText, setNoteText] = useState(savedNote);
+  useEffect(() => { setNoteText(savedNote); if (savedNote) setNoteOpen(true); }, [savedNote]);
+  const saveNote = () => { const t = noteText.trim(); if (t !== savedNote && onNote) onNote(exercise.session_exercise_id, t); };
+  const logWithNote = (payload) => onLog(payload.id ? payload : { ...payload, notes: noteText.trim() || null });
+
   const fieldRefs = useRef([]);
   fieldRefs.current = [];
 
@@ -757,7 +766,7 @@ function ExerciseLogger({
     const nextNo = sortedSets.length
       ? Math.max(...sortedSets.map(s => s.set_number)) + 1
       : N + 1;
-    await onLog({
+    await logWithNote({
       session_exercise_id: exercise.session_exercise_id,
       exercise_id:         exercise.exercise_id,
       set_number:          nextNo,
@@ -785,7 +794,7 @@ function ExerciseLogger({
     if (!isComplete) {
       for (let i = 1; i <= N; i++) {
         if (loggedByNumber.has(i)) continue;
-        await onLog({
+        await logWithNote({
           session_exercise_id: exercise.session_exercise_id,
           exercise_id:         exercise.exercise_id,
           set_number:          i,
@@ -923,6 +932,7 @@ function ExerciseLogger({
                 return acc;
               }, [])}
             </div>
+            {previous.note && <span className="text-[10px] italic text-ink-500">· {previous.note}</span>}
           </div>
         )}
 
@@ -948,7 +958,7 @@ function ExerciseLogger({
                 logged={logged}
                 rowIndex={i}
                 fieldRefs={fieldRefs}
-                onLog={onLog}
+                onLog={logWithNote}
                 onDelete={onDelete}
               />
             );
@@ -963,11 +973,35 @@ function ExerciseLogger({
               logged={s}
               rowIndex={N + s.set_number}
               fieldRefs={fieldRefs}
-              onLog={onLog}
+              onLog={logWithNote}
               onDelete={onDelete}
               isExtra
             />
           ))}
+        </div>
+
+        {/* Note — e.g. the band used for a pull-up. Sits with the loads, and coaches see it beside them. */}
+        <div className="mt-3">
+          {noteOpen ? (
+            <div>
+              <p className="text-[9px] uppercase tracking-widest font-bold text-ink-400 mb-1">Note for this exercise</p>
+              <input
+                type="text" value={noteText} maxLength={200}
+                onChange={(e) => setNoteText(e.target.value)}
+                onBlur={saveNote}
+                placeholder="e.g. Green band, left knee felt tight"
+                className="w-full px-3 py-2.5 rounded-md text-meta outline-none border border-ink-200 bg-white text-ink-900 placeholder:text-ink-400 focus:border-gold-400"
+                style={{ minHeight: 40 }}
+              />
+            </div>
+          ) : (
+            <button
+              type="button" onClick={() => setNoteOpen(true)}
+              className="inline-flex items-center gap-1.5 text-meta font-semibold text-gold-600 hover:text-gold-700"
+            >
+              <MessageSquare size={13} /> Add a note (e.g. band used)
+            </button>
+          )}
         </div>
 
         <button onClick={handleAddExtra}

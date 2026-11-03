@@ -53,7 +53,7 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
       const { data, error } = await supabase
         .from('set_logs')
         .select(`
-          exercise_id, set_number, reps, weight_kg, session_log_id,
+          exercise_id, set_number, reps, weight_kg, notes, session_log_id,
           session_logs!inner ( id, athlete_id, started_at )
         `)
         .eq('session_logs.athlete_id', athleteId)
@@ -80,10 +80,12 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
             startedAt: slog.started_at,
             sessionLogId: row.session_log_id,
             sets: [{ set_number: row.set_number, reps: row.reps, weight_kg: row.weight_kg }],
+            note: row.notes || '',
           });
         } else if (slog.started_at === existing.startedAt
                    && row.session_log_id === existing.sessionLogId) {
           existing.sets.push({ set_number: row.set_number, reps: row.reps, weight_kg: row.weight_kg });
+          if (!existing.note && row.notes) existing.note = row.notes;
         }
         // older session for the same exercise → ignore
       }
@@ -94,6 +96,7 @@ export function usePreviousExerciseSets(athleteId, exerciseIds, excludeSessionLo
         out.set(exId, {
           date: bucket.startedAt,
           sets: bucket.sets.sort((a, b) => a.set_number - b.set_number),
+          note: bucket.note || '',
         });
       }
 

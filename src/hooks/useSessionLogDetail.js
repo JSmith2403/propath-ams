@@ -34,7 +34,7 @@ export function useSessionLogDetail(sessionLogId, { enabled = true } = {}) {
 
       const { data: sets, error: setsErr } = await supabase
         .from('set_logs')
-        .select('id, session_exercise_id, exercise_id, set_number, weight_kg, reps, is_extra')
+        .select('id, session_exercise_id, exercise_id, set_number, weight_kg, reps, is_extra, notes')
         .eq('session_log_id', sessionLogId)
         .order('set_number', { ascending: true });
       if (cancelled) return;

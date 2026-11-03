@@ -138,6 +138,7 @@ function SessionRow({ session }) {
                 <p className="text-xs font-semibold text-gray-700 tabular-nums">
                   {s.weight_kg ?? '—'}{s.weight_kg != null ? ' kg' : ''} × {s.reps ?? '—'}
                 </p>
+                {s.notes && <span className="text-[11px] italic truncate max-w-[40%]" style={{ color: '#7a6748' }} title={s.notes}>{s.notes}</span>}
                 {e1 != null && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                     style={{ backgroundColor: 'rgba(67,126,141,0.1)', color: TEAL }}>

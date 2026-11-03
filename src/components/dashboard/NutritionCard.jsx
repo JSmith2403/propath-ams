@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Apple, Droplet } from 'lucide-react';
+import ImageLightbox from '../ui/ImageLightbox';
 import { Avatar, Chip, DashCard, Empty, Scroll, TEAL, relTime } from './parts';
 
 const STATUS = {
@@ -30,7 +32,9 @@ function Stat({ value, label, tone }) {
 /** Food + hydration submissions: today's headline numbers (fixed) and the latest entries (scrolling). */
 export default function NutritionCard({ data, athleteById, onOpenAthlete }) {
   const n = data?.nutrition;
+  const [photo, setPhoto] = useState(null);   // full-size meal photo pop-up
   return (
+    <>
     <DashCard icon={Apple} title="Nutrition Submissions" subtitle="Latest food and hydration entries from your athletes.">
       {!n ? <Empty>No nutrition data yet.</Empty> : (
         <>
@@ -48,7 +52,11 @@ export default function NutritionCard({ data, athleteById, onOpenAthlete }) {
                   return (
                     <li key={r.id} className="flex items-center gap-2.5 rounded-lg border border-ink-100 p-2">
                       {r.thumb
-                        ? <img src={r.thumb} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                        ? (
+                          <button type="button" onClick={() => setPhoto(r.full || r.thumb)} className="shrink-0 rounded-lg" title="View photo" aria-label="View meal photo">
+                            <img src={r.thumb} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                          </button>
+                        )
                         : <span className="w-12 h-12 rounded-lg bg-ink-50 flex items-center justify-center shrink-0"><Avatar athlete={a} size={28} /></span>}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -77,5 +85,7 @@ export default function NutritionCard({ data, athleteById, onOpenAthlete }) {
         </>
       )}
     </DashCard>
+    {photo && <ImageLightbox images={[photo]} onClose={() => setPhoto(null)} alt="Meal photo" />}
+    </>
   );
 }

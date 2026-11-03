@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
  *   start()           → inserts a session_logs row, returns id
  *   logSet(payload)   → upserts one set_logs row
  *   deleteSet(id)     → removes a logged set
+ *   setExerciseNote(sessionExerciseId, note) → one comment for an exercise (e.g. "green band"), kept on each of its sets
  *   finish(rpe, notes)→ stamps completed_at + duration + session RPE
  *
  * Resume: if the athlete already has an open session_log for this
@@ -69,7 +70,7 @@ export function useSessionLogger({ athleteId, plannedSessionId, blockSessionId }
   }, [athleteId, plannedSessionId, blockSessionId]);
 
   // Log or update one set. If `id` is present we update, else insert.
-  const logSet = useCallback(async ({ id, session_exercise_id, exercise_id, set_number, weight_kg, reps, rpe, is_extra }) => {
+  const logSet = useCallback(async ({ id, session_exercise_id, exercise_id, set_number, weight_kg, reps, rpe, is_extra, notes }) => {
     if (!sessionLog) return;
     const payload = {
       session_log_id: sessionLog.id,
@@ -81,6 +82,8 @@ export function useSessionLogger({ athleteId, plannedSessionId, blockSessionId }
       rpe:       rpe === '' || rpe == null ? null : Number(rpe),
       is_extra:  !!is_extra,
     };
+    // Only touch the note when the caller sent one — saving reps or weight must never wipe a comment.
+    if (notes !== undefined) payload.notes = notes ? String(notes).trim().slice(0, 200) || null : null;
     let result;
     if (id) {
       result = await supabase.from('set_logs').update(payload).eq('id', id).select('*').single();
@@ -96,6 +99,17 @@ export function useSessionLogger({ athleteId, plannedSessionId, blockSessionId }
       }
       return [...prev, result.data];
     });
+  }, [sessionLog]);
+
+  // One comment per exercise ("Green band", "Left side felt tight"). It lives on every logged set of that exercise
+  // so it travels with the load wherever sets are shown; sets logged afterwards inherit it from the screen.
+  const setExerciseNote = useCallback(async (sessionExerciseId, note) => {
+    if (!sessionLog || !sessionExerciseId) return;
+    const clean = note ? String(note).trim().slice(0, 200) || null : null;
+    const { error } = await supabase.from('set_logs').update({ notes: clean })
+      .eq('session_log_id', sessionLog.id).eq('session_exercise_id', sessionExerciseId);
+    if (error) { alert('Failed to save note: ' + error.message); return; }
+    setSets(prev => prev.map(s => (s.session_exercise_id === sessionExerciseId ? { ...s, notes: clean } : s)));
   }, [sessionLog]);
 
   const deleteSet = useCallback(async (id) => {
@@ -131,5 +145,5 @@ export function useSessionLogger({ athleteId, plannedSessionId, blockSessionId }
     return true;
   }, [sessionLog, refresh]);
 
-  return { sessionLog, sets, loading, start, logSet, deleteSet, finish, refresh };
+  return { sessionLog, sets, loading, start, logSet, deleteSet, setExerciseNote, finish, refresh };
 }

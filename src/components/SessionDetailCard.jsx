@@ -31,6 +31,11 @@ function formatSetGroup(sets) {
   return sorted.map(s => `${s.reps ?? '—'}${s.weight_kg != null ? ` @ ${trimNum(s.weight_kg)}kg` : ''}`).join(', ');
 }
 
+// The athlete's comment on an exercise (e.g. "green band"), shared by its sets — each distinct note once.
+function setNotes(sets) {
+  return [...new Set((sets || []).map(s => (s.notes || '').trim()).filter(Boolean))].join('; ');
+}
+
 /**
  * SessionDetailCard — expand-on-demand exercise/set breakdown for a
  * completed session, given its session_logs id (carried as
@@ -67,7 +72,10 @@ export default function SessionDetailCard({ sessionLogId }) {
             groups.map(g => (
               <div key={g.key}>
                 <p className="text-xs font-bold text-gray-800">{g.name}</p>
-                <p className="text-[11px] text-gray-500">{formatSetGroup(g.sets)}</p>
+                <p className="text-[11px] text-gray-500">
+                  {formatSetGroup(g.sets)}
+                  {setNotes(g.sets) && <span className="italic" style={{ color: '#7a6748' }}> · {setNotes(g.sets)}</span>}
+                </p>
               </div>
             ))
           )}

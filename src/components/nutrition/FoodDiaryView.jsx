@@ -8,6 +8,7 @@ import { useMealEntriesRange, useMealLogDates } from '../../hooks/useMealEntries
 import { useWaterIntakeRange, GLASS_ML } from '../../hooks/useWaterIntake';
 import { useNutritionSettings } from '../../hooks/useNutritionSettings';
 import { mondayOfISO, addDaysISO, parseDate, toISO } from '../../utils/blockHelpers';
+import ImageLightbox from '../ui/ImageLightbox';
 
 const GOLD = '#A58D69';
 const TEAL = '#437E8D';
@@ -380,6 +381,7 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
   const [marking, setMarking] = useState(false);
   const [adding,  setAdding]  = useState(false);
   const [note,    setNote]    = useState('');
+  const [photoOpen, setPhotoOpen] = useState(null);   // index of the photo shown full-size, or null
 
   useEffect(() => {
     if (!entry?.photos?.length) { setSignedUrls({}); return; }
@@ -412,10 +414,11 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    // Esc closes the photo first (the lightbox handles that itself); only then the whole review.
+    const onKey = (e) => { if (e.key === 'Escape' && photoOpen === null) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, photoOpen]);
 
   const conf = MEAL_LABELS[entry.meal_type] || { label: entry.meal_type };
   const reviewed = entry.status === 'reviewed';
@@ -497,17 +500,17 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {entry.photos.map(p => (
-                  <a
+                  <button
                     key={p.id}
-                    href={signedUrls[p.storage_path] || '#'}
-                    target="_blank" rel="noopener noreferrer"
+                    type="button"
+                    onClick={() => signedUrls[p.storage_path] && setPhotoOpen(entry.photos.indexOf(p))}
                     className="block aspect-square rounded-lg overflow-hidden border border-gray-100 bg-gray-50"
-                    title="Open full-size"
+                    title="View photo"
                   >
                     {signedUrls[p.storage_path]
                       ? <img src={signedUrls[p.storage_path]} alt="" className="w-full h-full object-cover" />
                       : <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon size={18} /></div>}
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
@@ -578,6 +581,16 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
             </div>
           </div>
         </div>
+
+        {photoOpen !== null && (
+          <ImageLightbox
+            images={entry.photos.map(p => signedUrls[p.storage_path])}
+            index={photoOpen}
+            onIndex={setPhotoOpen}
+            onClose={() => setPhotoOpen(null)}
+            alt="Meal photo"
+          />
+        )}
       </div>
     </div>
   );

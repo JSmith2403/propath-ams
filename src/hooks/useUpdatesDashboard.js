@@ -89,15 +89,20 @@ export function useUpdatesDashboard(athleteIds) {
           glasses: waterBy.get(`${m.athlete_id}|${m.log_date}`) ?? 0,
           target: settingsBy.get(m.athlete_id)?.water_daily_target ?? DEFAULT_WATER_TARGET,
           photoPath: photo ? (photo.thumbnail_path || photo.storage_path) : null,
+          fullPath: photo ? photo.storage_path : null,   // full-size, for the tap-to-enlarge pop-up
           thumb: null,
+          full: null,
         };
       });
-      const paths = [...new Set(latest.map(r => r.photoPath).filter(Boolean))];
+      const paths = [...new Set(latest.flatMap(r => [r.photoPath, r.fullPath]).filter(Boolean))];
       if (paths.length) {
         const { data: urls } = await supabase.storage.from('meal-photos').createSignedUrls(paths, 3600);
         const map = {};
         (urls || []).forEach((u, i) => { if (u?.signedUrl) map[paths[i]] = u.signedUrl; });
-        latest.forEach(r => { r.thumb = r.photoPath ? (map[r.photoPath] || null) : null; });
+        latest.forEach(r => {
+          r.thumb = r.photoPath ? (map[r.photoPath] || null) : null;
+          r.full = r.fullPath ? (map[r.fullPath] || null) : null;
+        });
       }
       if (cancelled) return;
 
