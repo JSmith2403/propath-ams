@@ -9,7 +9,7 @@ describe('parsePush', () => {
     activities: [{ userId: 'u1', activityId: 123456, activityType: 'RUNNING', activityName: 'Morning run', startTimeInSeconds: 1793600000, startTimeOffsetInSeconds: 14400, durationInSeconds: 2700, distanceInMeters: 8200, averageHeartRateInBeatsPerMinute: 151, maxHeartRateInBeatsPerMinute: 176, activeKilocalories: 520 }],
     deregistrations: [{ userId: 'u9' }],
     userPermissionsChange: [{ userId: 'u1', permissions: ['ACTIVITY_EXPORT', 'HEALTH_EXPORT'] }],
-    stressDetails: [{ userId: 'u1', calendarDate: '2026-11-03' }],
+    bodyComps: [{ userId: 'u1', calendarDate: '2026-11-03' }],
   };
   const out = parsePush(body);
 
@@ -34,7 +34,7 @@ describe('parsePush', () => {
   });
 
   it('reports data types it does not store yet instead of failing', () => {
-    expect(out.ignored).toEqual(['stressDetails']);
+    expect(out.ignored).toEqual(['bodyComps']);
   });
 
   it('survives junk', () => {
@@ -50,5 +50,53 @@ describe('mappers never write nulls over existing data', () => {
     expect(mapDaily({ steps: 100 })).toEqual({ steps: 100 });
     expect(mapSleep({})).toEqual({});
     expect(mapActivity({ activityId: 'nope' })).toBeNull();
+  });
+});
+
+import { mapStressDetails, mapRespiration, mapPulseOx, mapUserMetrics, mapSnapshot, isWomensHealth } from './push.js';
+
+describe('Stage B types', () => {
+  it('Stress Details → average stress (ignoring "couldn’t measure") and body battery high / low', () => {
+    expect(mapStressDetails({
+      timeOffsetStressLevelValues: { 0: 20, 180: 40, 360: -1, 540: 30 },
+      timeOffsetBodyBatteryValues: { 0: 55, 180: 80, 360: 62 },
+    })).toEqual({ avg_stress: 30, body_battery_high: 80, body_battery_low: 55 });
+    expect(mapStressDetails({})).toEqual({});
+  });
+  it('Respiration and Pulse Ox are reduced to averages / the lowest reading', () => {
+    expect(mapRespiration({ timeOffsetEpochToBreaths: { 0: 14, 900: 16, 1800: 0 } })).toEqual({ resp_avg: 15 });
+    expect(mapPulseOx({ timeOffsetSpo2Values: { 0: 97, 60: 95, 120: 93 } })).toEqual({ spo2_avg: 95, spo2_min: 93 });
+  });
+  it('User Metrics → VO2 max and fitness age', () => {
+    expect(mapUserMetrics({ vo2Max: 52.5, fitnessAge: 24 })).toEqual({ vo2_max: 52.5, fitness_age: 24 });
+  });
+  it('Health Snapshot → one reading with its summaries pulled out', () => {
+    const s = mapSnapshot({
+      userId: 'u1', summaryId: 'snap-1', calendarDate: '2026-11-04', startTimeInSeconds: 1793700000, durationInSeconds: 120,
+      summaries: [
+        { summaryType: 'heart_rate', avgValue: 58 }, { summaryType: 'rmssd_hrv', avgValue: 71.2 },
+        { summaryType: 'respiration', avgValue: 14.5 }, { summaryType: 'spo2', avgValue: 97 }, { summaryType: 'stress', avgValue: 22 },
+      ],
+    });
+    expect(s).toMatchObject({ summary_id: 'snap-1', day: '2026-11-04', duration_s: 120, hr_avg: 58, hrv_rmssd: 71.2, resp_avg: 14.5, spo2_avg: 97, stress_avg: 22 });
+  });
+  it('parsePush routes them and merges derived daily numbers without a raw copy', () => {
+    const out = parsePush({
+      stressDetails: [{ userId: 'u1', calendarDate: '2026-11-04', timeOffsetBodyBatteryValues: { 0: 90, 60: 40 } }],
+      userMetrics: [{ userId: 'u1', calendarDate: '2026-11-04', vo2Max: 50 }],
+      healthSnapshot: [{ userId: 'u1', summaryId: 's', startTimeInSeconds: 1793700000, summaries: [] }],
+      manuallyUpdatedActivities: [{ userId: 'u1', activityId: 9, activityType: 'RUNNING', startTimeInSeconds: 1793700000, durationInSeconds: 60 }],
+    });
+    expect(out.daily.map(d => d.cols)).toEqual([{ body_battery_high: 90, body_battery_low: 40 }, { vo2_max: 50 }]);
+    expect(out.daily.every(d => d.rawCol === null)).toBe(true);
+    expect(out.snapshots).toHaveLength(1);
+    expect(out.activities[0].row.activity_id).toBe(9);
+  });
+  it('never stores women’s-health data — it is skipped and only named as ignored', () => {
+    expect(isWomensHealth('menstrualCycleTracking')).toBe(true);
+    expect(isWomensHealth('dailies')).toBe(false);
+    const out = parsePush({ menstrualCycleTracking: [{ userId: 'u1', calendarDate: '2026-11-04', periodDay: 2 }], mct: [{ userId: 'u1' }] });
+    expect(out.daily).toEqual([]);
+    expect(out.ignored).toEqual(['menstrualCycleTracking', 'mct']);
   });
 });

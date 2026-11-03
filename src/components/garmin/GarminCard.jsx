@@ -5,7 +5,7 @@ import { useGarmin } from '../../hooks/useGarmin';
 const GOLD = '#A58D69';
 
 // What the athlete lets their coaches see. Enforced in the database (garmin_daily_for), not just hidden here.
-const DEFAULT_SHARE = { sleep: true, stress: true, body_battery: true, womens_health: false };
+const DEFAULT_SHARE = { sleep: true, stress: true, body_battery: true, vitals: true, fitness: true, womens_health: false };
 const SHARE_ROWS = [
   {
     key: 'sleep', label: 'Sleep', sub: 'Hours slept, sleep score and overnight HRV',
@@ -18,6 +18,14 @@ const SHARE_ROWS = [
   {
     key: 'body_battery', label: 'Body Battery', sub: 'Daily high and low',
     means: 'Garmin’s energy gauge from 0 to 100 — how charged you are. It shows how well you recover overnight and how much energy you have left in the day.',
+  },
+  {
+    key: 'vitals', label: 'Breathing & blood oxygen', sub: 'Breathing rate, blood oxygen and Health Snapshots',
+    means: 'Your breathing rate and blood-oxygen level, plus any Health Snapshot you take on your watch. Changes in these can be an early sign of illness or heavy fatigue.',
+  },
+  {
+    key: 'fitness', label: 'Fitness (VO2 max)', sub: 'VO2 max and fitness age',
+    means: 'Garmin’s estimate of your aerobic fitness (VO2 max) and fitness age. It moves slowly and shows long-term progress.',
   },
   {
     key: 'womens_health', label: 'Women’s Health', sub: 'Cycle tracking',
@@ -226,10 +234,16 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
   const sleep = latestWith('sleep_seconds');
   const hrv = latestWith('hrv_last_night');
   const rhr = latestWith('resting_hr');
+  const resp = latestWith('resp_avg');
+  const spo2 = latestWith('spo2_avg');
+  const vo2 = latestWith('vo2_max');
+  const snap = g.snapshots[0] || null;
 
   if (!g.available || g.loading) return null;
   const connected = !!g.status;
-  const share = { ...DEFAULT_SHARE, ...(g.status?.share || {}) };
+  const share = g.status?.share
+    ? { ...Object.fromEntries(Object.keys(DEFAULT_SHARE).map(k => [k, false])), ...g.status.share }   // never-asked = No, as in the database
+    : { ...DEFAULT_SHARE };
   const notShared = (key) => (viewer === 'coach' && !share[key] ? 'Not shared by the athlete' : null);
   const attention = g.status?.status === 'needs_attention';
   const expanded = open || !connected;
@@ -281,7 +295,15 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
                     <Tile label="HRV (overnight)" value={hrv ? `${hrv.hrv_last_night} ms` : null} sub={notShared('sleep') || (hrv ? [hrv.hrv_status && String(hrv.hrv_status).toLowerCase(), hrv.hrv_weekly_avg != null && `week avg ${hrv.hrv_weekly_avg}`].filter(Boolean).join(' · ') : null)} />
                     <Tile label="Resting heart rate" value={rhr ? `${rhr.resting_hr} bpm` : null} sub={rhr ? fmtDay(rhr.day) : null} />
                     <Tile label="Steps" value={latest.steps != null ? latest.steps.toLocaleString() : null} sub={fmtDay(latest.day)} />
+                    {(resp || notShared('vitals')) && <Tile label="Breathing" value={resp ? `${resp.resp_avg} /min` : null} sub={notShared('vitals') || fmtDay(resp?.day)} />}
+                    {(spo2 || notShared('vitals')) && <Tile label="Blood oxygen" value={spo2 ? `${spo2.spo2_avg}%` : null} sub={notShared('vitals') || (spo2?.spo2_min != null ? `lowest ${spo2.spo2_min}% · ${fmtDay(spo2.day)}` : fmtDay(spo2?.day))} />}
+                    {(vo2 || notShared('fitness')) && <Tile label="VO2 max" value={vo2 ? Number(vo2.vo2_max).toFixed(1) : null} sub={notShared('fitness') || (vo2?.fitness_age != null ? `fitness age ${vo2.fitness_age}` : fmtDay(vo2?.day))} />}
                   </div>
+                  {snap && (
+                    <p className="text-micro text-ink-500">
+                      Last Health Snapshot {fmtDay(snap.day)}: {[snap.hr_avg != null && `${snap.hr_avg} bpm`, snap.hrv_rmssd != null && `HRV ${Math.round(snap.hrv_rmssd)} ms`, snap.resp_avg != null && `${snap.resp_avg} breaths/min`, snap.spo2_avg != null && `${snap.spo2_avg}% oxygen`].filter(Boolean).join(' · ') || 'recorded'}
+                    </p>
+                  )}
                   {week.length > 1 && (
                     <div className="grid grid-cols-2 gap-4 rounded-lg border border-ink-100 bg-white p-3">
                       <Bars title="Sleep" rows={week} pick={d => d.sleep_seconds} format={fmtSleep} />

@@ -22,6 +22,7 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
   const [status, setStatus] = useState(null);       // null = not connected
   const [daily, setDaily] = useState([]);            // newest first
   const [activities, setActivities] = useState([]);  // newest first
+  const [snapshots, setSnapshots] = useState([]);    // Health Snapshots, newest first
 
   const load = useCallback(async () => {
     if (!athleteId) { setLoading(false); return null; }
@@ -32,16 +33,18 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
     const connected = row && row.connected ? row : null;
     setStatus(connected);
     if (row) {
-      const [d, a] = await Promise.all([
+      const [d, a, sn] = await Promise.all([
         // Through the function, not the table: for a coach it blanks whatever the athlete switched off.
         supabase.rpc('garmin_daily_for', { p_athlete_ids: [athleteId], p_limit: 30 }),
         supabase.from('garmin_activities')
           .select('activity_id, started_at, day, activity_type, name, duration_s, distance_m, avg_hr, max_hr, calories, training_load')
           .eq('athlete_id', athleteId).order('started_at', { ascending: false, nullsFirst: false }).limit(15),
+        supabase.rpc('garmin_snapshots_for', { p_athlete_ids: [athleteId], p_limit: 5 }),
       ]);
       setDaily(d.data || []);
       setActivities(a.data || []);
-    } else { setDaily([]); setActivities([]); }
+      setSnapshots(sn.data || []);
+    } else { setDaily([]); setActivities([]); setSnapshots([]); }
     setLoading(false);
     return connected;
   }, [athleteId, forStaff]);
@@ -70,13 +73,11 @@ export function useGarmin(athleteId, { forStaff = false } = {}) {
   }, [load]);
 
   return {
-    available, loading, busy, error, status, daily, activities,
+    available, loading, busy, error, status, daily, activities, snapshots,
     refresh: load,
     /** The athlete's yes/no switches for what coaches can see. Applies straight away. */
     setSharing: (share) => run(async () => {
-      const { error: e } = await supabase.rpc('garmin_set_sharing', {
-        p_sleep: !!share.sleep, p_stress: !!share.stress, p_body_battery: !!share.body_battery, p_womens_health: !!share.womens_health,
-      });
+      const { error: e } = await supabase.rpc('garmin_set_sharing', { p_share: share });
       return e ? { ok: false, error: 'Couldn’t save that — try again.' } : { ok: true };
     }),
     /** Athletes only. Sends the browser to Garmin's own sign-in page; `share` is what coaches may see. */

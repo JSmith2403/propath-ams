@@ -17,7 +17,7 @@ import {
   oauthConfigured, makePkce, newState, authorizeUrl, exchangeCode, refreshTokens,
   fetchUserId, fetchPermissions, deleteRegistration,
 } from './oauth.js';
-import { parsePush } from './push.js';
+import { parsePush, isWomensHealth } from './push.js';
 import { cleanShare } from './share.js';
 
 const STATE_TTL_MS = 15 * 60 * 1000;
@@ -165,7 +165,7 @@ async function webhook(req, res) {
   // Every accepted message is noted in garmin_push_log (no health data: types and counts only), so
   // "has Garmin sent anything?" can be answered from the database. Logging never blocks the reply.
   const stats = {
-    records: parsed.daily.length + parsed.activities.length + parsed.deregistered.length + parsed.permissions.length,
+    records: parsed.daily.length + parsed.activities.length + parsed.snapshots.length + parsed.deregistered.length + parsed.permissions.length,
     matched: 0,
   };
   const reply = async (status, payload, note = null) => {
@@ -177,7 +177,7 @@ async function webhook(req, res) {
   };
 
   const ids = [...new Set([
-    ...parsed.daily.map(d => d.userId), ...parsed.activities.map(a => a.userId),
+    ...parsed.daily.map(d => d.userId), ...parsed.activities.map(a => a.userId), ...parsed.snapshots.map(x => x.userId),
     ...parsed.deregistered, ...parsed.permissions.map(p => p.userId),
   ])];
   if (!ids.length) { await reply(200, { ok: true, received: 0 }, 'nothing we store'); return; }
@@ -211,7 +211,7 @@ async function webhook(req, res) {
     if (!athleteId) continue;
     const key = `${athleteId}|${d.day}`;
     const row = merged.get(key) || { athlete_id: athleteId, day: d.day, updated_at: now };
-    Object.assign(row, d.cols, { [d.rawCol]: d.raw });
+    Object.assign(row, d.cols, d.rawCol ? { [d.rawCol]: d.raw } : {});
     merged.set(key, row);
     touched.add(athleteId);
   }
@@ -224,6 +224,19 @@ async function webhook(req, res) {
     .filter(a => athleteOf.has(a.userId))
     .map(a => ({ athlete_id: athleteOf.get(a.userId), ...a.row, updated_at: now }));
   acts.forEach(a => touched.add(a.athlete_id));
+
+  // Health Snapshots: one row per reading.
+  const snaps = parsed.snapshots
+    .filter(x => athleteOf.has(x.userId))
+    .map(x => ({ athlete_id: athleteOf.get(x.userId), ...x.row, updated_at: now }));
+  snaps.forEach(x => touched.add(x.athlete_id));
+  if (snaps.length) {
+    const { error } = await admin.from('garmin_snapshots').upsert(snaps, { onConflict: 'athlete_id,summary_id' });
+    if (error) errors.push(`garmin_snapshots: ${error.message}`);
+  }
+
+  // Keep the last few raw messages of each type (for checking Garmin's field names); never women's-health data.
+  await captureSamples(admin, body, athleteOf);
   if (acts.length) {
     const { error } = await admin.from('garmin_activities').upsert(acts, { onConflict: 'athlete_id,activity_id' });
     if (error) errors.push(`garmin_activities: ${error.message}`);
@@ -237,6 +250,23 @@ async function webhook(req, res) {
 
   if (errors.length) { console.error('[garmin webhook]', errors.join(' | ')); await reply(500, { ok: false }, errors.join(' | ').slice(0, 200)); return; }   // 5xx → Garmin retries
   await reply(200, { ok: true, received: ids.length }, stats.matched < ids.length ? 'some records were for people not connected here' : null);
+}
+
+// Rolling sample of raw messages: the newest 3 per data type, only for people connected here, never women's health.
+async function captureSamples(admin, body, athleteOf) {
+  try {
+    for (const [type, value] of Object.entries(body)) {
+      if (isWomensHealth(type) || type === 'deregistrations' || !Array.isArray(value)) continue;
+      const mine = value.filter(r => r && athleteOf.has(String(r.userId)));
+      if (!mine.length) continue;
+      let payload = { [type]: mine };
+      if (JSON.stringify(payload).length > 150000) payload = { [type]: [mine[0]], truncated: true, records: mine.length };
+      await admin.from('garmin_raw_samples').insert({ data_type: type, payload });
+      const { data: old } = await admin.from('garmin_raw_samples').select('id').eq('data_type', type)
+        .order('received_at', { ascending: false }).range(3, 50);
+      if (old?.length) await admin.from('garmin_raw_samples').delete().in('id', old.map(r => r.id));
+    }
+  } catch (e) { console.warn('[garmin webhook] sample capture skipped:', e.message); }
 }
 
 // ── disconnect ─────────────────────────────────────────────────────────────
