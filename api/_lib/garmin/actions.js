@@ -104,7 +104,8 @@ async function callback(req, res) {
     const garminUserId = await fetchUserId(tok.access);
     if (!garminUserId) return back(res, 'error');
     let permissions = [];
-    try { permissions = await fetchPermissions(tok.access); } catch { /* shown later if it arrives by push */ }
+    try { permissions = await fetchPermissions(tok.access); console.log('[garmin callback] permissions granted:', permissions.join(',') || '(none returned)'); }
+    catch (e) { console.warn('[garmin callback] couldn’t read permissions:', e.message); }   // shown later if it arrives by push
 
     const now = new Date().toISOString();
     const { error } = await admin.from('garmin_connections').upsert({
@@ -139,7 +140,7 @@ function webhookKeyOk(req) {
 
 async function webhook(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'POST only' }); return; }
-  if (!webhookKeyOk(req)) { res.status(401).json({ ok: false }); return; }
+  if (!webhookKeyOk(req)) { console.warn('[garmin webhook] rejected: the ?k= key is missing or wrong'); res.status(401).json({ ok: false }); return; }
   const admin = getSupabaseAdmin();
   if (!admin) { res.status(503).json({ ok: false }); return; }
   const body = bodyOf(req);
@@ -148,16 +149,31 @@ async function webhook(req, res) {
   const parsed = parsePush(body);
   if (parsed.ignored.length) console.log('[garmin webhook] ignored data types:', parsed.ignored.join(', '));
 
+  // Every accepted message is noted in garmin_push_log (no health data: types and counts only), so
+  // "has Garmin sent anything?" can be answered from the database. Logging never blocks the reply.
+  const stats = {
+    records: parsed.daily.length + parsed.activities.length + parsed.deregistered.length + parsed.permissions.length,
+    matched: 0,
+  };
+  const reply = async (status, payload, note = null) => {
+    try {
+      await admin.from('garmin_push_log').insert({ status, data_types: Object.keys(body), records: stats.records, matched: stats.matched, note });
+      if (Math.random() < 0.02) await admin.from('garmin_push_log').delete().lt('received_at', new Date(Date.now() - 30 * 86400000).toISOString());
+    } catch { /* ignore */ }
+    res.status(status).json(payload);
+  };
+
   const ids = [...new Set([
     ...parsed.daily.map(d => d.userId), ...parsed.activities.map(a => a.userId),
     ...parsed.deregistered, ...parsed.permissions.map(p => p.userId),
   ])];
-  if (!ids.length) { res.status(200).json({ ok: true, received: 0 }); return; }
+  if (!ids.length) { await reply(200, { ok: true, received: 0 }, 'nothing we store'); return; }
 
   const { data: conns, error: cErr } = await admin.from('garmin_connections')
     .select('athlete_id, garmin_user_id, status').in('garmin_user_id', ids);
-  if (cErr) { console.error('[garmin webhook] lookup failed', cErr.message); res.status(500).json({ ok: false }); return; }
+  if (cErr) { console.error('[garmin webhook] lookup failed', cErr.message); await reply(500, { ok: false }, 'lookup failed'); return; }
   const athleteOf = new Map((conns || []).filter(c => c.status !== 'disconnected').map(c => [c.garmin_user_id, c.athlete_id]));
+  stats.matched = ids.filter(id => athleteOf.has(id)).length;
   const now = new Date().toISOString();
   const errors = [];
   const touched = new Set();
@@ -206,8 +222,8 @@ async function webhook(req, res) {
     }).in('athlete_id', [...touched]);
   }
 
-  if (errors.length) { console.error('[garmin webhook]', errors.join(' | ')); res.status(500).json({ ok: false }); return; }   // 5xx → Garmin retries
-  res.status(200).json({ ok: true, received: ids.length });
+  if (errors.length) { console.error('[garmin webhook]', errors.join(' | ')); await reply(500, { ok: false }, errors.join(' | ').slice(0, 200)); return; }   // 5xx → Garmin retries
+  await reply(200, { ok: true, received: ids.length }, stats.matched < ids.length ? 'some records were for people not connected here' : null);
 }
 
 // ── disconnect ─────────────────────────────────────────────────────────────
