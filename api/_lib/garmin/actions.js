@@ -149,7 +149,12 @@ async function webhook(req, res) {
       if (a) {
         const since = new Date(Date.now() - 3600000).toISOString();
         const { count } = await a.from('garmin_push_log').select('id', { count: 'exact', head: true }).eq('status', 401).gte('received_at', since);
-        if ((count || 0) < 20) await a.from('garmin_push_log').insert({ status: 401, note: 'rejected: ?k= key missing or wrong' });
+        // Lengths and names only — never the key itself — so "wrong key" can be told apart from "Garmin dropped the ?k= part".
+        const got = String(req.query?.k || '');
+        const want = (process.env.GARMIN_WEBHOOK_KEY || '').trim();
+        const b = bodyOf(req);
+        const note = `rejected: ${got ? `key sent (length ${got.length})` : 'no ?k= key sent'}, expected length ${want.length}; query names: ${Object.keys(req.query || {}).join(',') || 'none'}`;
+        if ((count || 0) < 20) await a.from('garmin_push_log').insert({ status: 401, data_types: b && typeof b === 'object' ? Object.keys(b).slice(0, 12) : [], note });
       }
     } catch { /* ignore */ }
     res.status(401).json({ ok: false });
