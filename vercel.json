@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/garmin/hook/:key",
+      "destination": "/api/garmin/webhook?k=:key"
+    },
+    {
       "source": "/athlete",
       "destination": "/athlete.html"
     },
