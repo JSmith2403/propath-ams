@@ -140,7 +140,20 @@ function webhookKeyOk(req) {
 
 async function webhook(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'POST only' }); return; }
-  if (!webhookKeyOk(req)) { console.warn('[garmin webhook] rejected: the ?k= key is missing or wrong'); res.status(401).json({ ok: false }); return; }
+  if (!webhookKeyOk(req)) {
+    console.warn('[garmin webhook] rejected: the ?k= key is missing or wrong');
+    // Note the attempt (no body, no key) so "is Garmin calling but being turned away?" can be answered — capped so spam can't fill the table.
+    try {
+      const a = getSupabaseAdmin();
+      if (a) {
+        const since = new Date(Date.now() - 3600000).toISOString();
+        const { count } = await a.from('garmin_push_log').select('id', { count: 'exact', head: true }).eq('status', 401).gte('received_at', since);
+        if ((count || 0) < 20) await a.from('garmin_push_log').insert({ status: 401, note: 'rejected: ?k= key missing or wrong' });
+      }
+    } catch { /* ignore */ }
+    res.status(401).json({ ok: false });
+    return;
+  }
   const admin = getSupabaseAdmin();
   if (!admin) { res.status(503).json({ ok: false }); return; }
   const body = bodyOf(req);
