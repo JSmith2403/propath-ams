@@ -7,9 +7,18 @@ const GOLD = '#A58D69';
 // What the athlete lets their coaches see. Enforced in the database (garmin_daily_for), not just hidden here.
 const DEFAULT_SHARE = { sleep: true, stress: true, body_battery: true, womens_health: false };
 const SHARE_ROWS = [
-  { key: 'sleep', label: 'Sleep', sub: 'Hours slept, sleep score and overnight HRV' },
-  { key: 'stress', label: 'Stress', sub: 'Average stress level' },
-  { key: 'body_battery', label: 'Body Battery', sub: 'Daily high and low' },
+  {
+    key: 'sleep', label: 'Sleep', sub: 'Hours slept, sleep score and overnight HRV',
+    means: 'How long you slept, how well you slept (your sleep score) and your overnight heart-rate variability (HRV) — a sign of how recovered your body is. It helps your coaches adjust training after a poor night.',
+  },
+  {
+    key: 'stress', label: 'Stress', sub: 'Average stress level',
+    means: 'Garmin’s all-day stress level, worked out from your heart rate. It helps spot when pressure from training, school or life is building up.',
+  },
+  {
+    key: 'body_battery', label: 'Body Battery', sub: 'Daily high and low',
+    means: 'Garmin’s energy gauge from 0 to 100 — how charged you are. It shows how well you recover overnight and how much energy you have left in the day.',
+  },
   {
     key: 'womens_health', label: 'Women’s Health', sub: 'Cycle tracking',
     info: 'Menstrual cycle and related data from your Garmin, if you track it. It’s off unless you turn it on. If you do, only you and the coaches who work with you directly can see it — never on squad-wide screens. ProPath is still building how this appears, so nothing is shown to coaches yet. You can change this any time.',
@@ -64,7 +73,7 @@ function Bars({ title, rows, pick, format }) {
  * Yes / No switches for what coaches can see. `readOnly` is the coach's view of the athlete's choices.
  * Steps, resting heart rate and workouts aren't switchable — they come with connecting.
  */
-function SharingToggles({ value, onChange, disabled = false, readOnly = false }) {
+function SharingToggles({ value, onChange, disabled = false, readOnly = false, detailed = false }) {
   const [infoFor, setInfoFor] = useState(null);
   return (
     <div className="rounded-lg border border-ink-100 bg-white divide-y divide-ink-100">
@@ -108,7 +117,8 @@ function SharingToggles({ value, onChange, disabled = false, readOnly = false })
                 </div>
               )}
             </div>
-            {row.info && infoFor === row.key && (
+            {detailed && row.means && <p className="mt-2 text-micro text-ink-500">{row.means}</p>}
+            {row.info && (detailed || infoFor === row.key) && (
               <p className="mt-2 text-micro text-ink-500 rounded-md bg-ink-50 px-2.5 py-2">{row.info}</p>
             )}
           </div>
@@ -118,34 +128,69 @@ function SharingToggles({ value, onChange, disabled = false, readOnly = false })
   );
 }
 
-/** Shown to the athlete before they leave for Garmin's own sign-in page. */
-function ConnectPanel({ onConnect, busy, error, initialShare }) {
-  const [share, setShare] = useState({ ...DEFAULT_SHARE, ...(initialShare || {}) });
+/** Step 1 — the card itself just invites the athlete to connect. Nothing is chosen or shared yet. */
+function ConnectIntro({ onStart, reconnect }) {
   return (
     <div className="space-y-3">
       <p className="text-meta text-ink-600">
-        Connect your Garmin watch so your sleep, recovery and training show up here and your coaches can see how you’re
-        recovering. You’ll sign in on <strong>Garmin’s own page</strong> and choose what to share — ProPath never sees your Garmin password.
+        Connect your Garmin watch so your sleep, recovery and training show up here and your coaches can see how you’re recovering.
+        You choose exactly what they can see before anything is shared.
       </p>
-      <div>
-        <p className="text-micro font-bold uppercase text-ink-400 mb-1.5">What can your coaches see?</p>
-        <SharingToggles value={share} onChange={setShare} disabled={busy} />
-        <p className="text-micro text-ink-400 mt-1.5">Steps, resting heart rate and workouts are shared once you connect. You can change these switches whenever you like.</p>
-      </div>
-      <ul className="text-meta text-ink-600 space-y-1 list-disc pl-5">
-        <li>Anything you switch to No is hidden from your coaches — you still see all of your own data.</li>
-        <li>Only you and your coaching team can see it. It is never sold or shared. <a href="/privacy.html" target="_blank" rel="noreferrer" className="underline" style={{ color: GOLD }}>Privacy policy</a></li>
-        <li>Data starts from the moment you connect — Garmin doesn’t send past history.</li>
-        <li>You can disconnect at any time from here or in your Garmin Connect settings.</li>
-      </ul>
-      {error && <p className="text-meta text-red-600" role="alert">{error}</p>}
       <button
-        onClick={() => onConnect(share)} disabled={busy}
-        className="w-full rounded-xl py-3 text-body font-bold text-white disabled:opacity-50"
+        onClick={onStart}
+        className="w-full rounded-xl py-3 text-body font-bold text-white"
         style={{ backgroundColor: GOLD }}
       >
-        {busy ? 'Opening Garmin…' : 'Connect Garmin'}
+        {reconnect ? 'Reconnect your Garmin device' : 'Connect your Garmin device'}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Step 2 — before they go to Garmin's sign-in page, the athlete decides what their coaches can see.
+ * Each choice is explained in plain English, and they're told to talk to their coach if unsure.
+ */
+function ShareChoice({ initialShare, busy, error, onContinue, onCancel }) {
+  const [share, setShare] = useState({ ...DEFAULT_SHARE, ...(initialShare || {}) });
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} role="dialog" aria-modal="true" aria-label="Choose what to share">
+      <div className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-ink-50 rounded-t-2xl sm:rounded-2xl p-5 space-y-4" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+        <div>
+          <p className="text-micro font-bold uppercase text-ink-400">Step 1 of 2</p>
+          <h2 className="text-h2 font-bold text-ink-900 leading-tight">What are you happy to share?</h2>
+          <p className="text-meta text-ink-600 mt-1.5">
+            Choose what your coaches can see before you sign in to Garmin. Anything you switch to <strong>No</strong> is hidden from them — you still see all of your own data.
+          </p>
+        </div>
+
+        <SharingToggles value={share} onChange={setShare} disabled={busy} detailed />
+
+        <div className="rounded-lg px-3 py-2.5 text-meta" style={{ backgroundColor: '#faf6ee', color: '#7a6748' }}>
+          <strong>Not sure what to share, or what each one means?</strong> Have a chat with your coach first. You can close this and come back any time,
+          and you can change these switches whenever you like.
+        </div>
+
+        <p className="text-micro text-ink-400">
+          Steps, resting heart rate and workouts are shared once you connect. Only you and your coaching team can see your data; it’s never sold.{' '}
+          <a href="/privacy.html" target="_blank" rel="noreferrer" className="underline" style={{ color: GOLD }}>Privacy policy</a>
+        </p>
+
+        {error && <p className="text-meta text-red-600" role="alert">{error}</p>}
+        <div className="space-y-2">
+          <button
+            onClick={() => onContinue(share)} disabled={busy}
+            className="w-full rounded-xl py-3 text-body font-bold text-white disabled:opacity-50"
+            style={{ backgroundColor: GOLD }}
+          >
+            {busy ? 'Opening Garmin…' : 'Continue to Garmin sign-in'}
+          </button>
+          <button onClick={onCancel} disabled={busy} className="w-full rounded-xl py-2.5 text-meta font-semibold text-ink-500 disabled:opacity-50">
+            Not now
+          </button>
+        </div>
+        <p className="text-micro text-ink-400 text-center">Next you’ll sign in on Garmin’s own page — ProPath never sees your Garmin password.</p>
+      </div>
     </div>
   );
 }
@@ -161,6 +206,7 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
   const [open, setOpen] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [note, setNote] = useState(null);
+  const [choosing, setChoosing] = useState(false);   // the "what are you happy to share?" step
 
   // Garmin sends the athlete back to /athlete?tab=progress&garmin=<outcome> — say what happened, then tidy the address.
   useEffect(() => {
@@ -286,12 +332,21 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
           )}
 
           {(!connected || attention) && viewer === 'athlete' && (
-            <ConnectPanel onConnect={g.connect} busy={g.busy} error={g.error} initialShare={g.status?.share} />
+            <ConnectIntro onStart={() => setChoosing(true)} reconnect={connected} />
           )}
           {!connected && viewer === 'coach' && (
             <p className="text-meta text-ink-500">This athlete hasn’t connected Garmin. They connect it themselves from the Progress tab in their own app, so the consent comes from them.</p>
           )}
         </div>
+      )}
+      {choosing && viewer === 'athlete' && (
+        <ShareChoice
+          initialShare={g.status?.share}
+          busy={g.busy}
+          error={g.error}
+          onContinue={g.connect}
+          onCancel={() => setChoosing(false)}
+        />
       )}
     </div>
   );
