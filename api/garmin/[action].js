@@ -1,6 +1,6 @@
 // Single serverless function for /api/garmin/<action> (Vercel Hobby allows only 12 functions per
 // deployment, so related endpoints share one file).
-//   /api/garmin/connect | sync | disconnect | diagnose
+//   /api/garmin/start | callback | webhook | disconnect
 // Handlers live in api/_lib/garmin/ (underscore folders aren't deployed).
 
 import actions from '../_lib/garmin/actions.js';
