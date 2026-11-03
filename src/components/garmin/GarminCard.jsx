@@ -215,6 +215,8 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
   const [confirmOff, setConfirmOff] = useState(false);
   const [note, setNote] = useState(null);
   const [choosing, setChoosing] = useState(false);   // the "what are you happy to share?" step
+  const [check, setCheck] = useState(null);           // result of "Check connection with Garmin"
+  const [checking, setChecking] = useState(false);
 
   // Garmin sends the athlete back to /athlete?tab=progress&garmin=<outcome> — say what happened, then tidy the address.
   useEffect(() => {
@@ -338,6 +340,22 @@ export default function GarminCard({ athleteId, viewer = 'athlete' }) {
               </div>
 
               {g.error && <p className="text-meta text-red-600" role="alert">{g.error}</p>}
+              <div>
+                <button
+                  onClick={async () => { setChecking(true); setCheck(await g.check()); setChecking(false); }}
+                  disabled={checking}
+                  className="text-micro font-semibold underline underline-offset-2 disabled:opacity-50" style={{ color: GOLD }}
+                >
+                  {checking ? 'Asking Garmin…' : 'Check connection with Garmin'}
+                </button>
+                {check && (
+                  <p className="mt-1.5 text-micro rounded-md bg-white border border-ink-100 px-2.5 py-2 text-ink-600">
+                    {check.ok
+                      ? <>Garmin confirms this connection{check.matchesStored ? '' : ' (but the account ID differs from the one we saved)'}. Agreed to share: <strong>{check.permissions?.length ? check.permissions.join(', ') : 'nothing yet — no data categories are ticked on Garmin’s side'}</strong>.</>
+                      : check.error}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center gap-3">
                 {!confirmOff ? (
                   <button onClick={() => setConfirmOff(true)} className="text-micro text-ink-400 underline underline-offset-2">Disconnect Garmin</button>
