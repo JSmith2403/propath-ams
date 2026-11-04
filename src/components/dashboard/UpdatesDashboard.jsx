@@ -6,6 +6,7 @@ import RecentUpdatesCard from './RecentUpdatesCard';
 import NutritionCard from './NutritionCard';
 import WellnessInsightsCard from './WellnessInsightsCard';
 import ComplianceCard from './ComplianceCard';
+import CoachDashboard from './CoachDashboard';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -19,7 +20,7 @@ const greeting = () => {
  * On a wide screen the grid fills the window exactly, so nothing needs a page scroll. On narrower screens the
  * panels stack at a fixed height and the page scrolls instead. "View all" opens the full feed; Back returns.
  */
-export default function UpdatesDashboard({ athletes, userName, onNavigateToAthlete, onNavigate, ...feedProps }) {
+function ClassicDashboard({ athletes, userName, onNavigateToAthlete, onNavigate, ...feedProps }) {
   const [feed, setFeed] = useState(false);
   const ids = useMemo(() => athletes.map(a => a.id), [athletes]);
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
@@ -52,4 +53,10 @@ export default function UpdatesDashboard({ athletes, userName, onNavigateToAthle
       </div>
     </div>
   );
+}
+
+/** The week-board dashboard; add ?classic=1 to the address to get the four-panel one back. */
+export default function UpdatesDashboard(props) {
+  const classic = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('classic');
+  return classic ? <ClassicDashboard {...props} /> : <CoachDashboard {...props} />;
 }
