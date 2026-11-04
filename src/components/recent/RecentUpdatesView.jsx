@@ -787,11 +787,11 @@ function renderTypeMeta(u, athlete, onOpenAddNote) {
           >
             {u.rag === 'green' ? 'Good' : u.rag === 'amber' ? 'Watch' : u.rag === 'red' ? 'Flagged' : 'Logged'}
           </span>
-          {u.scores?.sleep_quality != null && (
-            <span>Sleep {u.scores.sleep_quality}/10</span>
+          {u.sleepHours != null && (
+            <span>Slept {u.sleepHours}h</span>
           )}
-          {u.scores?.fatigue != null && (
-            <span>Fatigue {u.scores.fatigue}/10</span>
+          {u.flaggedCount > 0 && (
+            <span>{u.flaggedCount} flagged</span>
           )}
         </>,
       };

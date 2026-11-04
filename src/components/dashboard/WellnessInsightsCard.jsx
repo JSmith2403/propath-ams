@@ -1,4 +1,4 @@
-import { Heart, Moon, Activity, Smile, Zap, Battery } from 'lucide-react';
+import { Heart, Moon, Activity, AlertTriangle, Zap, Battery } from 'lucide-react';
 import { Avatar, Chip, DashCard, Empty, RAG, Scroll, fmtNum, fmtSleep } from './parts';
 
 function Tile({ icon: Icon, value, label }) {
@@ -24,8 +24,8 @@ export default function WellnessInsightsCard({ data, athleteById, onOpenAthlete,
           <div className="flex flex-wrap gap-1.5 mb-2 shrink-0">
             <Tile icon={Moon} value={fmtSleep(w.avg.sleepHours)} label="Avg. sleep" />
             <Tile icon={Activity} value={fmtNum(w.avg.hrv)} label="Avg. HRV" />
-            <Tile icon={Smile} value={fmtNum(w.avg.readiness, 1)} label="Readiness /10" />
-            <Tile icon={Zap} value={fmtNum(w.avg.stress, 1)} label="Stress /10" />
+            <Tile icon={AlertTriangle} value={w.avg.flagged} label="Flagged today" />
+            <Tile icon={Zap} value={fmtNum(w.avg.stress, 1)} label="Stress /7" />
             <Tile icon={Battery} value={fmtNum(w.avg.battery)} label="Avg. battery" />
           </div>
           <Scroll>
@@ -35,8 +35,8 @@ export default function WellnessInsightsCard({ data, athleteById, onOpenAthlete,
                   <th className="px-1 py-1 font-bold">Athlete</th>
                   <th className="px-1 py-1 font-bold">Sleep</th>
                   <th className="px-1 py-1 font-bold">HRV</th>
-                  <th className="px-1 py-1 font-bold" title="From the check-in: higher is better">Ready</th>
-                  <th className="px-1 py-1 font-bold" title="From the check-in: lower is better">Stress</th>
+                  <th className="px-1 py-1 font-bold" title="Answers in the check-in that came out amber or red">Flags</th>
+                  <th className="px-1 py-1 font-bold" title="Mental stress from the check-in, out of 7: lower is better">Stress</th>
                   <th className="px-1 py-1 font-bold">Battery</th>
                   <th className="px-1 py-1" />
                 </tr>
@@ -53,7 +53,7 @@ export default function WellnessInsightsCard({ data, athleteById, onOpenAthlete,
                       </td>
                       <td className="px-1 py-1.5 whitespace-nowrap">{fmtSleep(r.sleepHours)}</td>
                       <td className="px-1 py-1.5">{fmtNum(r.hrv)}</td>
-                      <td className="px-1 py-1.5">{fmtNum(r.readiness, 1)}</td>
+                      <td className="px-1 py-1.5" title={r.flagged.map(f => f.label).join('\n')}>{r.flagged.length || '—'}</td>
                       <td className="px-1 py-1.5">{fmtNum(r.stress, 1)}</td>
                       <td className="px-1 py-1.5">{r.battery != null ? `${r.battery}%` : '—'}</td>
                       <td className="px-1 py-1.5 text-right"><Chip tone={tone}>{tone.label}</Chip></td>

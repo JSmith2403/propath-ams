@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { summariseCheckIn } from '../utils/checkIn';
 
 // Feed shape — deliberately narrow to keep it fast:
 //   - only pulls the last MAX_AGE_DAYS days (server-side date filter)
@@ -41,29 +42,12 @@ function persistReadThrough(iso) {
   } catch { /* ignore */ }
 }
 
-// ── Wellness roll-up ──────────────────────────────────────────────────
-function wellnessRag(row) {
-  const scores = [row.sleep_quality, row.fatigue, row.muscle_soreness, row.stress]
-    .filter(v => v != null);
-  if (!scores.length) return 'grey';
-  const invSleep = row.sleep_quality != null ? (11 - row.sleep_quality) : null;
-  const worst = Math.max(
-    invSleep ?? 0,
-    row.fatigue ?? 0,
-    row.muscle_soreness ?? 0,
-    row.stress ?? 0,
-  );
-  if (worst >= 8) return 'red';
-  if (worst >= 6) return 'amber';
-  return 'green';
-}
-
 /**
  * useRecentUpdates — unified coach-side activity feed.
  *
  * Sources merged (server-side date-filtered to the last 30 days):
  *   • session   — session_logs.completed_at
- *   • wellness  — wellness_submissions.created_at
+ *   • wellness  — wellness_responses.created_at
  *   • pb        — athlete_e1rm.created_at
  *
  * Read state model — two tiers for speed:
@@ -124,8 +108,8 @@ export function useRecentUpdates({ sessionsOnly = false } = {}) {
       // sessionsOnly (the dashboard's training-sessions panel): skip every other source so a busy day of
       // meal logs can't push completed sessions out of the capped list.
       const none = Promise.resolve({ data: [], error: null });
-      const [sessRes, wellRes, pbRes, mealRes, attRes] = await Promise.all([
-        // (order: sessions, wellness, PBs, meals, attendance)
+      const [sessRes, wellRes, pbRes, mealRes, attRes, libRes] = await Promise.all([
+        // (order: sessions, wellness, PBs, meals, attendance, question library)
         supabase
           .from('session_logs')
           // Direct FK to block_sessions gets the template name when the
@@ -144,8 +128,8 @@ export function useRecentUpdates({ sessionsOnly = false } = {}) {
           .order('completed_at', { ascending: false })
           .limit(MAX_ITEMS),
         sessionsOnly ? none : supabase
-          .from('wellness_submissions')
-          .select('id, athlete_id, submission_date, created_at, sleep_quality, fatigue, muscle_soreness, stress')
+          .from('wellness_responses')
+          .select('id, athlete_id, submission_date, created_at, responses')
           .gte('created_at', sinceISO)
           .order('created_at', { ascending: false })
           .limit(MAX_ITEMS),
@@ -173,6 +157,7 @@ export function useRecentUpdates({ sessionsOnly = false } = {}) {
           .gte('attendance_at', sinceISO)
           .order('attendance_at', { ascending: false })
           .limit(MAX_ITEMS),
+        sessionsOnly ? none : supabase.from('wellness_question_library').select('id, label, question_type, direction, rag_thresholds'),
       ]);
       if (cancelled) return;
 
@@ -272,22 +257,20 @@ export function useRecentUpdates({ sessionsOnly = false } = {}) {
       }
 
       rows.push(...sessionRows);
-      if (wellRes.error) console.error('[useRecentUpdates] wellness_submissions error', wellRes.error);
+      if (wellRes.error) console.error('[useRecentUpdates] wellness_responses error', wellRes.error);
       if (pbRes.error)   console.error('[useRecentUpdates] athlete_e1rm error', pbRes.error);
 
+      const libById = new Map((libRes.data || []).map(q => [q.id, q]));
       for (const r of wellRes.data || []) {
+        const c = summariseCheckIn(r.responses, libById);
         rows.push({
           id: `wellness:${r.id}`,
           type: 'wellness',
           athlete_id: r.athlete_id,
           timestamp: r.created_at,
-          rag: wellnessRag(r),
-          scores: {
-            sleep_quality:   r.sleep_quality,
-            fatigue:         r.fatigue,
-            muscle_soreness: r.muscle_soreness,
-            stress:          r.stress,
-          },
+          rag: c.rag,
+          sleepHours: c.sleepHours,
+          flaggedCount: c.flagged.length,
         });
       }
 

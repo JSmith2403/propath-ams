@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { summariseCheckIn } from '../utils/checkIn';
 
 const todayLocal = () => new Date().toLocaleDateString('en-CA');
 function addDays(iso, n) {
@@ -8,22 +9,6 @@ function addDays(iso, n) {
   return d.toLocaleDateString('en-CA');
 }
 export const DEFAULT_WATER_TARGET = 6; // glasses — same default as the athlete app
-
-// Same thresholds as the Recent Updates feed: worst single score decides the colour.
-function formRag(s) {
-  const scores = [s.sleep_quality, s.fatigue, s.muscle_soreness, s.stress].filter(v => v != null);
-  if (!scores.length) return 'grey';
-  const worst = Math.max(s.sleep_quality != null ? 11 - s.sleep_quality : 0, s.fatigue ?? 0, s.muscle_soreness ?? 0, s.stress ?? 0);
-  return worst >= 8 ? 'red' : worst >= 6 ? 'amber' : 'green';
-}
-
-// "Readiness" = one 1–10 number (higher is better) from today's check-in:
-// sleep quality, plus fatigue / soreness / stress turned the right way round.
-function readiness(s) {
-  const parts = [s.sleep_quality, s.fatigue != null ? 11 - s.fatigue : null, s.muscle_soreness != null ? 11 - s.muscle_soreness : null, s.stress != null ? 11 - s.stress : null]
-    .filter(v => v != null);
-  return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-}
 
 const mean = (vals) => {
   const v = vals.filter(x => x != null && Number.isFinite(x));
@@ -36,7 +21,7 @@ const mean = (vals) => {
  *
  *   nutrition : who has logged today, what's waiting for review, who hasn't logged, the latest
  *               submissions with their photo and that day's water.
- *   wellness  : each athlete's latest check-in (sleep, readiness, stress, RAG) plus Garmin sleep / HRV /
+ *   wellness  : each athlete's latest check-in (sleep, stress, what was flagged, RAG) plus Garmin sleep / HRV /
  *               body battery where an athlete has Garmin connected.
  *
  * Garmin is optional: if its tables aren't there yet, or nobody is connected, those columns are just empty.
@@ -52,17 +37,19 @@ export function useUpdatesDashboard(athleteIds) {
       const today = todayLocal();
       const yesterday = addDays(today, -1);
       const weekAgo = addDays(today, -6);
-      const [meals, water, settings, subs, garmin] = await Promise.all([
+      const [meals, water, settings, subs, library, garmin] = await Promise.all([
         supabase.from('meal_entries')
           .select('id, athlete_id, log_date, meal_type, description, status, submitted_at, meal_photos ( storage_path, thumbnail_path )')
           .in('athlete_id', athleteIds).not('submitted_at', 'is', null).gte('log_date', yesterday)
           .order('submitted_at', { ascending: false }).limit(60),
         supabase.from('water_intake_logs').select('athlete_id, log_date, glasses').in('athlete_id', athleteIds).gte('log_date', yesterday),
         supabase.from('nutrition_settings').select('athlete_id, meal_logging_enabled, water_daily_target').in('athlete_id', athleteIds),
-        supabase.from('wellness_submissions')
-          .select('athlete_id, submission_date, created_at, sleep_duration, sleep_quality, fatigue, muscle_soreness, stress')
+        // The daily check-in athletes fill in today (the older wellness_submissions table stopped being written in April).
+        supabase.from('wellness_responses')
+          .select('athlete_id, submission_date, created_at, responses')
           .in('athlete_id', athleteIds).gte('submission_date', weekAgo)
           .order('submission_date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('wellness_question_library').select('id, label, question_type, direction, rag_thresholds'),
         // Through the function so only what each athlete lets coaches see comes back.
         supabase.rpc('garmin_daily_for', { p_athlete_ids: athleteIds, p_since: addDays(today, -2) }),
       ]);
@@ -107,6 +94,7 @@ export function useUpdatesDashboard(athleteIds) {
       if (cancelled) return;
 
       // ── Wellness ───────────────────────────────────────────────────────
+      const libById = new Map((library.data || []).map(q => [q.id, q]));
       const latestSub = new Map();
       (subs.data || []).forEach(s => { if (!latestSub.has(s.athlete_id)) latestSub.set(s.athlete_id, s); });
       const latestGarmin = new Map();
@@ -117,16 +105,17 @@ export function useUpdatesDashboard(athleteIds) {
         .map(id => {
           const s = latestSub.get(id);
           const g = latestGarmin.get(id);
+          const c = s ? summariseCheckIn(s.responses, libById) : null;
           return {
             athleteId: id,
             date: s?.submission_date || g?.day,
-            sleepHours: g?.sleep_seconds != null ? g.sleep_seconds / 3600 : (s?.sleep_duration != null ? Number(s.sleep_duration) : null),
+            sleepHours: g?.sleep_seconds != null ? g.sleep_seconds / 3600 : c?.sleepHours ?? null,
             sleepFromGarmin: g?.sleep_seconds != null,
             hrv: g?.hrv_last_night ?? null,
-            readiness: s ? readiness(s) : null,
-            stress: s?.stress ?? null,
+            flagged: c ? c.flagged : [],
+            stress: c?.stress ?? null,
             battery: g?.body_battery_high ?? null,
-            rag: s ? formRag(s) : 'grey',
+            rag: c ? c.rag : 'grey',
           };
         });
       const order = { red: 0, amber: 1, green: 2, grey: 3 };
@@ -146,7 +135,7 @@ export function useUpdatesDashboard(athleteIds) {
           avg: {
             sleepHours: mean(rows.map(r => r.sleepHours)),
             hrv: mean(rows.map(r => r.hrv)),
-            readiness: mean(rows.map(r => r.readiness)),
+            flagged: rows.filter(r => r.rag === 'red' || r.rag === 'amber').length,
             stress: mean(rows.map(r => r.stress)),
             battery: mean(rows.map(r => r.battery)),
           },
