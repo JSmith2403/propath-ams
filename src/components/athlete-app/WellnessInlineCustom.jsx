@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { HeartPulse, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import WellnessQuestionField, { countAnswered } from './WellnessQuestionField';
+import HrvFollowUp, { HRV_FOLLOWUP_KEY } from './HrvFollowUp';
+import { useHrvDip } from '../../hooks/useHrvDip';
 
 function todayLocal() { return new Date().toLocaleDateString('en-CA'); }
 
@@ -17,6 +19,7 @@ export default function WellnessInlineCustom({ athleteId, dateISO, wellnessToken
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]         = useState(null);
   const [loading, setLoading]     = useState(true);
+  const hrvDip = useHrvDip(athleteId);   // watch says HRV is lower than usual: one extra question today
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -50,6 +53,7 @@ export default function WellnessInlineCustom({ athleteId, dateISO, wellnessToken
 
   const submit = async () => {
     if (!wellnessToken) return;
+    if (hrvDip && dateISO === todayLocal() && !(responses[HRV_FOLLOWUP_KEY] || '').trim()) { setError('Please answer the last question.'); return; }
     setSubmitting(true); setError(null);
     const payload = {
       athlete_id: athleteId,
@@ -107,6 +111,9 @@ export default function WellnessInlineCustom({ athleteId, dateISO, wellnessToken
             onChange={(v) => setVal(q.id, v)}
           />
         ))}
+        {hrvDip && dateISO === todayLocal() && (
+          <div className="mb-4"><HrvFollowUp value={responses[HRV_FOLLOWUP_KEY]} onChange={(v) => setVal(HRV_FOLLOWUP_KEY, v)} /></div>
+        )}
       </FormCard>
     );
   }

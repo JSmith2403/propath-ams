@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Lock, HeartPulse } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import WellnessQuestionField, { countAnswered } from './WellnessQuestionField';
+import HrvFollowUp, { HRV_FOLLOWUP_KEY } from './HrvFollowUp';
+import { useHrvDip } from '../../hooks/useHrvDip';
 
 function todayLocal() { return new Date().toLocaleDateString('en-CA'); }
 
@@ -23,6 +25,7 @@ export default function WellnessCheckInGate({ athleteId, wellnessToken, children
   const [responses, setResponses] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const hrvDip = useHrvDip(athleteId);   // watch says HRV is lower than usual: one extra question today
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +62,8 @@ export default function WellnessCheckInGate({ athleteId, wellnessToken, children
 
   const setVal = (qid, v) => setResponses(prev => ({ ...prev, [qid]: v }));
 
-  const allAnswered = questions.length > 0 && countAnswered(responses, questions) === questions.length;
+  const followUpDone = !hrvDip || (responses[HRV_FOLLOWUP_KEY] || '').trim().length > 0;
+  const allAnswered = questions.length > 0 && countAnswered(responses, questions) === questions.length && followUpDone;
 
   const submit = async () => {
     if (!wellnessToken || !allAnswered) return;
@@ -110,6 +114,11 @@ export default function WellnessCheckInGate({ athleteId, wellnessToken, children
             />
           </div>
         ))}
+        {hrvDip && (
+          <div className="rounded-xl p-5 bg-white border border-gold-300 shadow-card">
+            <HrvFollowUp value={responses[HRV_FOLLOWUP_KEY]} onChange={(v) => setVal(HRV_FOLLOWUP_KEY, v)} />
+          </div>
+        )}
       </div>
 
       {/* Footer — submit */}

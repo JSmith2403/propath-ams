@@ -271,6 +271,7 @@ export function useRecentUpdates({ sessionsOnly = false } = {}) {
           rag: c.rag,
           sleepHours: c.sleepHours,
           flaggedCount: c.flagged.length,
+          hrvNote: (r.responses?.hrv_followup || '').trim() || null,
         });
       }
 

@@ -30,6 +30,8 @@ export function localDay(startSeconds, offsetSeconds) {
   return new Date((s + (num(offsetSeconds) || 0)) * 1000).toISOString().slice(0, 10);
 }
 
+const mins = (seconds) => { const n = int(seconds); return n == null ? null : Math.round(n / 60); };
+
 const dropNulls = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null));
 
 export const mapDaily = (r) => dropNulls({
@@ -39,6 +41,8 @@ export const mapDaily = (r) => dropNulls({
   body_battery_high: int(find(r, ['bodyBatteryHighestValue', 'bodyBatteryHigh'])),
   body_battery_low: int(find(r, ['bodyBatteryLowestValue', 'bodyBatteryLow'])),
   active_kcal: int(find(r, ['activeKilocalories', 'activeCalories'])),
+  moderate_min: mins(find(r, ['moderateIntensityDurationInSeconds', 'moderateIntensitySeconds'])),
+  vigorous_min: mins(find(r, ['vigorousIntensityDurationInSeconds', 'vigorousIntensitySeconds'])),
 });
 
 export const mapSleep = (r) => dropNulls({

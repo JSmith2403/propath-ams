@@ -1,4 +1,4 @@
-import { ChevronRight, Flame, HeartPulse, Moon, Users, X } from 'lucide-react';
+import { ChevronRight, Flame, HeartPulse, MessageSquare, Moon, Users, X } from 'lucide-react';
 import { fmtDeltaHM, fmtHM } from '../../utils/garminTrend';
 import { Avatar, DashCard, Empty, RAG } from './parts';
 import { SessionRing, Sparkline, TONE } from './status';
@@ -83,6 +83,7 @@ export default function AthleteOverviewCard({ rows, total, loading, filterLabel,
                             {g.sleep ? fmtHM(g.sleep.value) : '–'} <span className="text-ink-300 font-normal">|</span> {hrvRound ?? '–'}
                           </span>
                           <Sparkline values={g.series.sleep} />
+                          {r.checkIn.hrvNote && <span title={`Their note on a low-HRV day: ${r.checkIn.hrvNote}`} className="shrink-0"><MessageSquare size={14} style={{ color: '#8a4510' }} /></span>}
                         </span>
                       ) : <Muted title="Not tracked" />}
                     </td>
@@ -116,6 +117,11 @@ export default function AthleteOverviewCard({ rows, total, loading, filterLabel,
                           <Sparkline values={g.series.kcal} />
                         </span>
                       ) : <Muted title="Not tracked" />}
+                      {r.logged && (
+                        <span className="block text-[11px] text-ink-600 mt-0.5" title={`Logged by the athlete this week: ${r.logged.count} ${r.logged.count === 1 ? 'activity' : 'activities'}, latest ${r.logged.last.name}`}>
+                          + {r.logged.minutes} min logged · RPE {r.logged.avgRpe}
+                        </span>
+                      )}
                     </td>
                     <td className={`${CELL} pr-3`}>
                       <span className="flex items-center justify-end gap-2">

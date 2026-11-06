@@ -48,6 +48,8 @@ describe('parsePush', () => {
 describe('mappers never write nulls over existing data', () => {
   it('leaves out fields Garmin did not send', () => {
     expect(mapDaily({ steps: 100 })).toEqual({ steps: 100 });
+    expect(mapDaily({ moderateIntensityDurationInSeconds: 2700, vigorousIntensityDurationInSeconds: 900 })).toEqual({ moderate_min: 45, vigorous_min: 15 });
+    expect(mapDaily({ moderateIntensityDurationInSeconds: 0 })).toEqual({ moderate_min: 0 });
     expect(mapSleep({})).toEqual({});
     expect(mapActivity({ activityId: 'nope' })).toBeNull();
   });

@@ -50,7 +50,7 @@ export function useCoachDashboard(athletes, weekStart) {
       const errors = [];
       const ok = (r, label) => { if (r.error) { errors.push(label); return []; } return r.data || []; };
 
-      const [prog, planned, logs, tok, appTok, resp, lib, slots, garmin, support, meals] = await Promise.all([
+      const [prog, planned, logs, tok, appTok, resp, lib, slots, garmin, support, meals, untracked] = await Promise.all([
         supabase.from('programming_settings').select('athlete_id').eq('programming_active', true).in('athlete_id', ids),
         supabase.from('planned_sessions').select('id, athlete_id, planned_date, attendance').in('athlete_id', ids).gte('planned_date', from).limit(5000),
         supabase.from('session_logs').select('athlete_id, planned_session_id').in('athlete_id', ids).not('completed_at', 'is', null).gte('completed_at', `${from}T00:00:00Z`).limit(5000),
@@ -65,6 +65,9 @@ export function useCoachDashboard(athletes, weekStart) {
         // Meals submitted in the last 24 hours (for the headline tile). Quiet if it can't be read.
         supabase.from('meal_entries').select('athlete_id').in('athlete_id', ids).not('submitted_at', 'is', null)
           .gte('submitted_at', new Date(Date.now() - 86_400_000).toISOString()).limit(500),
+        // Activity athletes logged themselves (their watch didn't record it). Quiet until its SQL has been run.
+        supabase.from('untracked_activity_logs').select('athlete_id, activity_date, name, duration_min, rpe').in('athlete_id', ids)
+          .gte('activity_date', addDaysISO(today, -6)).order('activity_date', { ascending: false }).limit(500),
       ]);
       const slotRows = ok(slots, 'timetable');
       const respRes = slotRows.length
@@ -85,6 +88,7 @@ export function useCoachDashboard(athletes, weekStart) {
       const garminRows = garmin.error ? [] : (garmin.data || []);
       const group = (rows, k = 'athlete_id') => rows.reduce((m, r) => { (m[r[k]] ||= []).push(r); return m; }, {});
       const plannedBy = group(plannedRows), logsBy = group(logRows), respBy = group(respRows), garminBy = group(garminRows);
+      const loggedBy = group(untracked.error ? [] : (untracked.data || []));
 
       // Who has their own programme session on each day (programmed athletes only), alongside the group sessions.
       const programmeOn = (date) => athletes.filter(a => programmingIds.has(a.id) && (plannedBy[a.id] || []).some(p => p.planned_date === date)).map(a => a.id);
@@ -104,7 +108,7 @@ export function useCoachDashboard(athletes, weekStart) {
         let checkIn = { state: 'none', expected, pain: false, flagged: [], streak: 0, sleepHours: null, readiness: null, readinessRag: null };
         if (todayRow) {
           const s = summariseCheckIn(todayRow.responses, libById);
-          checkIn = { ...checkIn, state: s.rag === 'grey' ? 'green' : s.rag, flagged: s.flagged, sleepHours: s.sleepHours, readiness: s.readiness, readinessRag: s.readinessRag, pain: s.flagged.some(f => f.rag === 'red' && PAIN.test(f.label)) };
+          checkIn = { ...checkIn, state: s.rag === 'grey' ? 'green' : s.rag, flagged: s.flagged, sleepHours: s.sleepHours, hrvNote: (todayRow.responses?.hrv_followup || '').trim() || null, readiness: s.readiness, readinessRag: s.readinessRag, pain: s.flagged.some(f => f.rag === 'red' && PAIN.test(f.label)) };
         } else {
           let streak = 0;
           for (let i = 0; i < 7 && !byDate[addDaysISO(today, -i)]; i += 1) streak += 1;
@@ -147,6 +151,12 @@ export function useCoachDashboard(athletes, weekStart) {
           runway: programmingRunway(mine.map(p => p.planned_date), today),
           missed: missedSessions(mine, myLogs, today).length,
           checkIn, watch, garmin, timetablePending: pendingFromToday.has(a.id),
+          logged: (() => {
+            const mine = loggedBy[a.id] || [];
+            if (!mine.length) return null;
+            const mins = mine.reduce((n, l) => n + l.duration_min, 0);
+            return { count: mine.length, minutes: mins, last: mine[0], avgRpe: Math.round(mine.reduce((n, l) => n + l.rpe * l.duration_min, 0) / mins) };
+          })(),
           readinessSeries: Array.from({ length: 7 }, (_, i) => { const r = byDate[addDaysISO(today, i - 6)]; return r ? summariseCheckIn(r.responses, libById).readiness : null; }),
         };
         return { ...row, verdict: rowVerdict(row) };

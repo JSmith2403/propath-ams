@@ -42,7 +42,7 @@ function splitFeeds(updates, athleteById) {
     if (u.type === 'meal') return { id: u.id, athleteId: u.athlete_id, when: relTime(u.timestamp), text: `logged ${u.meal_type || 'a meal'}.`, tag: 'Nutrition', tone: TAG.grey };
     const bits = [u.sleepHours != null && `Slept ${u.sleepHours} h`, u.flaggedCount > 0 && `${u.flaggedCount} flagged`].filter(Boolean).join(' · ');
     const tag = u.rag === 'red' ? ['Flagged', TAG.flagged] : u.rag === 'amber' ? ['Watch', TAG.watch] : u.rag === 'green' ? ['Good', TAG.good] : ['Logged', TAG.grey];
-    return { id: u.id, athleteId: u.athlete_id, when: relTime(u.timestamp), text: `checked in.${bits ? ` ${bits}.` : ''}`, tag: tag[0], tone: tag[1], openTab: 'wellness' };
+    return { id: u.id, athleteId: u.athlete_id, when: relTime(u.timestamp), text: `checked in.${bits ? ` ${bits}.` : ''}${u.hrvNote ? ` HRV note: “${u.hrvNote.length > 90 ? `${u.hrvNote.slice(0, 90)}…` : u.hrvNote}”` : ''}`, tag: tag[0], tone: tag[1], openTab: 'wellness' };
   });
   const train = mine.filter(u => u.type === 'session' || u.type === 'pb').slice(0, 10).map(u => {
     if (u.type === 'pb') return { id: u.id, athleteId: u.athlete_id, when: relTime(u.timestamp), text: `new PB: ${u.exercise_name}${u.e1rm_kg != null ? `, e1RM ${u.e1rm_kg} kg` : ''}.`, tag: 'PB', tone: TAG.pb };

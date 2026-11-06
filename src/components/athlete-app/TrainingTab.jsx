@@ -7,6 +7,7 @@ import SessionCard from './SessionCard';
 import TimetableCard from './TimetableCard';
 import WellnessInline from './WellnessInline';
 import NutritionSummaryCard from './NutritionSummaryCard';
+import LogActivityCard from './LogActivityCard';
 
 // Lazy splits — none of these render on the athlete's first paint.
 //   SessionLogger     → only when they tap into a session.
@@ -215,6 +216,9 @@ export default function TrainingTab({ athleteId, athleteName, onOpenNutrition, o
 
       {/* ── 3. Wellness CTA ─────────────────────────────────────────────────── */}
       <WellnessInline athleteId={athleteId} dateISO={selectedISO} />
+
+      {/* Activity the watch didn't record (a game, training without it) */}
+      {isToday && <LogActivityCard athleteId={athleteId} />}
 
       {/* ── Nutrition shortcut — only ever shows today's status, so it's
             skipped when looking at a different day in the week strip. */}
