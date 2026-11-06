@@ -6,6 +6,7 @@ const CHECKIN_TITLE = {
   green: 'Check-in today: nothing flagged', amber: 'Check-in today: needs a look', red: 'Check-in today: flagged',
 };
 const WATCH = {
+  na: { kind: null, title: '' },
   none: { kind: 'none', title: 'Watch: no Garmin data' },
   silent: { kind: 'silent', title: 'Watch: connected but silent for 2+ days' },
   ok: { kind: 'ok', title: 'Watch: data coming in (readiness scoring comes later)' },
@@ -40,7 +41,7 @@ export default function AthleteOverviewCard({ rows, total, loading, filterLabel,
                     </span>
                     <SessionRing done={r.sessions.done} planned={r.sessions.planned} />
                     <StateDisc kind={ci.kind} title={ci.title} />
-                    <StateDisc kind={WATCH[r.watch.state].kind} title={WATCH[r.watch.state].title} />
+                    {WATCH[r.watch.state].kind ? <StateDisc kind={WATCH[r.watch.state].kind} title={WATCH[r.watch.state].title} /> : <span aria-hidden="true" />}
                   </button>
                 </li>
               );

@@ -87,7 +87,7 @@ export async function movePlannedSession(plannedId, newDateISO) {
  * 1-week "FreeForm" one if none exists — the paste target for a
  * session copied onto a week with no programme of its own yet.
  */
-async function findOrCreateFreeFormBlock(athleteId, dateISO) {
+export async function findOrCreateFreeFormBlock(athleteId, dateISO) {
   const { data: existing, error: e1 } = await supabase
     .from('training_blocks')
     .select('id, start_date, end_date')

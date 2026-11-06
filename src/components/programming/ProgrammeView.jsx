@@ -12,6 +12,7 @@ import {
 import { useWeekBoard, setWeekBoard } from '../../hooks/useWeekBoard';
 import { buildWeekClipboard, planPaste, pasteSpan } from '../../utils/weekClipboard';
 import EventModal from './EventModal';
+import WeekTextImportModal from './WeekTextImportModal';
 import BlockList        from './blocks/BlockList';
 import BlockModal       from './blocks/BlockModal';
 import BlockTimelineBar from './blocks/BlockTimelineBar';
@@ -479,6 +480,7 @@ export default function ProgrammeView({
 
   // ── Toast state (shown after a successful drag-and-drop reschedule) ─────
   const [toast, setToast] = useState(null); // { msg, kind }
+  const [weekImport, setWeekImport] = useState(false); // "Add training from text" open
   const toastTimer = useRef(null);
   const showToast = (msg, kind = 'success') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -593,6 +595,14 @@ export default function ProgrammeView({
       {/* Block timeline above the calendar.
           Click block → session builder for that athlete's snapshot.
           Pencil hover-icon on block → block-details modal (name/dates). */}
+      {canEdit && (
+        <div className="flex justify-end -mb-3">
+          <button onClick={() => setWeekImport(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50">
+            Add training from text
+          </button>
+        </div>
+      )}
       <BlockTimelineBar
         blocks={realBlocks}
         canEdit={canEdit}
@@ -671,6 +681,15 @@ export default function ProgrammeView({
         onDelete={handleBlockDelete}
         onClickLinkedEvent={openEdit}
       />
+
+      {weekImport && (
+        <WeekTextImportModal
+          athlete={athlete}
+          defaultDateISO={viewDate.toLocaleDateString('en-CA')}
+          onClose={() => setWeekImport(false)}
+          onDone={() => { refreshPlanned(); setProgrammeVersion(v => v + 1); }}
+        />
+      )}
 
       {modal && (
         <EventModal

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { addDaysISO, todayUAE } from '../utils/timetable';
 import { summariseCheckIn } from '../utils/checkIn';
+import { levelOf } from '../utils/support';
 import {
   MISSED_WINDOW_DAYS, buildAttention, byAttention, dayAttendance, missedSessions,
   plannedStats, programmingRunway, rowVerdict,
@@ -47,7 +48,7 @@ export function useCoachDashboard(athletes, weekStart) {
       const errors = [];
       const ok = (r, label) => { if (r.error) { errors.push(label); return []; } return r.data || []; };
 
-      const [prog, planned, logs, tok, appTok, resp, lib, slots, garmin] = await Promise.all([
+      const [prog, planned, logs, tok, appTok, resp, lib, slots, garmin, support] = await Promise.all([
         supabase.from('programming_settings').select('athlete_id').eq('programming_active', true).in('athlete_id', ids),
         supabase.from('planned_sessions').select('id, athlete_id, planned_date, attendance').in('athlete_id', ids).gte('planned_date', from).limit(5000),
         supabase.from('session_logs').select('athlete_id, planned_session_id').in('athlete_id', ids).not('completed_at', 'is', null).gte('completed_at', `${from}T00:00:00Z`).limit(5000),
@@ -57,6 +58,8 @@ export function useCoachDashboard(athletes, weekStart) {
         supabase.from('wellness_question_library').select('id, label, question_type, direction, rag_thresholds'),
         supabase.from('timetable_slots').select('id, slot_date, start_time, cohorts').gte('slot_date', weekStart).lte('slot_date', weekEnd).not('published_at', 'is', null),
         supabase.rpc('garmin_daily_for', { p_athlete_ids: ids, p_since: addDaysISO(today, -14) }),
+        // Level of support. Read on its own and quietly: until its SQL has been run everyone counts as full support.
+        supabase.from('programming_settings').select('athlete_id, support_level').in('athlete_id', ids),
       ]);
       const slotRows = ok(slots, 'timetable');
       const respRes = slotRows.length
@@ -64,7 +67,10 @@ export function useCoachDashboard(athletes, weekStart) {
         : { data: [] };
       if (cancelled) return;
 
-      const programmingIds = new Set(ok(prog, 'programming').map(r => r.athlete_id));
+      const levelBy = Object.fromEntries((support.error ? [] : (support.data || [])).map(r => [r.athlete_id, levelOf(r.support_level)]));
+      const levelFor = (id) => levelBy[id] || levelOf('full');
+      // Programmed here = switched on AND a level that gets programmed (full or programmed only).
+      const programmingIds = new Set(ok(prog, 'programming').map(r => r.athlete_id).filter(id => levelFor(id).programmed));
       const plannedRows = ok(planned, 'sessions');
       const logRows = ok(logs, 'sessions');
       const appIds = new Set(ok(appTok, 'wellness').map(r => r.athlete_id));
@@ -103,11 +109,15 @@ export function useCoachDashboard(athletes, weekStart) {
 
         const g = garminBy[a.id] || [];
         const latest = g.map(r => r.day).filter(Boolean).sort().pop();
-        const watch = { state: !latest ? 'none' : latest <= addDaysISO(today, -2) ? 'silent' : 'ok', latest: latest || null };
+        const level = levelFor(a.id);
+        const watch = !level.tracked
+          ? { state: 'na', latest: null }
+          : { state: !latest ? 'none' : latest <= addDaysISO(today, -2) ? 'silent' : 'ok', latest: latest || null };
 
         const row = {
           id: a.id, name: a.name, athlete: a,
           programmingActive: programmingIds.has(a.id),
+          supportLevel: level.key,
           sessions: plannedStats(week, myLogs),
           runway: programmingRunway(mine.map(p => p.planned_date), today),
           missed: missedSessions(mine, myLogs, today).length,

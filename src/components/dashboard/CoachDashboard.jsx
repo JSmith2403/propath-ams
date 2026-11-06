@@ -6,9 +6,11 @@ import { useReminders } from '../../lib/reminders';
 import { addDaysISO, mondayOf } from '../../utils/timetable';
 import { CHIPS } from '../../utils/weekBoard';
 import RecentUpdatesView from '../recent/RecentUpdatesView';
+import UpcomingCard from './UpcomingCard';
 import AthleteOverviewCard from './AthleteOverviewCard';
 import AttentionCard from './AttentionCard';
 import FeedCard from './FeedCard';
+import HandsOffCard from './HandsOffCard';
 import InPersonStrip from './InPersonStrip';
 import NutritionalOverview from './NutritionalOverview';
 import { GOLD, RAG, relTime } from './parts';
@@ -107,7 +109,10 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
   const thisWeek = weekStart === mondayOf();
   const weekLabel = new Date(`${weekStart}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const active = CHIPS.find(c => c.key === filter);
-  const shownRows = active ? dash.rows.filter(active.test) : dash.rows;
+  // Hands-off athletes sit in their own short list; everyone else is in the overview.
+  const mainRows = dash.rows.filter(r => r.supportLevel !== 'hands_off');
+  const handsOffRows = dash.rows.filter(r => r.supportLevel === 'hands_off');
+  const shownRows = active ? mainRows.filter(active.test) : mainRows;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto pb-24 md:pb-4">
@@ -149,9 +154,14 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
         <InPersonStrip athletes={athletes} days={dash.attendance} today={dash.today} reminders={reminders} onRemind={reminders.send} onViewTimetable={() => onNavigate('timetable')} />
 
         <div className="grid gap-3 xl:grid-cols-[minmax(340px,5fr)_minmax(0,7fr)]">
-          <AttentionCard items={dash.attention} loading={dash.loading} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} reminders={reminders} />
-          <AthleteOverviewCard rows={shownRows} total={dash.rows.length} loading={dash.loading} filterLabel={active?.label} onClearFilter={() => setFilter(null)} onOpenAthlete={onNavigateToAthlete} />
+          <div className="space-y-3 min-w-0">
+            <AttentionCard items={dash.attention} loading={dash.loading} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} reminders={reminders} />
+            <UpcomingCard athletes={athletes} athleteById={athleteById} today={dash.today} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} />
+          </div>
+          <AthleteOverviewCard rows={shownRows} total={mainRows.length} loading={dash.loading} filterLabel={active?.label} onClearFilter={() => setFilter(null)} onOpenAthlete={onNavigateToAthlete} />
         </div>
+
+        <HandsOffCard rows={handsOffRows} onOpenAthlete={onNavigateToAthlete} />
 
         <div className="grid gap-3 lg:grid-cols-2">
           <FeedCard icon={Heart} title="Wellbeing & fuelling" subtitle="Check-ins and food. Meals are reviewed in the athlete’s profile." items={feeds.well} loading={updates.loading}

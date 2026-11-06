@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { TabBar } from '../ui';
+import SupportLevelBar from './SupportLevelBar';
 
 // Lazy-load the heavy children — Testing's PerformanceTestingTab and
 // Programme's ProgrammeView. RAG status/notes moved to the Goals &
@@ -62,6 +63,7 @@ export default function PhysicalDevelopmentTab({
 }) {
   return (
     <div>
+      <SupportLevelBar athleteId={athlete.id} />
       <TabBar tabs={SUBTABS} active={subTab} onChange={onChangeSubTab} className="mb-6 no-print" />
 
       <Suspense fallback={<SubTabLoader />}>
