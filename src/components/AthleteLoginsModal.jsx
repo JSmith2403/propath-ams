@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Copy, Check, KeyRound, Loader2, ShieldCheck, Bell, BellOff, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { usePushStatus, sendTestPush } from '../hooks/usePushStatus';
@@ -30,8 +30,20 @@ const ago = (iso) => {
 
 function inviteText({ name, username, password }, appUrl, reset = false) {
   const first = (name || '').split(' ')[0] || 'there';
+  if (reset) {
+    return [
+      `Hi ${first}, here is your reset password with the same username:`,
+      '',
+      `Username: ${username}`,
+      `One-time password: ${password}`,
+      '',
+      `Open ${appUrl} and sign in with these. It will ask you to choose a new password, so pick one only you know.`,
+      '',
+      "The one-time password stops working after 7 days if it isn't used.",
+    ].join('\n');
+  }
   return [
-    reset ? `Hi ${first}, here's a new first-time password for the ProPath app.` : `Hi ${first}, your ProPath app login is ready.`,
+    `Hi ${first}, your ProPath app login is ready.`,
     '',
     `1. Open ${appUrl} on your phone`,
     `2. Username: ${username}`,
@@ -67,6 +79,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
   const [copied, setCopied] = useState(null);
   const [busyId, setBusyId] = useState(null);       // athlete id currently being reset
   const [confirmReset, setConfirmReset] = useState(null);
+  const issuedRef = useRef(null);
   const push = usePushStatus(true);                 // who can receive notifications
   const [testState, setTestState] = useState({});   // athleteId → message
 
@@ -173,6 +186,9 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
     setTimeout(() => setCopied(null), 1800);
   };
 
+  // A new password is generated at the top of a long list: scroll it into view so it isn't missed.
+  useEffect(() => { if (issued.length) issuedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [issued]);
+
   const toCreate = [...selected].filter(id => accounts && !accounts[id]);
 
   return (
@@ -183,7 +199,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
             <h2 className="text-lg font-bold text-gray-900">Athlete app logins</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Athletes sign in at <span className="font-medium">{appUrl}</span> with a username and a starting password
-              you send them. They choose their own password the first time they sign in.
+              you send them. They choose their own password the first time they sign in. To reset one person, use Reset password next to their name.
             </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-gray-100"><X size={16} /></button>
@@ -223,9 +239,9 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
 
           {/* ── Starting passwords just generated — shown once ── */}
           {issued.length > 0 && (
-            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3">
+            <div ref={issuedRef} className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-sm font-semibold text-gray-900">First-time passwords — send these now ({issued.length})</p>
+                <p className="text-sm font-semibold text-gray-900">{issued.every(c => c.reset) ? 'New one-time password — send it now' : 'First-time passwords — send these now'} ({issued.length})</p>
                 <div className="flex gap-1.5">
                 <button onClick={downloadCsv} className="text-xs font-semibold px-2.5 py-1.5 rounded-md border border-gray-300 text-gray-700 bg-white">Download list</button>
                 <button
@@ -238,12 +254,13 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                 </div>
               </div>
               <p className="text-[11px] text-gray-600 mb-2">
-                Shown only once. Each athlete is made to choose their own password when they first sign in.
-                Send each person their own message privately.
+                Shown only once and not saved anywhere, so copy it now (if you lose it, just reset again). Each athlete is made to choose
+                their own password when they sign in. Send each person their own message privately.
               </p>
               <div className="space-y-1.5">
                 {issued.map(c => (
-                  <div key={c.athlete_id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                  <div key={c.athlete_id} className="bg-white rounded-lg border border-gray-100">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{c.name}{c.reset && <span className="ml-1.5 text-[10px] font-semibold text-amber-600">RESET</span>}</p>
                       <p className="text-xs text-gray-500 font-mono truncate">{c.username} · {c.password}</p>
@@ -255,6 +272,10 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                     >
                       {copied === c.athlete_id ? <Check size={13} /> : <Copy size={13} />} Copy message
                     </button>
+                  </div>
+                  {c.reset && (
+                    <pre className="mx-3 mb-3 whitespace-pre-wrap rounded-md bg-gray-50 border border-gray-100 px-3 py-2 text-[11px] leading-relaxed text-gray-700 font-sans">{inviteText(c, appUrl, true)}</pre>
+                  )}
                   </div>
                 ))}
               </div>
@@ -269,8 +290,8 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
           )}
 
           {accounts && (
-            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <p className="text-sm font-semibold text-gray-900">Start again for everyone</p>
+            <details className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <summary className="text-sm font-semibold text-gray-900 cursor-pointer">Start again for everyone (advanced)</summary>
               <p className="text-[11px] text-gray-500 mt-0.5 mb-2.5">
                 Gives all {sorted.length} athletes a username and a fresh first-time password in one go — creating logins for anyone
                 without one, and re-issuing anyone who already has one (their old password stops working). You then copy or
@@ -291,7 +312,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                   Set up everyone
                 </button>
               )}
-            </div>
+            </details>
           )}
 
           {!accounts && !loadError && (
@@ -342,7 +363,7 @@ export default function AthleteLoginsModal({ athletes, onClose }) {
                     ) : (
                       <button
                         onClick={() => setConfirmReset(a.id)} disabled={busyId === a.id}
-                        className="shrink-0 flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                        className="shrink-0 flex items-center gap-1 text-xs font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 px-2.5 py-1.5 rounded-md"
                       >
                         <RotateCcw size={11} /> Reset password
                       </button>
