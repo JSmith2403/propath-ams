@@ -6,12 +6,14 @@ import { useReminders } from '../../lib/reminders';
 import { addDaysISO, mondayOf } from '../../utils/timetable';
 import { CHIPS } from '../../utils/weekBoard';
 import RecentUpdatesView from '../recent/RecentUpdatesView';
-import UpcomingCard from './UpcomingCard';
+import CoachesAttentionCard from './CoachesAttentionCard';
 import AthleteOverviewCard from './AthleteOverviewCard';
 import AttentionCard from './AttentionCard';
 import FeedCard from './FeedCard';
 import HandsOffCard from './HandsOffCard';
 import InPersonStrip from './InPersonStrip';
+import KpiStrip from './KpiStrip';
+import RecentHighlights from './RecentHighlights';
 import NutritionalOverview from './NutritionalOverview';
 import { GOLD, RAG, relTime } from './parts';
 
@@ -125,20 +127,6 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
             <button aria-label="Next week" onClick={() => setWeekStart(w => addDaysISO(w, 7))} className="w-9 h-9 rounded-lg border border-ink-200 bg-white flex items-center justify-center hover:bg-ink-50"><ChevronRight size={16} /></button>
             {!thisWeek && <button onClick={() => setWeekStart(mondayOf())} className="text-meta font-semibold px-2.5 h-9 rounded-lg border border-ink-200 bg-white hover:bg-ink-50" style={{ color: GOLD }}>This week</button>}
           </div>
-          <div className="flex gap-1.5 overflow-x-auto max-w-full pb-0.5 md:flex-wrap md:justify-end">
-            {CHIPS.map(c => {
-              const n = dash.rows.filter(c.test).length;
-              const s = CHIP_STYLE[c.tone];
-              const on = filter === c.key;
-              return (
-                <button key={c.key} onClick={() => setFilter(on ? null : c.key)} aria-pressed={on}
-                  className="shrink-0 inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-meta font-bold whitespace-nowrap transition"
-                  style={{ background: n === 0 && !on ? '#ffffff' : s.bg, color: n === 0 && !on ? '#9a9aa0' : s.fg, border: `2px solid ${n === 0 && !on ? '#e5e5e7' : s.border}`, boxShadow: on ? '0 0 0 3px rgba(165,141,105,0.35)' : 'none' }}>
-                  {c.label} <span>{n}</span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -151,17 +139,20 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
       )}
 
       <div className="px-3 md:px-4 pb-4 space-y-3">
-        <InPersonStrip athletes={athletes} days={dash.attendance} today={dash.today} reminders={reminders} onRemind={reminders.send} onViewTimetable={() => onNavigate('timetable')} />
+        <KpiStrip kpi={dash.kpi} athleteById={athleteById} activeFilter={filter} onFilter={(k) => setFilter(f => (f === k ? null : k))} onOpenNutrition={() => setSection('nutrition')} />
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(340px,5fr)_minmax(0,7fr)]">
-          <div className="space-y-3 min-w-0">
-            <AttentionCard items={dash.attention} loading={dash.loading} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} reminders={reminders} />
-            <UpcomingCard athletes={athletes} athleteById={athleteById} today={dash.today} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} />
-          </div>
-          <AthleteOverviewCard rows={shownRows} total={mainRows.length} loading={dash.loading} filterLabel={active?.label} onClearFilter={() => setFilter(null)} onOpenAthlete={onNavigateToAthlete} />
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          <InPersonStrip athletes={athletes} days={dash.attendance} today={dash.today} reminders={reminders} onRemind={reminders.send} onViewTimetable={() => onNavigate('timetable')} />
+          <CoachesAttentionCard athletes={athletes} athleteById={athleteById} rows={dash.rows} today={dash.today} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} />
         </div>
 
+        <AttentionCard items={dash.attention} loading={dash.loading} athleteById={athleteById} onOpenAthlete={onNavigateToAthlete} onNavigate={onNavigate} reminders={reminders} />
+
+        <AthleteOverviewCard rows={shownRows} total={mainRows.length} loading={dash.loading} filterLabel={active?.label} onClearFilter={() => setFilter(null)} onOpenAthlete={onNavigateToAthlete} />
+
         <HandsOffCard rows={handsOffRows} onOpenAthlete={onNavigateToAthlete} />
+
+        <RecentHighlights updates={updates.updates} athleteById={athleteById} insights={dash.insights} loading={updates.loading} onOpenAthlete={onNavigateToAthlete} />
 
         <div className="grid gap-3 lg:grid-cols-2">
           <FeedCard icon={Heart} title="Wellbeing & fuelling" subtitle="Check-ins and food. Meals are reviewed in the athlete’s profile." items={feeds.well} loading={updates.loading}

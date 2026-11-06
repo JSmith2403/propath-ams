@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 /** The small round status marks on the coach dashboard: a sessions ring and a state disc. */
 
 const TEAL = '#437E8D';
@@ -49,3 +51,25 @@ export const TONE = {
   grey: { fg: '#52525b', bg: '#f4f4f5' },
   go: { fg: '#15803d', bg: 'transparent' },
 };
+
+/** A tiny trend line with a soft fill, for a run of daily values (oldest first, null = no reading). */
+export function Sparkline({ values, width = 120, height = 30, color = TEAL }) {
+  const id = 'sp' + useId().replace(/[^a-zA-Z0-9]/g, '');
+  const pts = (values || []).map((v, i) => (v == null ? null : [i, Number(v)])).filter(Boolean);
+  if (pts.length < 3) return <span aria-hidden="true" className="inline-block" style={{ width, height }} />;
+  const n = values.length - 1;
+  const lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1]));
+  const span = hi - lo || 1;
+  const x = (i) => 2 + (i / n) * (width - 4);
+  const y = (v) => (hi === lo ? height / 2 : height - 3 - ((v - lo) / span) * (height - 6));
+  const line = pts.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const [fi] = pts[0], [li] = pts[pts.length - 1];
+  const area = `${x(fi).toFixed(1)},${height} ${line} ${x(li).toFixed(1)},${height}`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="shrink-0">
+      <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.25" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <polygon points={area} fill={`url(#${id})`} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}

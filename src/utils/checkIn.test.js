@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { summariseCheckIn, SLEEP_HOURS_LABEL, MENTAL_STRESS_LABEL } from './checkIn';
+import { summariseCheckIn, SLEEP_HOURS_LABEL, MENTAL_STRESS_LABEL, READY_LABEL } from './checkIn';
 
 const lib = [
   { id: 'sleep', label: SLEEP_HOURS_LABEL, question_type: 'number', direction: 'higher_better', rag_thresholds: { green_boundary: 7, amber_boundary: 6 } },
   { id: 'stress', label: MENTAL_STRESS_LABEL, question_type: 'slider', direction: 'lower_better', rag_thresholds: { green_boundary: 2, amber_boundary: 5 } },
+  { id: 'ready', label: READY_LABEL, question_type: 'slider', direction: 'higher_better', rag_thresholds: { green_boundary: 6, amber_boundary: 3 } },
   { id: 'sore', label: 'How sore do you feel today?', question_type: 'slider', direction: 'lower_better', rag_thresholds: { green_boundary: 2, amber_boundary: 5 } },
   { id: 'pain', label: 'Do you have any pain or symptoms today?', question_type: 'yes_no', direction: 'no_better', rag_thresholds: {} },
   { id: 'painscale', label: 'If yes, pain scale today', question_type: 'number', direction: 'lower_better', rag_thresholds: {} },
@@ -22,6 +23,12 @@ describe('summariseCheckIn', () => {
     expect(s.rag).toBe('red');
     expect(s.flagged.map(f => f.rag)).toEqual(['red', 'amber']);
     expect(s.rated).toBe(3);
+  });
+
+  it('reads self-rated readiness and its colour', () => {
+    expect(summariseCheckIn({ ready: 7 }, lib)).toMatchObject({ readiness: 7, readinessRag: 'green' });
+    expect(summariseCheckIn({ ready: 2 }, lib)).toMatchObject({ readiness: 2, readinessRag: 'red' });
+    expect(summariseCheckIn({}, lib).readiness).toBeNull();
   });
 
   it('is green when every rated answer is fine', () => {
