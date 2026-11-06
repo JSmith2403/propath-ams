@@ -72,12 +72,16 @@ export function useCoachDashboard(athletes, weekStart) {
       const respRows = ok(resp, 'wellness');
       const libById = new Map(ok(lib, 'wellness').map(q => [q.id, q]));
       const garminRows = garmin.error ? [] : (garmin.data || []);
-      const attendanceDays = dayAttendance(slotRows, ok(respRes, 'timetable'), athletes, Array.from({ length: 7 }, (_, i) => addDaysISO(weekStart, i)))
-        .filter((d, i) => i < 5 || d.hasSlots);
-      const pendingFromToday = new Set(attendanceDays.filter(d => d.date >= today).flatMap(d => d.pending));
-
       const group = (rows, k = 'athlete_id') => rows.reduce((m, r) => { (m[r[k]] ||= []).push(r); return m; }, {});
       const plannedBy = group(plannedRows), logsBy = group(logRows), respBy = group(respRows), garminBy = group(garminRows);
+
+      // Who has their own programme session on each day (programmed athletes only), alongside the group sessions.
+      const programmeOn = (date) => athletes.filter(a => programmingIds.has(a.id) && (plannedBy[a.id] || []).some(p => p.planned_date === date)).map(a => a.id);
+      const attendanceDays = dayAttendance(slotRows, ok(respRes, 'timetable'), athletes, Array.from({ length: 7 }, (_, i) => addDaysISO(weekStart, i)))
+        .map(d => ({ ...d, programme: programmeOn(d.date) }))
+        .map(d => ({ ...d, expected: [...new Set([...d.attending, ...d.programme])] }))
+        .filter((d, i) => i < 5 || d.hasSlots || d.programme.length > 0);
+      const pendingFromToday = new Set(attendanceDays.filter(d => d.date >= today).flatMap(d => d.pending));
 
       const rows = athletes.map(a => {
         const mine = plannedBy[a.id] || [];

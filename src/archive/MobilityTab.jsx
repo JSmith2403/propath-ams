@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { X } from 'lucide-react';
-import { MOBILITY_NORMS } from '../../data/referenceData';
+import { MOBILITY_NORMS } from '../components/data/referenceData';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);

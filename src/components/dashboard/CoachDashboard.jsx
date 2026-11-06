@@ -10,12 +10,16 @@ import AthleteOverviewCard from './AthleteOverviewCard';
 import AttentionCard from './AttentionCard';
 import FeedCard from './FeedCard';
 import InPersonStrip from './InPersonStrip';
+import NutritionalOverview from './NutritionalOverview';
 import { GOLD, RAG, relTime } from './parts';
 
 const greeting = () => {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 };
+
+const SECTIONS = [{ key: 'athlete', label: 'Athlete overview' }, { key: 'nutrition', label: 'Nutritional overview' }];
+const loadSection = () => { try { return window.localStorage.getItem('dash:section') === 'nutrition' ? 'nutrition' : 'athlete'; } catch { return 'athlete'; } };
 
 const CHIP_STYLE = {
   red: { bg: '#dc2626', fg: '#ffffff', border: '#dc2626' },
@@ -53,6 +57,8 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
   const [feed, setFeed] = useState(false);
   const [weekStart, setWeekStart] = useState(() => mondayOf());
   const [filter, setFilter] = useState(null);
+  const [section, setSectionState] = useState(loadSection);
+  const setSection = (k) => { setSectionState(k); try { window.localStorage.setItem('dash:section', k); } catch { /* private mode */ } };
   const reminders = useReminders();
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
   const dash = useCoachDashboard(athletes, weekStart);
@@ -71,6 +77,33 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
   }
 
   const first = (userName || '').split(/[\s@]/)[0];
+  const sectionTabs = (
+    <div role="tablist" className="px-4 md:px-6 flex gap-1 border-b border-ink-100 mb-3">
+      {SECTIONS.map(t => (
+        <button key={t.key} role="tab" aria-selected={section === t.key} onClick={() => setSection(t.key)}
+          className="px-4 py-2.5 text-body font-semibold whitespace-nowrap"
+          style={{ color: section === t.key ? GOLD : '#71717a', borderBottom: '2px solid ' + (section === t.key ? GOLD : 'transparent'), marginBottom: -1 }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+  const greetingBlock = (
+    <div className="min-w-0">
+      <h1 className="text-h2 font-bold text-ink-900 leading-tight">{greeting()}{first ? ', ' + first : ''}</h1>
+      <p className="text-meta text-ink-500">{section === 'nutrition' ? 'Food and hydration submissions from your athletes.' : 'Your week at a glance: who is in, who has trained, and who needs you.'}</p>
+    </div>
+  );
+
+  if (section === 'nutrition') {
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto pb-24 md:pb-4">
+        <div className="px-4 md:px-6 pt-4 pb-3">{greetingBlock}</div>
+        {sectionTabs}
+        <NutritionalOverview athletes={athletes} onNavigateToAthlete={onNavigateToAthlete} />
+      </div>
+    );
+  }
   const thisWeek = weekStart === mondayOf();
   const weekLabel = new Date(`${weekStart}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const active = CHIPS.find(c => c.key === filter);
@@ -79,10 +112,7 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
   return (
     <div className="flex-1 min-h-0 overflow-y-auto pb-24 md:pb-4">
       <div className="px-4 md:px-6 pt-4 pb-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="text-h2 font-bold text-ink-900 leading-tight">{greeting()}{first ? `, ${first}` : ''}</h1>
-          <p className="text-meta text-ink-500">Your week at a glance: who is in, who has trained, and who needs you.</p>
-        </div>
+        {greetingBlock}
         <div className="flex flex-col items-start md:items-end gap-2 max-w-full">
           <div className="flex items-center gap-1.5">
             <span className="text-body font-semibold text-ink-900 px-3 py-1.5 rounded-lg border border-ink-200 bg-white">Week of {weekLabel}</span>
@@ -106,6 +136,8 @@ export default function CoachDashboard({ athletes, userName, onNavigateToAthlete
           </div>
         </div>
       </div>
+
+      {sectionTabs}
 
       {dash.errors.length > 0 && (
         <p className="mx-4 md:mx-6 mb-2 text-micro rounded-lg px-3 py-1.5" style={{ background: '#fffbeb', color: '#8a4510' }}>

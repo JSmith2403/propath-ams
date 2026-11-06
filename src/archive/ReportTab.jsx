@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import InitialsAvatar from '../InitialsAvatar';
-import { COHORT_CONFIG } from '../../data/athletes';
-import { METRIC_MAP } from '../../data/sessionMetrics';
-import { useCustomMetrics } from '../../hooks/useCustomMetrics';
-import { usePerformanceResults } from '../../hooks/usePerformanceResults';
-import { useDevelopmentPlans } from '../../hooks/useDevelopmentPlans';
-import { DOMAIN_META, TIER_META } from '../../utils/goalTree';
-import { renderBold } from '../../utils/renderBold';
-import logoPath from '../../assets/Propath_Primary Logo_Black.png';
+import InitialsAvatar from '../components/InitialsAvatar';
+import { COHORT_CONFIG } from '../components/data/athletes';
+import { METRIC_MAP } from '../components/data/sessionMetrics';
+import { useCustomMetrics } from '../components/hooks/useCustomMetrics';
+import { usePerformanceResults } from '../components/hooks/usePerformanceResults';
+import { useDevelopmentPlans } from '../components/hooks/useDevelopmentPlans';
+import { DOMAIN_META, TIER_META } from '../components/utils/goalTree';
+import { renderBold } from '../components/utils/renderBold';
+import logoPath from '../components/assets/Propath_Primary Logo_Black.png';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ function formatTimestamp(iso) {
 
 // ─── Maturation helpers (centralised) ────────────────────────────────────────
 
-import { calculateMaturation, getMostRecentMaturationInputs, calcAgeYM } from '../../utils/maturation';
+import { calculateMaturation, getMostRecentMaturationInputs, calcAgeYM } from '../components/utils/maturation';
 
 const STAGE_STYLE = {
   'Pre-PHV':   { bg: '#ccfbf1', text: '#0f766e' },

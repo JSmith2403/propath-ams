@@ -3,14 +3,12 @@ import { ArrowLeft } from 'lucide-react';
 import OverviewTab from './tabs/OverviewTab';
 
 // Lazy-load heavy tabs to keep initial bundle lean
-const MaturationTab           = lazy(() => import('./tabs/MaturationTab'));
-const MobilityTab             = lazy(() => import('./tabs/MobilityTab'));
 const PhysicalDevelopmentTab  = lazy(() => import('./tabs/PhysicalDevelopmentTab'));
 const GoalsTab                 = lazy(() => import('./tabs/GoalsTab'));
 const PhysioTab               = lazy(() => import('./tabs/PhysioTab'));
 const NutritionDomainTab      = lazy(() => import('./tabs/NutritionDomainTab'));
 const PsychTab                = lazy(() => import('./tabs/PsychTab'));
-const ReportTab               = lazy(() => import('./tabs/ReportTab'));
+const ReportsLogTab           = lazy(() => import('./tabs/ReportsLogTab'));
 const WellnessTab             = lazy(() => import('./tabs/WellnessTab'));
 
 // RAG status, notes, and "Working On" for every domain now live in
@@ -24,10 +22,8 @@ const TABS = [
   { id: 'rag-psych',      label: 'Psychological'        },
   { id: 'rag-nutrition',  label: 'Nutritional'          },
   { id: 'wellness',       label: 'Wellness'             },
-  { id: 'maturation',     label: 'Maturation'           },
-  { id: 'mobility',       label: 'Mobility'             },
   { id: 'physio',         label: 'Physio Portal'        },
-  { id: 'report',         label: 'Report'               },
+  { id: 'report',         label: 'Reports'              },
 ];
 
 function TabBar({ active, onChange }) {
@@ -81,14 +77,16 @@ export default function AthleteProfile({
   // it after a page reload (see App.jsx's nav persistence).
   onActiveTabChange,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+  // Maturation now lives inside Physical Development; Mobility is archived. Old saved/deep links still land somewhere sensible.
+  const LEGACY_TAB = { maturation: 'physical-dev', mobility: 'overview' };
+  const [activeTab, setActiveTab] = useState(LEGACY_TAB[initialTab] || initialTab || 'overview');
 
   useEffect(() => { onActiveTabChange?.(activeTab); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // Physical Development sub-tab state — persisted across top-level tab
   // switches for the lifetime of the open profile. Defaults to
   // 'programme' now that Overview (RAG/notes) has moved to Goals &
   // Development.
-  const [physicalDevSubTab, setPhysicalDevSubTab] = useState('programme');
+  const [physicalDevSubTab, setPhysicalDevSubTab] = useState(initialTab === 'maturation' ? 'maturation' : 'programme');
   // Deep-link focus for the Programme sub-tab — bumped (and ProgrammeView
   // re-applies) every time the user clicks a gym session pill on the
   // Overview Calendar. Shape: { viewMode, viewDate, nonce } | null.
@@ -229,21 +227,6 @@ export default function AthleteProfile({
             onNavigateToProgrammeWeek={handleNavigateToProgrammeWeek}
           />
         );
-      case 'maturation':
-        return (
-          <MaturationTab
-            athlete={localAthlete}
-            entries={p2.maturation?.entries || []}
-            allAthletes={allAthletes}
-          />
-        );
-      case 'mobility':
-        return (
-          <MobilityTab
-            entries={p2.mobility?.entries || {}}
-            onAddEntry={(joint, entry) => onAddMobilityEntry(localAthlete.id, joint, entry)}
-          />
-        );
       case 'physical-dev':
         return (
           <PhysicalDevelopmentTab
@@ -277,11 +260,7 @@ export default function AthleteProfile({
         return <WellnessTab athlete={localAthlete} role={role} />;
       case 'report':
         return (
-          <ReportTab
-            athlete={localAthlete}
-            phase2={p2}
-            onSaveBrag={(metricKey, color) => onSavePerformanceBrag(localAthlete.id, metricKey, color)}
-          />
+          <ReportsLogTab athlete={localAthlete} />
         );
       default:
         return null;

@@ -7,11 +7,13 @@ import { TabBar } from '../ui';
 const PerformanceTestingTab = lazy(() => import('./PerformanceTestingTab'));
 const ProgrammeView         = lazy(() => import('../programming/ProgrammeView'));
 const LoggedSessionsTab     = lazy(() => import('./LoggedSessionsTab'));
+const MaturationTab         = lazy(() => import('./MaturationTab'));
 
 const SUBTABS = [
   { id: 'programme', label: 'Programme'     },
   { id: 'logged',    label: 'Progress'      },  // hosts the Progress Dashboard above the session log
   { id: 'testing',   label: 'Testing Data'  },
+  { id: 'maturation', label: 'Maturation'   },
 ];
 
 function SubTabLoader() {
@@ -26,10 +28,11 @@ function SubTabLoader() {
 }
 
 /**
- * PhysicalDevelopmentTab — host for three sub-tabs:
+ * PhysicalDevelopmentTab — host for four sub-tabs:
  *   • Programme  — training programme builder
  *   • Progress   — logged session history
  *   • Testing    — performance testing data
+ *   • Maturation — growth and maturity entries (moved here from its own profile tab)
  *
  * RAG status/notes now live in the Goals & Development tab instead of
  * an Overview sub-tab here.
@@ -72,6 +75,14 @@ export default function PhysicalDevelopmentTab({
 
         {subTab === 'logged' && (
           <LoggedSessionsTab athlete={athlete} />
+        )}
+
+        {subTab === 'maturation' && (
+          <MaturationTab
+            athlete={athlete}
+            entries={phase2.maturation?.entries || []}
+            allAthletes={allAthletes}
+          />
         )}
 
         {subTab === 'testing' && (

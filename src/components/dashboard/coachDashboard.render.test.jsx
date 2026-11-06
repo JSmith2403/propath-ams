@@ -43,19 +43,22 @@ describe('coach dashboard components render', () => {
 
   it('InPersonStrip tells apart two athletes with the same first name', () => {
     const days = [
-      { date: '2026-11-04', hasSlots: true, attending: ['a', 'b'], pending: ['c'], notComing: [] },
-      { date: '2026-11-05', hasSlots: false, attending: [], pending: [], notComing: [] },
+      { date: '2026-11-04', hasSlots: true, attending: ['a', 'b'], pending: ['c'], notComing: [], programme: ['c'], expected: ['a', 'b', 'c'] },
+      { date: '2026-11-05', hasSlots: false, attending: [], pending: [], notComing: [], programme: [], expected: [] },
     ];
     const html = renderToString(<InPersonStrip athletes={athletes} days={days} today="2026-11-04" reminders={{ state: {}, send: () => {} }} onRemind={() => {}} onViewTimetable={() => {}} />);
     expect(html).toContain('Maha A.');
     expect(html).toContain('Maha K.');
     expect(html).toContain('1 no reply');
+    expect(html).toContain('3 expected');
+    expect(html).toContain('Own programme');
     expect(html).toContain('No group session');
   });
 
-  it('InPersonStrip says so when no timetable is published', () => {
-    const html = renderToString(<InPersonStrip athletes={athletes} days={[{ date: '2026-11-04', hasSlots: false, attending: [], pending: [], notComing: [] }]} today="2026-11-04" reminders={{ state: {}, send: () => {} }} onRemind={() => {}} onViewTimetable={() => {}} />);
-    expect(html).toContain('No timetable published for this week');
+  it('InPersonStrip still shows own-programme days when no timetable is published', () => {
+    const html = renderToString(<InPersonStrip athletes={athletes} days={[{ date: '2026-11-04', hasSlots: false, attending: [], pending: [], notComing: [], programme: ['a'], expected: ['a'] }]} today="2026-11-04" reminders={{ state: {}, send: () => {} }} onRemind={() => {}} onViewTimetable={() => {}} />);
+    expect(html).toContain('No group session');
+    expect(html).toContain('1 expected');
   });
 
   it('FeedCard renders items and the empty state', () => {
