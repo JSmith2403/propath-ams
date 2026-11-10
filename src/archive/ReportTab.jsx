@@ -3,7 +3,7 @@ import { Download } from 'lucide-react';
 import InitialsAvatar from '../components/InitialsAvatar';
 import { COHORT_CONFIG } from '../components/data/athletes';
 import { METRIC_MAP } from '../components/data/sessionMetrics';
-import { useCustomMetrics } from '../components/hooks/useCustomMetrics';
+import { useCustomMetrics } from '../hooks/useCustomMetrics';
 import { usePerformanceResults } from '../components/hooks/usePerformanceResults';
 import { useDevelopmentPlans } from '../components/hooks/useDevelopmentPlans';
 import { DOMAIN_META, TIER_META } from '../components/utils/goalTree';

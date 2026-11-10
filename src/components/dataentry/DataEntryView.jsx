@@ -14,7 +14,7 @@ export default function DataEntryView({
   onAddPerformanceEntry,
 }) {
   const [tab, setTab] = useState('sheets');         // 'sheets' | 'upload'
-  const { customMetrics } = useCustomMetrics();
+  const { customMetrics, addCustomMetric } = useCustomMetrics();
   const tabBtn = (id, label) => (
     <button
       onClick={() => setTab(id)}
@@ -51,7 +51,7 @@ export default function DataEntryView({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto bg-white" style={{ accentColor: GOLD }}>
-          <UploadResultsView athletes={athletes} customMetrics={customMetrics} onAddEntry={onAddPerformanceEntry} />
+          <UploadResultsView athletes={athletes} customMetrics={customMetrics} onAddEntry={onAddPerformanceEntry} onAddCustomMetric={addCustomMetric} />
         </div>
       )}
     </div>

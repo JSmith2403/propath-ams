@@ -3,9 +3,10 @@ import { ClipboardPaste, Image as ImageIcon, FileText, CheckCircle2, AlertTriang
 import { supabase } from '../../lib/supabase';
 import { METRIC_CATEGORIES, METRIC_MAP } from '../../data/sessionMetrics';
 import { protocolOf } from '../../data/testCatalog';
-import { parseResultsText, buildPlan, resolveImport } from '../../utils/resultsImport';
+import { parseResultsText, buildPlan, resolveImport, guessBilateral, guessUnit, cleanTestName, nonNumericCount } from '../../utils/resultsImport';
 
 const GOLD = '#A58D69';
+const NEW_TEST_CATEGORIES = [...METRIC_CATEGORIES.map(c => c.label), 'Custom'];
 const todayISO = () => new Date().toLocaleDateString('en-CA');
 const labelOf = (key, custom) => METRIC_MAP[key]?.label || custom[key]?.label || key;
 const unitOf = (key, custom) => METRIC_MAP[key]?.unit || custom[key]?.unit || '';
@@ -28,8 +29,61 @@ function TestSelect({ value, onChange, custom, placeholder = 'Choose the test…
   );
 }
 
+/**
+ * "Add as a new test": for a column the app doesn't know. Name, unit, category, and whether it's measured left and
+ * right. The test is saved for everyone (it appears in the test list and on the testing sheets) and picked for this
+ * column straight away. Values must be numbers.
+ */
+function NewTestForm({ col, sample, custom, onCreate, onCancel }) {
+  const [name, setName] = useState(() => cleanTestName(col.label));
+  const [unit, setUnit] = useState(() => guessUnit(col.label));
+  const [category, setCategory] = useState('Custom');
+  const [bilateral, setBilateral] = useState(() => guessBilateral(sample));
+  const taken = [...Object.values(METRIC_MAP), ...Object.values(custom)].some(m => (m.label || '').trim().toLowerCase() === name.trim().toLowerCase());
+  const odd = nonNumericCount(sample);
+  const ok = name.trim() && !taken;
+  return (
+    <div className="mt-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3 space-y-2.5 text-xs">
+      <p className="font-semibold text-gray-700">New test</p>
+      <div className="flex flex-wrap items-end gap-2.5">
+        <label className="block">
+          <span className="text-gray-500 block mb-0.5">Name</span>
+          <input value={name} onChange={e => setName(e.target.value)} autoFocus maxLength={80} className="border border-gray-300 rounded px-2 py-1.5 bg-white" style={{ width: 200 }} />
+        </label>
+        <label className="block">
+          <span className="text-gray-500 block mb-0.5">Unit</span>
+          <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="e.g. cm" maxLength={12} className="border border-gray-300 rounded px-2 py-1.5 bg-white" style={{ width: 70 }} />
+        </label>
+        <label className="block">
+          <span className="text-gray-500 block mb-0.5">Category</span>
+          <select value={category} onChange={e => setCategory(e.target.value)} className="border border-gray-300 rounded px-2 py-1.5 bg-white" style={{ width: 130 }}>
+            {NEW_TEST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="flex items-center gap-1.5 text-gray-700 cursor-pointer">
+        <input type="checkbox" checked={bilateral} onChange={e => setBilateral(e.target.checked)} /> Measured left and right (values like 18/20)
+      </label>
+      {taken && <p className="text-amber-700">A test called “{name.trim()}” already exists. Pick it from the list instead.</p>}
+      {odd > 0 && <p className="text-amber-700">{odd} value{odd === 1 ? ' in this column isn’t a number' : 's in this column aren’t numbers'}. Tests hold numbers only, so you’ll be asked to fix or skip {odd === 1 ? 'it' : 'them'}.</p>}
+      <div className="flex items-center gap-2">
+        <button onClick={() => onCreate({ label: name.trim(), unit: unit.trim(), categoryLabel: category, bilateral })} disabled={!ok}
+          className="px-3 py-1.5 rounded-md text-white font-semibold disabled:opacity-40" style={{ backgroundColor: GOLD }}>Add test</button>
+        <button onClick={onCancel} className="text-gray-500 underline">Cancel</button>
+        <span className="text-gray-400">Saved for every athlete.</span>
+      </div>
+    </div>
+  );
+}
+
 /** One column of the sheet → which test it is. Asks whenever it isn't certain. */
-function ColumnCard({ col, custom, onChoose }) {
+function ColumnCard({ col, custom, sample, onChoose, onAddTest }) {
+  const [adding, setAdding] = useState(false);
+  const create = (def) => { onAddTest(def); setAdding(false); };
+  const addLink = onAddTest && !adding && (
+    <button onClick={() => setAdding(true)} className="text-xs font-semibold underline" style={{ color: GOLD }}>None of these: add as a new test</button>
+  );
+  const addForm = onAddTest && adding && <NewTestForm col={col} sample={sample} custom={custom} onCreate={create} onCancel={() => setAdding(false)} />;
   const { match, status, key } = col;
   const border = status === 'needs' ? '#fca5a5' : '#e5e7eb';
   return (
@@ -50,7 +104,11 @@ function ColumnCard({ col, custom, onChoose }) {
               <span><strong className="text-gray-800">{labelOf(k, custom)}</strong>{protocolOf(k) ? <span className="block text-gray-500">{protocolOf(k)}</span> : null}</span>
             </label>
           ))}
-          <button onClick={() => onChoose({ skip: true })} className="text-xs text-gray-400 underline">Skip this column</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => onChoose({ skip: true })} className="text-xs text-gray-400 underline">Skip this column</button>
+            {addLink}
+          </div>
+          {addForm}
         </div>
       )}
 
@@ -62,16 +120,22 @@ function ColumnCard({ col, custom, onChoose }) {
             <TestSelect value="" onChange={(k) => k && onChoose({ key: k })} custom={custom} placeholder="No — it’s…" />
             <button onClick={() => onChoose({ skip: true })} className="text-gray-400 underline">Skip</button>
           </div>
+          {addLink}
+          {addForm}
         </div>
       )}
 
       {status === 'needs' && col.reason === 'unknown' && (
         <div className="text-xs space-y-1.5">
-          <p className="text-gray-600">I don’t recognise this test. Pick the one it is, or skip it.</p>
-          <div className="flex items-center gap-2">
-            <TestSelect value="" onChange={(k) => k && onChoose({ key: k })} custom={custom} />
-            <button onClick={() => onChoose({ skip: true })} className="text-gray-400 underline">Skip this column</button>
-          </div>
+          <p className="text-gray-600">I don’t recognise this test. Pick the one it is, add it as a new test, or skip it.</p>
+          {!adding && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <TestSelect value="" onChange={(k) => k && onChoose({ key: k })} custom={custom} />
+              {onAddTest && <button onClick={() => setAdding(true)} className="px-2.5 py-1.5 rounded-md border font-semibold bg-white" style={{ borderColor: GOLD, color: '#6f5e3e' }}>+ Add as new test</button>}
+              <button onClick={() => onChoose({ skip: true })} className="text-gray-400 underline">Skip this column</button>
+            </div>
+          )}
+          {addForm}
         </div>
       )}
 
@@ -138,7 +202,7 @@ const CELL_MESSAGE = {
  * put to you first (which test? which athlete? is this value right? duplicate?), and the Upload button stays
  * off until all of it is settled. Results are saved the same way as every other entry (see addPerformanceEntry).
  */
-export default function UploadResultsView({ athletes = [], customMetrics = {}, onAddEntry }) {
+export default function UploadResultsView({ athletes = [], customMetrics = {}, onAddEntry, onAddCustomMetric }) {
   const [step, setStep] = useState('input');           // input | review | done
   const [text, setText] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -155,6 +219,12 @@ export default function UploadResultsView({ athletes = [], customMetrics = {}, o
   const resolved = useMemo(() => (plan ? resolveImport(plan, choices, { defaultDate: date, existing, customMetrics }) : null), [plan, choices, date, existing, customMetrics]);
 
   const choose = (kind, k, patch) => setChoices(c => ({ ...c, [kind]: { ...c[kind], [k]: { ...(c[kind][k] || {}), ...patch } } }));
+
+  // A new test made from a column: saved for everyone, then chosen for that column.
+  const addTest = (colIndex, def) => {
+    const m = onAddCustomMetric?.({ ...def, attempts: 1, dependentCalcs: [] });
+    if (m?.key) choose('columns', colIndex, { confirmed: undefined, key: m.key });
+  };
 
   const readFile = async (file) => {
     if (!file) return;
@@ -272,7 +342,7 @@ export default function UploadResultsView({ athletes = [], customMetrics = {}, o
       <section>
         <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">1 · Which test is each column?</h3>
         <div className="grid sm:grid-cols-2 gap-3 items-start">
-          {resolved.columns.map(c => <ColumnCard key={c.index} col={c} custom={customMetrics} onChoose={(p) => choose('columns', c.index, { confirmed: undefined, ...p })} />)}
+          {resolved.columns.map(c => <ColumnCard key={c.index} col={c} custom={customMetrics} sample={plan.parsed.rows.map(r => r.cells[c.index] || '')} onChoose={(p) => choose('columns', c.index, { confirmed: undefined, ...p })} onAddTest={onAddCustomMetric ? (def) => addTest(c.index, def) : null} />)}
         </div>
       </section>
 

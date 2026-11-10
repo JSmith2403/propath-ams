@@ -59,6 +59,19 @@ export function parseCell(raw) {
   return { kind: 'bad' };
 }
 
+// ── 2b. starting a new test from an unrecognised column ──────────────────────────────
+/** Does this column look like left/right pairs (e.g. 18/20)? Any one pair is enough. */
+export const guessBilateral = (cells) => (cells || []).some(c => parseCell(c).kind === 'lr');
+
+/** "CMJ (cm)" → "cm" */
+export const guessUnit = (label) => { const m = /\(([^)]{1,8})\)\s*$/.exec(String(label || '')); return m ? m[1].trim() : ''; };
+
+/** "CMJ (cm)" → "CMJ" (the unit moves to its own box) */
+export const cleanTestName = (label) => String(label || '').replace(/\s*\([^)]{1,8}\)\s*$/, '').trim() || String(label || '').trim();
+
+/** How many filled cells in the column aren't numbers. A new test only holds numbers. */
+export const nonNumericCount = (cells) => (cells || []).filter(c => parseCell(c).kind === 'bad').length;
+
 // ── 3. athletes ─────────────────────────────────────────────────────────────
 /** → { id, confidence: 'exact'|'likely'|'ambiguous'|'none', candidates: [ids] } */
 export function matchAthlete(label, athletes = []) {

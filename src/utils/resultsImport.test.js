@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseResultsText, parseCell, matchAthlete, matchColumn, buildPlan, resolveImport } from './resultsImport';
+import { parseResultsText, parseCell, guessBilateral, guessUnit, cleanTestName, nonNumericCount, matchAthlete, matchColumn, buildPlan, resolveImport } from './resultsImport';
 
 const athletes = [
   { id: 'k', name: 'Kaiden Higgins' },
@@ -108,5 +108,20 @@ describe('resolveImport — the confirmation layer', () => {
     const r = resolveImport(p, {}, { defaultDate: date });
     expect(r.canUpload).toBe(false);
     expect(r.toSave).toHaveLength(0);
+  });
+});
+
+describe('starting a new test from a column', () => {
+  it('spots left/right columns, units and names', () => {
+    expect(guessBilateral(['18/20', '19/21'])).toBe(true);
+    expect(guessBilateral(['42.3', '38.7'])).toBe(false);
+    expect(guessBilateral([])).toBe(false);
+    expect(guessUnit('CMJ (cm)')).toBe('cm');
+    expect(guessUnit('Swelling at Knee')).toBe('');
+    expect(cleanTestName('CMJ (cm)')).toBe('CMJ');
+    expect(cleanTestName('Swelling at Knee')).toBe('Swelling at Knee');
+  });
+  it('counts values that are not numbers, ignoring blanks', () => {
+    expect(nonNumericCount(['1', '2', '', 'mild', 'trace', '-'])).toBe(2);
   });
 });
