@@ -315,3 +315,106 @@ A sensible starting hypothesis is **a low-priced platform that is easy to say ye
 - Garmin Health API: [commercial use needs a licence; evaluation then production](https://developer.garmin.com/gc-developer-program/health-api). Third-party guides on approval and attribution should be treated as unverified until checked with Garmin.
 - Market price examples: [RockDaisy pricing](https://rockdaisy.com/pricing/), [AthleteMonitoring AMS profile](https://intuitionlabs.ai/software/sports-medicine-athletic-training/team-and-athlete-management/athletemonitoring-ams). I found no public prices for Smartabase, Teamworks, CoachMePlus or Kitman Labs.
 - All code and database numbers were measured on 2026-11-11 from the repository and the live Supabase project.
+
+---
+
+## 10. Addendum (same day): organisations, squads and moves
+
+This replaces the single "workspace" idea in §2. Your clarification: two stages. **Stage 1:** ProPath itself becomes an umbrella with separate sections (Academy athletes, and the Wildcats / "NBA" section). **Stage 2:** sell the same system to a pro team (squads that athletes and staff move between) or a university (volleyball, netball, basketball, soccer, tennis, each kept separate).
+
+### 10.1 One model covers both stages
+
+**Organisation → Squads → Athletes**
+
+| Level | What it is | Examples |
+|---|---|---|
+| **Organisation** | The customer: one legal entity, one contract, one brand, one set of integration accounts | ProPath; a pro club; a university |
+| **Squad** | A wall around access and configuration | Academy, Wildcats; First team, Reserves, U18; Volleyball, Netball, Soccer |
+| **Athlete** | One person, one profile, one login | Belongs to one or more squads over time |
+
+- **Staff** get a role *per squad* (head coach of Wildcats, physio across three squads, analyst on all). An organisation admin can be on every squad.
+- **The "Netflix" switcher** shows the squads *you* have access to. Pick one and you are inside it; nothing from other squads appears. Staff on several squads can switch; staff on one never see the switcher.
+- **Athletes** keep one login for life. Which squad(s) they are in decides what the app shows them.
+
+### 10.2 Why this sequencing is cheaper than it looked
+
+- **Stage 1 needs squads, not full separate customers.** Academy and Wildcats are both ProPath: one contract, one brand, one set of Garmin and VALD accounts, one billing. So I don't need hard tenant isolation, per-customer credentials or per-customer billing yet. I only need squad walls, the switcher, per-squad settings and moves. **Estimated 3 to 4 weeks** (down from my earlier whole-workspace estimate).
+- **Stage 2 adds one level above squads.** Every squad gets an organisation, and all access already goes through squads, so adding organisations later is mostly one extra rule plus per-customer settings, credentials and billing (**estimated 4 to 6 weeks**, as in §6 and §7.5). Stage 1 work is not thrown away.
+- **Design rule for Stage 1:** build the tables with an organisation column from day one (one organisation, ProPath), and route every access check through two central functions (*can I see this athlete? can I see this squad?*). Then Stage 2 is a configuration change, not a rewrite.
+
+### 10.3 Data sketch (new tables)
+
+- `organisations` (name, branding, timezone default, settings)
+- `squads` (organisation, name, sport, terminology, enabled modules, default support level, dashboard layout)
+- `squad_staff` (person, squad, role, from, to), replacing the single global role
+- `squad_memberships` (athlete, squad, role such as primary or secondary, from, to), the history of where an athlete has been
+- Squad-owned content gets a squad column: timetable slots, chat rooms, programme templates, custom tests, wellness question set, resources.
+
+### 10.4 Who sees what
+
+| Situation | Rule I'd start with |
+|---|---|
+| Staff on one squad | See only that squad's current athletes and content |
+| Staff on several squads | See each squad they belong to, one at a time via the switcher |
+| Organisation admin (director, athletic director) | All squads, with an optional **overview across squads** that shows counts and flags but is read-only |
+| Shared-service staff (physio, nutritionist, analyst) | Named squads only; the existing "external provider" allocation idea extends to this |
+| Athlete | Own data across everything they are part of |
+| Parent | Their child only, in whatever squad the child is in |
+| University: volleyball coach vs netball coach | **No visibility into each other's squad**, ever, unless named on both |
+
+### 10.5 Moving an athlete between squads (the key design question)
+
+An athlete's data splits into what is **about the person** and what is **about the squad**:
+
+| Follows the athlete (shown to the receiving squad) | Stays with the squad that created it |
+|---|---|
+| Profile, date of birth, photo, emergency contacts | Programmes and planned sessions |
+| Testing results and history | Timetable replies, attendance |
+| Wellness trend, injury and medical history (with tighter access) | Team chats and coach notes |
+| Wearable connection and sharing choices (re-confirmed on a move) | Squad programme templates |
+| Maturation and growth records | Squad-specific goals and plans |
+
+- **A move is a dated event**, not a copy: end the old membership, start the new one, keep the history. Nothing is deleted.
+- **The old squad's staff lose access from the move date**, except for a time-limited **handover window** (for example 14 days) if the organisation wants one.
+- **Concurrent membership:** allowed as primary plus secondary (a first-team player training with the reserves; a student on both volleyball and basketball). Load and wellness are then shared across both, so coaches don't double-load the athlete.
+- **Sensitive records** (medical, safeguarding) need their own explicit rule; I'd default them to "follow the athlete, visible to named medical staff and the receiving head coach".
+- **Consent:** an athlete (or a minor's parent) is told when they move and what the new squad can see; wearable sharing switches are asked again.
+
+### 10.6 What changes in the code
+
+- The current security rules already funnel through a few helper functions (`is_staff()` in 67 of 137 policies, `can_see_athlete()` in 25). Those helpers become squad-aware, and the tables that are not athlete-linked (timetable, chats, templates, settings, catalogues) get a squad column.
+- `provider_allocations` (external providers see only allocated athletes) is an early version of this idea and can be generalised.
+- The dashboard, athlete app and reports read "the current squad" from the switcher instead of assuming one group.
+- Roster filters, reminders and scheduled jobs run per squad, in the squad's timezone and with its terminology.
+
+### 10.7 Revised phase plan
+
+| Stage | Step | Estimate |
+|---|---|---|
+| **1. ProPath umbrella** | Squad model, memberships, squad-aware access, tests proving one squad can't see another | 5 to 7 days |
+| | Switcher and "current squad" in coach and athlete apps | 3 to 4 days |
+| | Per-squad settings (modules, terminology, tiers or positions, support-level defaults, dashboard widgets) | 3 to 4 days |
+| | Athlete moves, concurrent membership, handover window, consent prompt | 3 to 4 days |
+| | Wildcats configuration (positions, games and minutes, team views) | 4 to 6 days |
+| | **Stage 1 total** | **about 3 to 4 weeks** |
+| **2. Sellable** | Organisation level, per-customer integrations and credentials, billing, onboarding in minutes, legal and support (see §7.5) | **about 4 to 6 weeks** |
+
+Estimates assume one focused builder and quick decisions; I would confirm them with a one-day spike on the access rules before committing.
+
+### 10.8 Why this is a stronger product story
+
+- **"Walls and doors."** Strict separation between squads by default, with deliberate, auditable doors (a move, a shared physio, an organisation overview).
+- **Athlete continuity.** Pro clubs and universities lose an athlete's history every time someone moves squad or leaves. Here the athlete's record follows them and the squad's private notes don't.
+- **Natural pricing unit.** A squad is something a buyer understands and can budget for: a platform fee per organisation plus a price per squad (with athlete bands), and the Performance Partner layer scaled by number of squads.
+- **Two clear launch customers:** a pro club (first team, reserves, academy, with promotion and loans) and a multi-sport university (separate sport squads, shared sports-science staff, strict separation).
+
+### 10.9 Questions this raises (answers shape Stage 1)
+
+1. **"NBA" vs "Wildcats":** is this the same section (the basketball team) or something larger? Is it a separate customer later, or permanently part of ProPath?
+2. **Cross-squad visibility:** should ProPath admins see an overview of all squads by default, or only squads they are named on?
+3. **Moves:** do you agree with the follow / stays split in 10.5? What should happen to coach notes and programmes?
+4. **Concurrent squads:** will athletes be in two squads at once (pro: first team and reserves; university: two sports)?
+5. **Shared staff:** will physios, nutritionists or analysts serve several squads?
+6. **Parents and athlete logins across squads:** one login and one parent link per athlete, regardless of squad (recommended)?
+7. **Libraries:** should exercises, recipes and wellness questions be shared across squads or per squad? (Recommended: one shared starting set that each squad can copy and edit.)
+8. **Squad terminology:** athlete vs player, cohorts vs positions, per squad?
