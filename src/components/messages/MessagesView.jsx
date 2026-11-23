@@ -394,7 +394,7 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
                     id: m.id, mine: m.sender_type === 'coach', name: m.sent_by, body: m.body, title: m.title,
                     at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete', seen: !!m.read_at,
                     quote: m.meal_entry_id && mealQuotes.get(m.meal_entry_id)
-                      ? (q => ({ label: `${selected.name.split(' ')[0]}’s ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Meal photo', thumb: q.thumb, onOpen: q.full ? () => setMealPhoto(q.full) : undefined }))(mealQuotes.get(m.meal_entry_id))
+                      ? (q => ({ label: `${selected.name.split(' ')[0]}’s ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Photo', thumb: q.thumb, onOpen: q.full ? () => setMealPhoto(q.full) : undefined }))(mealQuotes.get(m.meal_entry_id))
                       : undefined,
                   }))}
                 />

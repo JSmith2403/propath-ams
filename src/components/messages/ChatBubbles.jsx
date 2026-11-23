@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check } from 'lucide-react';
+import { Camera, Check } from 'lucide-react';
 
 const GOLD = '#A58D69';
 const GROUP_GAP_MS = 10 * 60 * 1000;   // a pause longer than this starts a new group
@@ -74,14 +74,17 @@ export default function ChatBubbles({ messages, showNames = true, emptyText = 'N
               >
                 {m.quote && (
                   <button type="button" onClick={m.quote.onOpen} disabled={!m.quote.onOpen}
-                    className="mb-1.5 w-full flex items-stretch gap-2 rounded-lg overflow-hidden text-left"
+                    className="mb-1.5 w-full flex items-stretch rounded-xl overflow-hidden text-left"
                     style={{ backgroundColor: m.mine ? 'rgba(255,255,255,0.22)' : '#e3e5e9', color: m.mine ? '#fff' : '#1f2937' }}>
                     <span className="w-1 shrink-0" style={{ backgroundColor: m.mine ? '#fff' : GOLD }} />
-                    <span className="flex-1 min-w-0 py-1.5">
-                      <span className="block text-[11px] font-bold" style={{ color: m.mine ? '#fff' : '#7a6748' }}>{m.quote.label}</span>
-                      {(m.quote.text || m.quote.sub) && <span className="block text-[12px] opacity-80 break-words" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.quote.text || m.quote.sub}</span>}
+                    <span className="flex-1 min-w-0 px-2.5 py-2">
+                      <span className="block text-[12px] font-bold" style={{ color: m.mine ? '#fff' : '#7a6748' }}>{m.quote.label}</span>
+                      <span className="mt-0.5 flex items-center gap-1 text-[13px] opacity-80 min-w-0">
+                        {!m.quote.text && m.quote.thumb && <Camera size={13} className="shrink-0" />}
+                        <span className="break-words" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.quote.text || m.quote.sub || 'Photo'}</span>
+                      </span>
                     </span>
-                    {m.quote.thumb && <img src={m.quote.thumb} alt="" className="w-14 h-14 object-cover shrink-0" />}
+                    {m.quote.thumb && <img src={m.quote.thumb} alt="" className="w-[72px] self-stretch min-h-[64px] object-cover shrink-0" />}
                   </button>
                 )}
                 {m.title && !m.quote && <p className="text-[13px] font-bold mb-0.5">{m.title}</p>}

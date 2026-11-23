@@ -140,7 +140,7 @@ export default function InboxSheet({ messages, quotes, loading, markRead, sendRe
                     id: m.id, mine: m.sender_type === 'athlete', name: m.sent_by, body: m.body, title: m.title,
                     at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete',
                     quote: m.meal_entry_id && quotes?.get(m.meal_entry_id)
-                      ? (q => ({ label: `Your ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Meal photo', thumb: q.thumb, onOpen: q.full ? () => setPhoto(q.full) : undefined }))(quotes.get(m.meal_entry_id))
+                      ? (q => ({ label: `Your ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Photo', thumb: q.thumb, onOpen: q.full ? () => setPhoto(q.full) : undefined }))(quotes.get(m.meal_entry_id))
                       : undefined,
                   }))}
                 />
