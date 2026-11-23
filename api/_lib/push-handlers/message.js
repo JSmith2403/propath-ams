@@ -2,7 +2,9 @@
 //
 //   POST /api/push/message
 //   headers: Authorization: Bearer <coach Supabase session token>
-//   body: { athlete_ids: ['em4', ...], title: '...', body: '...', sent_by?: 'Name' }
+//   body: { athlete_ids: ['em4', ...], title: '...', body: '...', sent_by?: 'Name', meal_entry_id?: 'uuid' }
+//   meal_entry_id: this message replies to that meal (one athlete only; the meal must be theirs). The athlete
+//   sees it quoted above the message, like a WhatsApp reply.
 //
 // Does two things per recipient:
 //   1. Stores a row in athlete_messages (the athlete's in-app inbox + read
@@ -22,6 +24,7 @@ import { requireUser } from '../verifyUser.js';
 import { sendPushToAthlete, MESSAGE_PUSH } from '../push.js';
 
 const MAX_RECIPIENTS = 200;
+const MEAL_NAMES = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', drink: 'Drink', snack_1: 'Snack', snack_2: 'Snack', snack_3: 'Snack' };
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -60,13 +63,24 @@ export default async function handler(req, res) {
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); }
   catch { res.status(400).json({ ok: false, error: 'Invalid JSON body' }); return; }
 
-  const title = String(body?.title || '').trim().slice(0, 120);
+  let title = String(body?.title || '').trim().slice(0, 120);
   const messageBody = String(body?.body || '').trim().slice(0, 2000);
   // Sender comes from the verified login, never from the request body —
   // this is a safeguarding record, so it must not be spoofable.
   const sentBy = (roleRow.full_name || '').trim() || user.email || 'Coach';
   const athleteIds = [...new Set((Array.isArray(body?.athlete_ids) ? body.athlete_ids : [])
     .map(x => String(x || '').trim()).filter(Boolean))];
+
+  // A reply to a meal: one athlete, and the meal has to be theirs (the coach can't attach someone else's meal).
+  const mealEntryId = String(body?.meal_entry_id || '').trim() || null;
+  let mealName = null;
+  if (mealEntryId) {
+    if (athleteIds.length !== 1) { res.status(400).json({ ok: false, error: 'A meal reply goes to one athlete.' }); return; }
+    const { data: meal } = await admin.from('meal_entries').select('id, athlete_id, meal_type').eq('id', mealEntryId).maybeSingle();
+    if (!meal || meal.athlete_id !== athleteIds[0]) { res.status(400).json({ ok: false, error: 'That meal doesn\'t belong to this athlete.' }); return; }
+    mealName = MEAL_NAMES[meal.meal_type] || 'Meal';
+    if (!title) title = `Re: ${mealName}`;
+  }
 
   // Title is optional: a conversation reply is just a body. Announcements
   // (several recipients) still need one so the notification reads sensibly.
@@ -83,6 +97,7 @@ export default async function handler(req, res) {
   const rows = athleteIds.map(athlete_id => ({
     batch_id: batchId, athlete_id, title, body: messageBody, sent_by: sentBy,
     sender_type: 'coach', sender_user_id: user.id,
+    ...(mealEntryId ? { meal_entry_id: mealEntryId } : {}),
   }));
   const { error: insErr } = await admin.from('athlete_messages').insert(rows);
   if (insErr) {
@@ -116,7 +131,7 @@ export default async function handler(req, res) {
       : `/athlete/${t.token}?inbox=1`;
     try {
       const r = await sendPushToAthlete(admin, athleteId, {
-        title: title || `Message from ${sentBy}`, body: (messageBody || title).slice(0, 140), url,
+        title: mealName ? `${sentBy} replied to your ${mealName.toLowerCase()}` : (title || `Message from ${sentBy}`), body: (messageBody || title).slice(0, 140), url,
         tag: `team-${athleteId}`,
       }, MESSAGE_PUSH);
       pushed += r.sent;

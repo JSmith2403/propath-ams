@@ -55,7 +55,7 @@ export default function AthleteAppShell({ athlete }) {
     const requested = searchParams.get('tab');
     return VALID_TABS.has(requested) ? requested : 'train';
   });
-  const { messages, loading: messagesLoading, unreadCount: teamUnread, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
+  const { messages, quotes: mealQuotes, loading: messagesLoading, unreadCount: teamUnread, markRead, sendReply, refresh: refreshMessages } = useAthleteMessages(athlete.id);
   // The published timetable (today → end of next week). Held here so the gold banner
   // and the Training-tab card share one set of answers.
   const ttToday = todayUAE();
@@ -193,6 +193,7 @@ export default function AthleteAppShell({ athlete }) {
       {inboxOpen && (
         <InboxSheet
           messages={messages}
+          quotes={mealQuotes}
           loading={messagesLoading}
           markRead={markRead}
           sendReply={sendReply}

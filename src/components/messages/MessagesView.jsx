@@ -10,9 +10,11 @@ import ChatSetupModal from './ChatSetupModal';
 import ParentLinksModal from './ParentLinksModal';
 import { useChatRooms, roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
 import { usePushStatus } from '../../hooks/usePushStatus';
+import { loadMealQuotes } from '../../lib/mealQuotes';
+import ImageLightbox from '../ui/ImageLightbox';
 
 const GOLD = '#A58D69';
-const COLS = 'id, athlete_id, title, body, sent_by, created_at, read_at, sender_type';
+const COLS = 'id, athlete_id, title, body, sent_by, created_at, read_at, sender_type, meal_entry_id';
 
 function short(iso) {
   const d = new Date(iso);
@@ -33,6 +35,8 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
   const [loadError, setLoadError] = useState(null);
   const [selectedId, setSelectedId] = useState(initialRoomId ? null : (initialAthleteId || null));
   const [thread, setThread] = useState([]);
+  const [mealQuotes, setMealQuotes] = useState(new Map());   // meals coaches replied to in this thread
+  const [mealPhoto, setMealPhoto] = useState(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [text, setText] = useState('');
@@ -109,7 +113,10 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
       .eq('athlete_id', athleteId)
       .order('created_at', { ascending: false })
       .limit(300);
-    if (!error) setThread((data || []).reverse());
+    if (!error) {
+      setThread((data || []).reverse());
+      loadMealQuotes((data || []).map(m => m.meal_entry_id)).then(setMealQuotes);
+    }
     setThreadLoading(false);
   }, []);
 
@@ -386,10 +393,15 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
                   messages={thread.map(m => ({
                     id: m.id, mine: m.sender_type === 'coach', name: m.sent_by, body: m.body, title: m.title,
                     at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete', seen: !!m.read_at,
+                    quote: m.meal_entry_id && mealQuotes.get(m.meal_entry_id)
+                      ? (q => ({ label: `${selected.name.split(' ')[0]}’s ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Meal photo', thumb: q.thumb, onOpen: q.full ? () => setMealPhoto(q.full) : undefined }))(mealQuotes.get(m.meal_entry_id))
+                      : undefined,
                   }))}
                 />
               )}
             </div>
+
+            {mealPhoto && <ImageLightbox images={[mealPhoto]} index={0} onClose={() => setMealPhoto(null)} alt="Meal photo" />}
 
             <ChatComposer
               value={text}

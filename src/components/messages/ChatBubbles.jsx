@@ -20,7 +20,8 @@ const initials = (name = '') => name.split(' ').map(s => s[0]).slice(0, 2).join(
  *   • every message has its own bubble; consecutive messages from the same person
  *     (within 10 min) stack closely under ONE name and ONE avatar per run
  *   • yours: gold bubble on the right; everyone else: light grey on the left
- * Each message: { id, mine, name, body, title?, at, role?, seen? }
+ * Each message: { id, mine, name, body, title?, at, role?, seen?, quote? }
+ * `quote` shows what the message replies to, WhatsApp style: { label, sub?, text?, thumb?, onOpen? }.
  * `showNames` labels other people's runs (group chats, parent view).
  */
 export default function ChatBubbles({ messages, showNames = true, emptyText = 'No messages yet.', scrollKey }) {
@@ -71,7 +72,19 @@ export default function ChatBubbles({ messages, showNames = true, emptyText = 'N
                   ? { backgroundColor: GOLD, color: '#fff' }
                   : { backgroundColor: '#f1f2f4', color: '#1f2937' }}
               >
-                {m.title && <p className="text-[13px] font-bold mb-0.5">{m.title}</p>}
+                {m.quote && (
+                  <button type="button" onClick={m.quote.onOpen} disabled={!m.quote.onOpen}
+                    className="mb-1.5 w-full flex items-stretch gap-2 rounded-lg overflow-hidden text-left"
+                    style={{ backgroundColor: m.mine ? 'rgba(255,255,255,0.22)' : '#e3e5e9', color: m.mine ? '#fff' : '#1f2937' }}>
+                    <span className="w-1 shrink-0" style={{ backgroundColor: m.mine ? '#fff' : GOLD }} />
+                    <span className="flex-1 min-w-0 py-1.5">
+                      <span className="block text-[11px] font-bold" style={{ color: m.mine ? '#fff' : '#7a6748' }}>{m.quote.label}</span>
+                      {(m.quote.text || m.quote.sub) && <span className="block text-[12px] opacity-80 break-words" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.quote.text || m.quote.sub}</span>}
+                    </span>
+                    {m.quote.thumb && <img src={m.quote.thumb} alt="" className="w-14 h-14 object-cover shrink-0" />}
+                  </button>
+                )}
+                {m.title && !m.quote && <p className="text-[13px] font-bold mb-0.5">{m.title}</p>}
                 {m.body && <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">{m.body}</p>}
               </div>
               {last && (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { loadMealQuotes } from '../lib/mealQuotes';
 
 /**
  * useAthleteMessages — the athlete's conversation with the coaching team.
@@ -16,6 +17,7 @@ import { supabase } from '../lib/supabase';
 export function useAthleteMessages(athleteId) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [quotes, setQuotes] = useState(new Map());   // meal_entry_id → the meal a coach replied to
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
@@ -25,7 +27,7 @@ export function useAthleteMessages(athleteId) {
     (async () => {
       const { data, error } = await supabase
         .from('athlete_messages')
-        .select('id, title, body, sent_by, created_at, read_at, sender_type')
+        .select('id, title, body, sent_by, created_at, read_at, sender_type, meal_entry_id')
         .eq('athlete_id', athleteId)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -36,6 +38,7 @@ export function useAthleteMessages(athleteId) {
       } else {
         // sender_type may not exist if the v2 migration hasn't run — treat as coach.
         setMessages((data || []).map(m => ({ ...m, sender_type: m.sender_type || 'coach' })).reverse());
+        loadMealQuotes((data || []).map(m => m.meal_entry_id)).then(q => { if (!cancelled) setQuotes(q); });
       }
       setLoading(false);
     })();
@@ -92,5 +95,5 @@ export function useAthleteMessages(athleteId) {
     }
   }, []);
 
-  return { messages, loading, unreadCount, markRead, sendReply, refresh };
+  return { messages, quotes, loading, unreadCount, markRead, sendReply, refresh };
 }

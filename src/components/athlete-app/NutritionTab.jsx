@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { Apple, ChefHat, Check, GlassWater, Moon, Plus, Sun } from 'lucide-react';
+import { Apple, ChefHat, Check, GlassWater, ImagePlus, Moon, Plus, Sun } from 'lucide-react';
 import { useNutritionSettings } from '../../hooks/useNutritionSettings';
 import { useTodayMealStructure, BLOCK_TYPES } from '../../hooks/useMealStructures';
 import { useMealEntries, nextSnackSlot } from '../../hooks/useMealEntries';
@@ -7,6 +7,7 @@ import { useRecipes } from '../../hooks/useRecipes';
 import WaterIntakeWidget from './WaterIntakeWidget';
 
 const MealCaptureSheet = lazy(() => import('./MealCaptureSheet'));
+const MealBatchSheet   = lazy(() => import('./MealBatchSheet'));
 const RecipesBrowser   = lazy(() => import('./RecipesBrowser'));
 const GuidanceSheet    = lazy(() => import('./GuidanceSheet'));
 
@@ -33,6 +34,7 @@ export default function AthleteNutritionTab({ athleteId }) {
   const { entries, refresh } = useMealEntries(athleteId, logDate);
 
   const [capturing,    setCapturing]    = useState(null); // mealKey or null
+  const [batchOpen,    setBatchOpen]    = useState(false); // add several meals from photos already taken
   const [recipesOpen,  setRecipesOpen]  = useState(false);
   const [guidanceOpen, setGuidanceOpen] = useState(false);
 
@@ -160,7 +162,14 @@ export default function AthleteNutritionTab({ athleteId }) {
       {/* Meal cards — only when the nutritionist has switched logging on. */}
       {!loadingAny && (allowed ? (
         <>
-          <h3 className="text-sm font-bold text-ink-900 mb-3">Food diary</h3>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h3 className="text-sm font-bold text-ink-900">Food diary</h3>
+            <button type="button" onClick={() => setBatchOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border"
+              style={{ borderColor: GOLD, color: GOLD }}>
+              <ImagePlus size={13} /> Add from my photos
+            </button>
+          </div>
           {showSimplifiedDiary ? (
             <button
               onClick={() => setCapturing('breakfast')}
@@ -233,6 +242,17 @@ export default function AthleteNutritionTab({ athleteId }) {
       {guidanceOpen && (
         <Suspense fallback={null}>
           <GuidanceSheet athleteId={athleteId} onClose={() => setGuidanceOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* Several meals at once, from photos already on the phone. */}
+      {batchOpen && (
+        <Suspense fallback={null}>
+          <MealBatchSheet
+            athleteId={athleteId}
+            logDate={logDate}
+            onClose={(didSave) => { setBatchOpen(false); if (didSave) refresh(); }}
+          />
         </Suspense>
       )}
 

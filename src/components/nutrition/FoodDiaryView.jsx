@@ -171,6 +171,7 @@ export default function FoodDiaryView({ athleteId, athleteName }) {
       {reviewEntry && (
         <MealReviewModal
           entry={reviewEntry}
+          athleteId={athleteId}
           athleteName={athleteName}
           onClose={() => setReviewEntryId(null)}
           onChanged={refresh}
@@ -374,13 +375,16 @@ function MonthCalendar({ cursor, todayISO, logDatesMap, onSelectDate }) {
 }
 
 // ─── Meal review modal — detail + submission info + history ───────────
-function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
+function MealReviewModal({ entry, athleteId, athleteName, onClose, onChanged }) {
   const [signedUrls, setSignedUrls] = useState({});
   const [events, setEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [marking, setMarking] = useState(false);
   const [adding,  setAdding]  = useState(false);
   const [note,    setNote]    = useState('');
+  const [mode,    setMode]    = useState('reply');   // 'reply' goes to the athlete's messages; 'note' stays with coaches
+  const [noteError, setNoteError] = useState(null);
+  const [sentMsg,  setSentMsg]  = useState(null);
   const [photoOpen, setPhotoOpen] = useState(null);   // index of the photo shown full-size, or null
 
   useEffect(() => {
@@ -441,19 +445,37 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
     fetchEvents();
   };
 
+  const firstName = (athleteName || '').split(' ')[0] || 'the athlete';
+
+  // A reply lands in the athlete's messages quoting this meal (like replying on WhatsApp), is kept in the meal's
+  // history, and marks the meal reviewed. A private note is only ever seen by coaches.
   const addNote = async () => {
-    if (!note.trim()) return;
-    setAdding(true);
+    const text = note.trim();
+    if (!text || adding) return;
+    setAdding(true); setNoteError(null); setSentMsg(null);
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('meal_events').insert({
-      entry_id: entry.id,
-      event_type: 'note_added',
-      note: note.trim(),
-      actor_id: user?.id || null,
-    });
+    if (mode === 'reply') {
+      let json;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/push/message', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+          body: JSON.stringify({ athlete_ids: [athleteId], title: '', body: text, meal_entry_id: entry.id }),
+        });
+        json = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}).` }));
+      } catch { json = { ok: false, error: 'Couldn’t reach the server. Try again.' }; }
+      if (!json.ok) { setAdding(false); setNoteError(json.error || 'Couldn’t send that.'); return; }
+      await supabase.from('meal_events').insert({ entry_id: entry.id, event_type: 'note_added', note: `Replied: ${text}`, actor_id: user?.id || null });
+      if (!reviewed) await markReviewed();
+      setSentMsg(`Sent to ${firstName}’s messages.`);
+    } else {
+      await supabase.from('meal_events').insert({ entry_id: entry.id, event_type: 'note_added', note: text, actor_id: user?.id || null });
+    }
     setAdding(false);
     setNote('');
     fetchEvents();
+    onChanged?.();
   };
 
   return (
@@ -563,20 +585,36 @@ function MealReviewModal({ entry, athleteName, onClose, onChanged }) {
             )}
 
             <div className="mt-3 pt-3 border-t border-gray-100">
+              <div className="flex gap-1 p-0.5 rounded-lg bg-gray-100 mb-2" role="tablist">
+                {[['reply', `Reply to ${firstName}`], ['note', 'Private note']].map(([k, label]) => (
+                  <button key={k} role="tab" aria-selected={mode === k} onClick={() => { setMode(k); setNoteError(null); setSentMsg(null); }}
+                    className="flex-1 text-[11px] font-semibold py-1.5 rounded-md"
+                    style={{ backgroundColor: mode === k ? '#fff' : 'transparent', color: mode === k ? '#1C1C1C' : '#6b7280', boxShadow: mode === k ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                rows={2}
-                placeholder="Add a coaching note…"
-                className="w-full text-[11px] px-2 py-1.5 rounded border border-gray-200 focus:outline-none focus:border-gold-400 resize-none"
+                rows={3}
+                placeholder={mode === 'reply' ? `Message ${firstName} about this meal…` : 'Add a private coaching note…'}
+                className="w-full text-[12px] px-2 py-1.5 rounded border border-gray-200 focus:outline-none focus:border-gold-400 resize-none"
               />
+              <p className="text-[10px] text-gray-400 mt-1">
+                {mode === 'reply'
+                  ? `Goes to ${firstName}’s messages as a reply to this meal, with a notification, and marks it reviewed. Other coaches see it in the conversation.`
+                  : 'Only coaches see this.'}
+              </p>
+              {noteError && <p className="text-[11px] text-red-600 mt-1">{noteError}</p>}
+              {sentMsg && <p className="text-[11px] text-green-700 mt-1">{sentMsg}</p>}
               <button
                 onClick={addNote}
                 disabled={!note.trim() || adding}
-                className="mt-1.5 w-full text-[11px] font-semibold py-1.5 rounded text-white disabled:opacity-50"
+                className="mt-1.5 w-full text-[12px] font-semibold py-2 rounded text-white disabled:opacity-50"
                 style={{ backgroundColor: GOLD }}
               >
-                {adding ? 'Saving…' : 'Add note'}
+                {adding ? 'Sending…' : mode === 'reply' ? 'Send reply' : 'Add note'}
               </button>
             </div>
           </div>
