@@ -6,6 +6,7 @@ import ChatComposer from '../messages/ChatComposer';
 import { roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
 import { NotificationStatusStrip } from './NotificationPrompt';
 import ImageLightbox from '../ui/ImageLightbox';
+import { mealMessages, mergeThread } from '../../utils/threadMerge';
 
 const GOLD = '#A58D69';
 
@@ -16,7 +17,7 @@ const SAFEGUARD_NOTE = 'Messages are saved and can be seen by the ProPath coachi
  * the coaching team when that's all there is; once they're in group or private
  * chats it shows a list first. Opening a thread marks it read.
  */
-export default function InboxSheet({ messages, quotes, loading, markRead, sendReply, refresh, chat, athleteId, initialRoomId, startOnTeam = false, onClose }) {
+export default function InboxSheet({ messages, meals, quotes, loading, markRead, sendReply, refresh, chat, athleteId, initialRoomId, startOnTeam = false, onClose }) {
   const me = useMemo(() => ({ type: 'athlete', athleteId }), [athleteId]);
   const rooms = chat?.rooms || [];
   const [view, setView] = useState(initialRoomId ? { room: initialRoomId } : (startOnTeam ? 'team' : null));   // null = default
@@ -136,13 +137,13 @@ export default function InboxSheet({ messages, quotes, loading, markRead, sendRe
                 <ChatBubbles
                   scrollKey="team"
                   emptyText="No messages yet. Say hello to your coaches below."
-                  messages={messages.map(m => ({
+                  messages={mergeThread(messages.map(m => ({
                     id: m.id, mine: m.sender_type === 'athlete', name: m.sent_by, body: m.body, title: m.title,
                     at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete',
                     quote: m.meal_entry_id && quotes?.get(m.meal_entry_id)
                       ? (q => ({ label: `Your ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Photo', thumb: q.thumb, onOpen: q.full ? () => setPhoto(q.full) : undefined }))(quotes.get(m.meal_entry_id))
                       : undefined,
-                  }))}
+                  })), mealMessages(meals, { mine: true, name: 'You' }).map(p => ({ ...p, photo: { ...p.photo, onOpen: p.photo.full ? () => setPhoto(p.photo.full) : undefined } })))}
                 />
               )}
             </div>

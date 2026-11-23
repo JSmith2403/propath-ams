@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { loadMealQuotes } from '../lib/mealQuotes';
+import { loadMealQuotes, loadRecentMeals } from '../lib/mealQuotes';
 
 /**
  * useAthleteMessages — the athlete's conversation with the coaching team.
@@ -17,6 +17,7 @@ import { loadMealQuotes } from '../lib/mealQuotes';
 export function useAthleteMessages(athleteId) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [meals, setMeals] = useState([]);              // their own recent meals, shown in the thread as photo messages
   const [quotes, setQuotes] = useState(new Map());   // meal_entry_id → the meal a coach replied to
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
@@ -39,6 +40,7 @@ export function useAthleteMessages(athleteId) {
         // sender_type may not exist if the v2 migration hasn't run — treat as coach.
         setMessages((data || []).map(m => ({ ...m, sender_type: m.sender_type || 'coach' })).reverse());
         loadMealQuotes((data || []).map(m => m.meal_entry_id)).then(q => { if (!cancelled) setQuotes(q); });
+        loadRecentMeals(athleteId).then(ml => { if (!cancelled) setMeals(ml); });
       }
       setLoading(false);
     })();
@@ -95,5 +97,5 @@ export function useAthleteMessages(athleteId) {
     }
   }, []);
 
-  return { messages, quotes, loading, unreadCount, markRead, sendReply, refresh };
+  return { messages, meals, quotes, loading, unreadCount, markRead, sendReply, refresh };
 }

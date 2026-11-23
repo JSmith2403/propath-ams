@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, X } from 'lucide-react';
 
 /**
  * ChatComposer — the message box under every chat: a grey pill that grows with
  * what you type, and a round gold send button. On a computer, Enter sends and
  * Shift+Enter adds a line; on a phone, Enter is a new line and the button sends.
  */
-export default function ChatComposer({ value, onChange, onSubmit, sending = false, error = null, placeholder = 'Write a message…', note = null }) {
+export default function ChatComposer({ value, onChange, onSubmit, sending = false, error = null, placeholder = 'Write a message…', note = null, replyTo = null, onClearReply }) {
   const ref = useRef(null);
 
   // Grow with the text, up to about five lines.
@@ -27,6 +27,17 @@ export default function ChatComposer({ value, onChange, onSubmit, sending = fals
   return (
     <form onSubmit={onSubmit} className="px-4 pt-3 pb-3 border-t border-gray-100 bg-white shrink-0">
       {error && <p className="text-xs text-red-600 mb-2 px-1" role="alert">{error}</p>}
+      {replyTo && (
+        <div className="mb-2 flex items-stretch rounded-xl overflow-hidden" style={{ backgroundColor: '#f1f2f3' }}>
+          <span className="w-1 shrink-0" style={{ backgroundColor: '#A58D69' }} />
+          <span className="flex-1 min-w-0 px-2.5 py-1.5">
+            <span className="block text-[12px] font-bold" style={{ color: '#7a6748' }}>{replyTo.label}</span>
+            <span className="block text-[13px] text-gray-600 truncate">{replyTo.text || 'Photo'}</span>
+          </span>
+          {replyTo.thumb && <img src={replyTo.thumb} alt="" className="w-12 object-cover shrink-0" />}
+          <button type="button" onClick={onClearReply} aria-label="Cancel reply" className="px-2 text-gray-400 hover:text-gray-700"><X size={15} /></button>
+        </div>
+      )}
       <div className="flex items-end gap-2.5">
         <textarea
           ref={ref}

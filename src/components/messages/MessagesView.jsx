@@ -10,7 +10,8 @@ import ChatSetupModal from './ChatSetupModal';
 import ParentLinksModal from './ParentLinksModal';
 import { useChatRooms, roomTitle, roomSubtitle } from '../../hooks/useChatRooms';
 import { usePushStatus } from '../../hooks/usePushStatus';
-import { loadMealQuotes } from '../../lib/mealQuotes';
+import { loadMealQuotes, loadRecentMeals } from '../../lib/mealQuotes';
+import { mealMessages, mergeThread } from '../../utils/threadMerge';
 import ImageLightbox from '../ui/ImageLightbox';
 
 const GOLD = '#A58D69';
@@ -37,6 +38,8 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
   const [thread, setThread] = useState([]);
   const [mealQuotes, setMealQuotes] = useState(new Map());   // meals coaches replied to in this thread
   const [mealPhoto, setMealPhoto] = useState(null);
+  const [threadMeals, setThreadMeals] = useState([]);       // the athlete's recent meals, shown as their photo messages
+  const [replyMeal, setReplyMeal] = useState(null);         // a meal photo the coach is replying to
   const [threadLoading, setThreadLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [text, setText] = useState('');
@@ -116,12 +119,15 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
     if (!error) {
       setThread((data || []).reverse());
       loadMealQuotes((data || []).map(m => m.meal_entry_id)).then(setMealQuotes);
+      loadRecentMeals(athleteId).then(setThreadMeals);
     }
     setThreadLoading(false);
   }, []);
 
   useEffect(() => {
     setThread([]);
+    setThreadMeals([]);
+    setReplyMeal(null);
     setSendError(null);
     if (!selectedId) return undefined;
     loadThread(selectedId);
@@ -168,10 +174,17 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
           'content-type': 'application/json',
           ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ athlete_ids: [selectedId], title: '', body: text.trim() }),
+        body: JSON.stringify({ athlete_ids: [selectedId], title: '', body: text.trim(), ...(replyMeal ? { meal_entry_id: replyMeal.id } : {}) }),
       });
       const json = await res.json().catch(() => ({ ok: false, error: `Server error (${res.status}).` }));
       if (!json.ok) throw new Error(json.error || 'Couldn\'t send.');
+      if (replyMeal) {
+        // Replying to a meal counts as reviewing it, and is kept in the meal's own history.
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from('meal_entries').update({ status: 'reviewed', updated_at: new Date().toISOString() }).eq('id', replyMeal.id);
+        await supabase.from('meal_events').insert([{ entry_id: replyMeal.id, event_type: 'note_added', note: `Replied: ${text.trim()}`, actor_id: user?.id || null }, { entry_id: replyMeal.id, event_type: 'reviewed', actor_id: user?.id || null }]);
+        setReplyMeal(null);
+      }
       setText('');
       await Promise.all([loadThread(selectedId, { quiet: true }), loadRecent()]);
     } catch (err) {
@@ -390,13 +403,13 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
                 <ChatBubbles
                   scrollKey={selectedId}
                   emptyText="No messages yet — say hello below."
-                  messages={thread.map(m => ({
+                  messages={mergeThread(thread.map(m => ({
                     id: m.id, mine: m.sender_type === 'coach', name: m.sent_by, body: m.body, title: m.title,
                     at: m.created_at, role: m.sender_type === 'coach' ? 'staff' : 'athlete', seen: !!m.read_at,
                     quote: m.meal_entry_id && mealQuotes.get(m.meal_entry_id)
                       ? (q => ({ label: `${selected.name.split(' ')[0]}’s ${q.label.toLowerCase()} · ${q.day}`, text: q.text, sub: q.text ? null : 'Photo', thumb: q.thumb, onOpen: q.full ? () => setMealPhoto(q.full) : undefined }))(mealQuotes.get(m.meal_entry_id))
                       : undefined,
-                  }))}
+                  })), mealMessages(threadMeals, { mine: false, name: selected.name }).map(p => ({ ...p, photo: { ...p.photo, onOpen: p.photo.full ? () => setMealPhoto(p.photo.full) : undefined, onReply: () => setReplyMeal({ id: p.mealEntryId, label: `${selected.name.split(' ')[0]}’s ${p.photo.label.toLowerCase()} · ${p.photo.day}`, text: p.photo.text, thumb: p.photo.thumb }) } })))}
                 />
               )}
             </div>
@@ -409,6 +422,8 @@ export default function MessagesView({ athletes = [], senderName, initialAthlete
               onSubmit={send}
               sending={sending}
               error={sendError}
+              replyTo={replyMeal}
+              onClearReply={() => setReplyMeal(null)}
               placeholder={`Reply to ${selected.name.split(' ')[0]} as ${senderName || 'coach'}…`}
             />
           </>

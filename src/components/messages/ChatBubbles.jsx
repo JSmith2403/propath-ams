@@ -22,6 +22,7 @@ const initials = (name = '') => name.split(' ').map(s => s[0]).slice(0, 2).join(
  *   • yours: gold bubble on the right; everyone else: light grey on the left
  * Each message: { id, mine, name, body, title?, at, role?, seen?, quote? }
  * `quote` shows what the message replies to, WhatsApp style: { label, sub?, text?, thumb?, onOpen? }.
+ * `photo` makes it a photo message (a meal): { label, text?, thumb?, onOpen?, onReply? }.
  * `showNames` labels other people's runs (group chats, parent view).
  */
 export default function ChatBubbles({ messages, showNames = true, emptyText = 'No messages yet.', scrollKey }) {
@@ -67,11 +68,27 @@ export default function ChatBubbles({ messages, showNames = true, emptyText = 'N
                 </p>
               )}
               <div
-                className={`rounded-2xl px-3.5 py-2 ${corners}`}
+                className={`rounded-2xl ${m.photo ? 'p-1' : 'px-3.5 py-2'} ${corners}`}
                 style={m.mine
                   ? { backgroundColor: GOLD, color: '#fff' }
                   : { backgroundColor: '#f1f2f4', color: '#1f2937' }}
               >
+                {m.photo && (
+                  <div>
+                    {m.photo.thumb ? (
+                      <button type="button" onClick={m.photo.onOpen} disabled={!m.photo.onOpen} className="block">
+                        <img src={m.photo.thumb} alt={m.photo.label} className="block rounded-xl object-cover w-full" style={{ maxWidth: 240, maxHeight: 300 }} />
+                      </button>
+                    ) : null}
+                    <div className="px-2.5 pt-1.5 pb-1">
+                      <p className="text-[12px] font-bold">{m.photo.label}{m.photo.day ? <span className="font-normal opacity-70"> · {m.photo.day}</span> : null}</p>
+                      {m.photo.text && <p className="text-[14px] leading-snug break-words">{m.photo.text}</p>}
+                      {m.photo.onReply && (
+                        <button type="button" onClick={m.photo.onReply} className="mt-1 text-[11px] font-semibold underline underline-offset-2" style={{ color: m.mine ? '#fff' : '#7a6748' }}>Reply</button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {m.quote && (
                   <button type="button" onClick={m.quote.onOpen} disabled={!m.quote.onOpen}
                     className="mb-1.5 w-full flex items-stretch rounded-xl overflow-hidden text-left"
