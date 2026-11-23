@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mealLabel, mealDayLabel } from './mealQuotes';
+import { mealLabel, mealDayLabel } from './mealLabels';
 
 describe('meal quote labels', () => {
   it('names meal types, collapsing the snack slots', () => {
